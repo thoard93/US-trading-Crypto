@@ -4,6 +4,7 @@ import asyncio
 from collectors.crypto_collector import CryptoCollector
 from collectors.stock_collector import StockCollector
 from analysis.technical_engine import TechnicalAnalysis
+from trading_executive import TradingExecutive
 
 class AlertSystem(commands.Cog):
     def __init__(self, bot):
@@ -11,6 +12,7 @@ class AlertSystem(commands.Cog):
         self.crypto = CryptoCollector()
         self.stocks = StockCollector()
         self.analyzer = TechnicalAnalysis()
+        self.trader = TradingExecutive()
         
         # User defined watchlists
         # Expanded Full-Throttle Watchlist
@@ -89,6 +91,27 @@ class AlertSystem(commands.Cog):
                     embed.set_footer(text=f"High Priority Alert | Technical Extremes")
                 
                 await channel.send(embed=embed)
+                
+                # --- AUTO-TRADING LOGIC ---
+                if asset_type == "Crypto" and result['signal'] in ['BUY', 'SELL']:
+                    if result['signal'] == 'BUY':
+                        trade_result = self.trader.execute_market_buy(symbol)
+                        trade_title = "💰 AUTO-TRADE: EXECUTED BUY"
+                    else:
+                        trade_result = self.trader.execute_market_sell(symbol)
+                        trade_title = "💰 AUTO-TRADE: EXECUTED SELL"
+
+                    if "error" not in trade_result:
+                        trade_embed = discord.Embed(
+                            title=trade_title,
+                            description=f"Automated order successfully placed for **{symbol}**.",
+                            color=discord.Color.dark_gold()
+                        )
+                        trade_embed.add_field(name="Order ID", value=trade_result.get('id', 'N/A'), inline=True)
+                        trade_embed.add_field(name="Status", value="Market Order Placed", inline=True)
+                        await channel.send(embed=trade_embed)
+                    else:
+                        print(f"❌ Auto-trade failed for {symbol}: {trade_result['error']}")
             else:
                 sig = result.get('signal', 'UNKNOWN')
                 print(f"ℹ️ Analysis for {symbol}: {sig} - {result.get('reason', 'N/A')}")
