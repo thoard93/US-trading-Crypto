@@ -87,7 +87,7 @@ async def analyze(ctx, symbol: str):
     elif result['signal'] == "SELL": color = discord.Color.red()
 
     embed = discord.Embed(title=f"📊 Market Analysis: {symbol}", color=color)
-    embed.add_field(name="Current Price", value=f"${result['price']}", inline=True)
+    embed.add_field(name="Current Price", value=f"${result['price']:.8f}", inline=True)
     embed.add_field(name="RSI (14)", value=result['rsi'], inline=True)
     embed.add_field(name="Signal", value=f"**{result['signal']}**", inline=False)
     embed.add_field(name="Reasoning", value=result['reason'], inline=False)
