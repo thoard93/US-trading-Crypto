@@ -31,16 +31,16 @@ class TechnicalAnalysis:
 
         if rsi < 30:
             signal = "BUY"
-            reason = "Oversold (RSI < 30)"
+            reason = "🚀 Oversold (RSI < 30) - Potential low entry"
         elif rsi > 70:
             signal = "SELL"
-            reason = "Overbought (RSI > 70)"
+            reason = "⚠️ Overbought (RSI > 70) - Potential local top"
         elif close > ema_20 and ema_20 > ema_50:
             signal = "BULLISH"
-            reason = "Uptrend (Price above EMA 20/50)"
+            reason = "📈 Strong Uptrend: Price > EMA20 > EMA50"
         elif close < ema_20 and ema_20 < ema_50:
             signal = "BEARISH"
-            reason = "Downtrend (Price below EMA 20/50)"
+            reason = "📉 Downtrend: Price < EMA20 < EMA50"
 
         return {
             "price": round(close, 4),

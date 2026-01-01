@@ -13,8 +13,12 @@ class AlertSystem(commands.Cog):
         self.analyzer = TechnicalAnalysis()
         
         # User defined watchlists
-        self.crypto_watchlist = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT']
-        self.stock_watchlist = ['AAPL', 'TSLA', 'NVDA', 'AMD', 'MSFT']
+        # Expanded Full-Throttle Watchlist
+        self.crypto_watchlist = [
+            'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 
+            'PEPE/USDT', 'SHIB/USDT', 'DOGE/USDT', 'BONK/USDT', 'WIF/USDT'
+        ]
+        self.stock_watchlist = ['AAPL', 'TSLA', 'NVDA', 'AMD', 'MSFT', 'META', 'AMZN']
         
         # User defined channel IDs
         self.STOCKS_CHANNEL_ID = 1456078814567202960
@@ -55,17 +59,35 @@ class AlertSystem(commands.Cog):
     async def _process_alert(self, channel, symbol, data, asset_type):
         if data is not None:
             result = self.analyzer.analyze_trend(data)
-            if 'signal' in result and result['signal'] in ['BUY', 'SELL']:
-                color = discord.Color.green() if result['signal'] == 'BUY' else discord.Color.red()
+            # Trigger on BUY, SELL, BULLISH, or BEARISH
+            if 'signal' in result and result['signal'] != 'NEUTRAL':
+                # Map colors
+                color_map = {
+                    'BUY': discord.Color.green(),
+                    'SELL': discord.Color.red(),
+                    'BULLISH': discord.Color.gold(),
+                    'BEARISH': discord.Color.blue()
+                }
+                color = color_map.get(result['signal'], discord.Color.light_grey())
+                
+                prefix = "🚀" if result['signal'] in ['BUY', 'SELL'] else "📊"
+                title_type = "OPPORTUNITY" if result['signal'] in ['BUY', 'SELL'] else "TREND UPDATE"
+
                 embed = discord.Embed(
-                    title=f"🚀 {asset_type.upper()} ALERT: {symbol}",
-                    description=f"The AI has detected a potential **{result['signal']}** opportunity!",
+                    title=f"{prefix} {asset_type.upper()} {title_type}: {symbol}",
+                    description=f"The AI has detected a **{result['signal']}** pattern!",
                     color=color
                 )
-                embed.add_field(name="Price", value=f"${result['price']}", inline=True)
-                embed.add_field(name="RSI", value=result['rsi'], inline=True)
-                embed.add_field(name="Reason", value=result['reason'], inline=False)
-                embed.set_footer(text=f"Short-term {asset_type} analysis (1h timeframe)")
+                embed.add_field(name="Current Price", value=f"${result['price']}", inline=True)
+                embed.add_field(name="RSI (14)", value=result['rsi'], inline=True)
+                embed.add_field(name="Analysis", value=result['reason'], inline=False)
+                
+                # Add context for Trend Alerts
+                if result['signal'] in ['BULLISH', 'BEARISH']:
+                    embed.set_footer(text=f"Momentum Alert | 1h Timeframe")
+                else:
+                    embed.set_footer(text=f"High Priority Alert | Technical Extremes")
+                
                 await channel.send(embed=embed)
             else:
                 sig = result.get('signal', 'UNKNOWN')
