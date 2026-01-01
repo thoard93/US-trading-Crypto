@@ -33,7 +33,7 @@ class TradingExecutive:
             print(f"Error fetching balance: {e}")
             return 0
 
-    def execute_market_buy(self, symbol):
+    def execute_market_buy(self, symbol, amount_usdt=10.0):
         """Execute a market buy order."""
         if not self.exchange:
             return {"error": "API not configured"}
@@ -41,20 +41,17 @@ class TradingExecutive:
         try:
             # Check balance first
             balance = self.get_usdt_balance()
-            if balance < self.trade_amount_usdt:
+            if balance < amount_usdt:
                 return {"error": f"Insufficient USDT balance: {balance}"}
 
-            print(f"🚀 Executing MARKET BUY for {symbol} ($ {self.trade_amount_usdt})")
-            # In Kraken, 'amount' for market buy is often the quote currency if 'cost' is used,
-            # but standard CCXT uses base currency. We calculate base amount if possible or use exchange specific methods.
+            print(f"🚀 Executing MARKET BUY for {symbol} ($ {amount_usdt})")
             
-            # For Kraken market buy, we can use create_order with params={'cost': amount}
             order = self.exchange.create_order(
                 symbol=symbol,
                 type='market',
                 side='buy',
-                amount=None, # For Kraken cost-based buy
-                params={'cost': self.trade_amount_usdt}
+                amount=None, 
+                params={'cost': amount_usdt}
             )
             return order
         except Exception as e:
