@@ -43,7 +43,7 @@ class TechnicalAnalysis:
             reason = "📉 Downtrend: Price < EMA20 < EMA50"
 
         return {
-            "price": round(close, 4),
+            "price": round(close, 8),
             "rsi": round(rsi, 2),
             "signal": signal,
             "reason": reason,
