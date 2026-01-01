@@ -19,8 +19,34 @@ class TradingExecutive:
             print("Warning: Kraken API keys not found. Auto-trading disabled.")
 
         # Safety Settings
-        self.trade_amount_usdt = 10.0  # Default test amount per trade
-        self.max_open_trades = 3      # Limit total simultaneous exposure
+        self.trade_amount_usdt = 10.0  
+        self.max_open_trades = 3      
+        self.active_positions = {}    # {symbol: {"entry_price": float, "amount": float}}
+
+    def track_position(self, symbol, entry_price, amount):
+        """Record an entry for stop-loss monitoring."""
+        self.active_positions[symbol] = {
+            "entry_price": entry_price,
+            "amount": amount
+        }
+
+    def check_exit_conditions(self, symbol, current_price):
+        """Check if we should exit a trade based on SL/TP."""
+        if symbol not in self.active_positions:
+            return None
+
+        pos = self.active_positions[symbol]
+        entry = pos["entry_price"]
+        
+        # Stop-Loss: -5%
+        if current_price <= entry * 0.95:
+            return "STOP_LOSS"
+        
+        # Take-Profit: +10% 
+        if current_price >= entry * 1.10:
+            return "TAKE_PROFIT"
+            
+        return None
 
     def get_usdt_balance(self):
         """Fetch current USDT balance."""

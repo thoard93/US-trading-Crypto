@@ -44,6 +44,23 @@ class AlertSystem(commands.Cog):
                 data = self.crypto.fetch_ohlcv(symbol, timeframe='1h', limit=100)
                 if data is None:
                     print(f"❌ Failed to fetch crypto data for {symbol}")
+                    continue
+
+                # --- STOP-LOSS / TAKE-PROFIT CHECK ---
+                current_price = data.iloc[-1]['close']
+                exit_reason = self.trader.check_exit_conditions(symbol, current_price)
+                if exit_reason:
+                    exit_res = self.trader.execute_market_sell(symbol)
+                    if "error" not in exit_res:
+                        embed = discord.Embed(
+                            title=f"🚨 AUTO-EXIT: {exit_reason}",
+                            description=f"Closed position for **{symbol}** at ${current_price:.8f}",
+                            color=discord.Color.orange()
+                        )
+                        await channel_crypto.send(embed=embed)
+                        if symbol in self.trader.active_positions:
+                            del self.trader.active_positions[symbol]
+
                 await self._process_alert(channel_crypto, symbol, data, "Crypto")
                 await asyncio.sleep(1)
 
@@ -119,6 +136,9 @@ class AlertSystem(commands.Cog):
                         trade_title = "📉 SCALP: EXECUTED SELL" if scalp_mode else "📉 AUTO-TRADE: EXECUTED SELL"
 
                     if "error" not in trade_result:
+                        # Record position for SL/TP tracking
+                        self.trader.track_position(symbol, symbol_price, trade_result.get('amount', 0))
+                        
                         trade_embed = discord.Embed(
                             title=trade_title,
                             description=f"Automated order for **{symbol}** successful.",
