@@ -137,5 +137,11 @@ class AlertSystem(commands.Cog):
         await self.monitor_market()
         await ctx.send("✅ Scan complete.")
 
+    @commands.command()
+    async def balance(self, ctx):
+        """Check Kraken USDT balance."""
+        bal = self.trader.get_usdt_balance()
+        await ctx.send(f"💰 **Kraken Portfolio Balance:** `{bal}` USDT")
+
 async def setup(bot):
     await bot.add_cog(AlertSystem(bot))
