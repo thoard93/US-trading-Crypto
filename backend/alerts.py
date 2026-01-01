@@ -51,7 +51,7 @@ class AlertSystem(commands.Cog):
     async def _process_alert(self, channel, symbol, data, asset_type):
         if data is not None:
             result = self.analyzer.analyze_trend(data)
-            if result['signal'] in ['BUY', 'SELL']:
+            if 'signal' in result and result['signal'] in ['BUY', 'SELL']:
                 color = discord.Color.green() if result['signal'] == 'BUY' else discord.Color.red()
                 embed = discord.Embed(
                     title=f"🚀 {asset_type.upper()} ALERT: {symbol}",

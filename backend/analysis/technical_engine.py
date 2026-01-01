@@ -9,6 +9,7 @@ class TechnicalAnalysis:
         Returns a dictionary with indicators and a basic signal.
         """
         if df is None or len(df) < 50:
+            print(f"Insufficient data for analysis: {len(df) if df is not None else 0} rows")
             return {"error": "Insufficient data"}
 
         # Calculate Indicators
