@@ -12,6 +12,6 @@ services:
       - key: ALPACA_SECRET_KEY
         sync: false
       - key: ALPACA_BASE_URL
-        value: https://api.alpaca.markets
+        value: https://paper-api.alpaca.markets
       - key: PYTHON_VERSION
         value: 3.12.0
