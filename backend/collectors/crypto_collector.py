@@ -3,7 +3,7 @@ import pandas as pd
 import time
 
 class CryptoCollector:
-    def __init__(self, exchange_id='binance'):
+    def __init__(self, exchange_id='kraken'):
         self.exchange = getattr(ccxt, exchange_id)()
         
     def fetch_ohlcv(self, symbol, timeframe='1h', limit=100):

@@ -26,8 +26,17 @@ class StockCollector:
             return None
             
         try:
+            # Map common strings to Alpaca TimeFrame constants
+            tf_map = {
+                '1Min': TimeFrame.Minute,
+                '5Min': TimeFrame.Minute,
+                '1Hour': TimeFrame.Hour,
+                '1Day': TimeFrame.Day
+            }
+            tf = tf_map.get(timeframe, TimeFrame.Hour)
+            
             # We use bars for historical/current OHLCV
-            bars = self.api.get_bars(symbol, getattr(TimeFrame, timeframe), limit=limit).df
+            bars = self.api.get_bars(symbol, tf, limit=limit).df
             if bars.empty:
                 return None
             
