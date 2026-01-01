@@ -1,0 +1,15 @@
+services:
+  - type: worker
+    name: us-trading-crypto-bot
+    env: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: python backend/bot.py
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: ALPACA_API_KEY
+        sync: false
+      - key: ALPACA_SECRET_KEY
+        sync: false
+      - key: PYTHON_VERSION
+        value: 3.11.0

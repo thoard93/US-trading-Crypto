@@ -1,0 +1,9 @@
+discord.py
+python-dotenv
+pandas
+pandas-ta
+alpaca-trade-api
+ccxt
+scikit-learn
+matplotlib
+aiohttp
