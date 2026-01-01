@@ -80,7 +80,7 @@ class AlertSystem(commands.Cog):
                     description=f"The AI has detected a **{result['signal']}** pattern!",
                     color=color
                 )
-                embed.add_field(name="Current Price", value=f"${result['price']}", inline=True)
+                embed.add_field(name="Current Price", value=f"${result['price']:.8f}", inline=True)
                 embed.add_field(name="RSI (14)", value=result['rsi'], inline=True)
                 embed.add_field(name="Analysis", value=result['reason'], inline=False)
                 
