@@ -36,6 +36,8 @@ class AlertSystem(commands.Cog):
         if channel_crypto:
             for symbol in self.crypto_watchlist:
                 data = self.crypto.fetch_ohlcv(symbol, timeframe='1h', limit=100)
+                if data is None:
+                    print(f"❌ Failed to fetch crypto data for {symbol}")
                 await self._process_alert(channel_crypto, symbol, data, "Crypto")
                 await asyncio.sleep(1)
 
@@ -45,6 +47,8 @@ class AlertSystem(commands.Cog):
         if channel_stocks:
             for symbol in self.stock_watchlist:
                 data = self.stocks.fetch_ohlcv(symbol, timeframe='1Hour', limit=100)
+                if data is None:
+                    print(f"❌ Failed to fetch stock data for {symbol}")
                 await self._process_alert(channel_stocks, symbol, data, "Stock")
                 await asyncio.sleep(1)
 
@@ -63,6 +67,9 @@ class AlertSystem(commands.Cog):
                 embed.add_field(name="Reason", value=result['reason'], inline=False)
                 embed.set_footer(text=f"Short-term {asset_type} analysis (1h timeframe)")
                 await channel.send(embed=embed)
+            else:
+                sig = result.get('signal', 'UNKNOWN')
+                print(f"ℹ️ Analysis for {symbol}: {sig} - {result.get('reason', 'N/A')}")
 
     @commands.command()
     async def add_watchlist(self, ctx, symbol: str, asset_type: str = "crypto"):
@@ -77,6 +84,13 @@ class AlertSystem(commands.Cog):
             if symbol not in self.stock_watchlist:
                 self.stock_watchlist.append(symbol)
                 await ctx.send(f"✅ Added {symbol} to Stock watchlist.")
+
+    @commands.command()
+    async def scan(self, ctx):
+        """Manually trigger a market scan."""
+        await ctx.send("⚡ Manually triggering market scan...")
+        await self.monitor_market()
+        await ctx.send("✅ Scan complete.")
 
 async def setup(bot):
     await bot.add_cog(AlertSystem(bot))
