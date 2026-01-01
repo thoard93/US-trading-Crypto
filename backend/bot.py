@@ -16,9 +16,8 @@ crypto = CryptoCollector()
 analyzer = TechnicalAnalysis()
 safety = SafetyChecker()
 
-# Initialize bot with intents
-intents = discord.Intents.default()
-intents.message_content = True
+# Initialize bot with all intents to ensure on_ready fires reliably
+intents = discord.Intents.all()
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 @bot.event
