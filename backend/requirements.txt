@@ -1,7 +1,7 @@
 discord.py
 python-dotenv
 pandas
-pandas-ta
+https://github.com/twopirllc/pandas-ta/archive/refs/heads/master.zip
 alpaca-trade-api
 ccxt
 scikit-learn
