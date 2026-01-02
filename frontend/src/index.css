@@ -41,7 +41,9 @@ body {
   box-shadow: 0 8px 32px 0 var(--primary-glow);
 }
 
-h1, h2, h3 {
+h1,
+h2,
+h3 {
   font-weight: 600;
   letter-spacing: -0.02em;
 }
@@ -98,19 +100,43 @@ button:active {
   text-transform: uppercase;
 }
 
-.badge-success { background: rgba(16, 185, 129, 0.1); color: var(--success); }
-.badge-danger { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
+.badge-success {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success);
+}
+
+.badge-danger {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+}
 
 ::-webkit-scrollbar {
   width: 8px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 10px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
 }

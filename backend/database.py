@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models import Base
+from models import Base, User
 import os
 
 # Use DATABASE_URL from environment (provided by Render Postgres)
@@ -21,6 +21,19 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        # Check if Demo User exists
+        demo_user = db.query(User).filter(User.id == 1).first()
+        if not demo_user:
+            user = User(id=1, username="demo_trader", hashed_password="not_needed_for_now")
+            db.add(user)
+            db.commit()
+            print("👤 Demo User created.")
+    except Exception as e:
+        print(f"Error seeding DB: {e}")
+    finally:
+        db.close()
     print(f"Database initialized with: {SQLALCHEMY_DATABASE_URL.split(':')[0]}")
 
 if __name__ == "__main__":

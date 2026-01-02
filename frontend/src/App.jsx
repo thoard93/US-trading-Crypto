@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import {
   TrendingUp,
   Activity,
@@ -11,32 +12,72 @@ import {
   LayoutDashboard,
   Search,
   Bell,
-  LogOut
+  RefreshCw,
+  Play,
+  Square
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-const mockChartData = [
-  { time: '10:00', price: 92400 },
-  { time: '10:05', price: 92800 },
-  { time: '10:10', price: 92600 },
-  { time: '10:15', price: 93200 },
-  { time: '10:20', price: 93500 },
-  { time: '10:25', price: 93800 },
-  { time: '10:30', price: 94200 },
-];
-
-const mockPositions = [
-  { symbol: 'XRP/USDT', entry: 2.12, current: 2.34, profit: '+10.4%', side: 'BUY' },
-  { symbol: 'SOL/USDT', entry: 185.00, current: 184.20, profit: '-0.4%', side: 'BUY' },
-];
-
-const mockLogs = [
-  { type: 'BUY', symbol: 'XRP/USDT', price: 2.12, time: '2m ago' },
-  { type: 'SELL', symbol: 'SOL/USDT', price: 185.00, time: '15m ago' },
-  { type: 'BUY', symbol: 'SOL/USDT', price: 184.50, time: '40m ago' },
-];
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const USER_ID = 1; // Default for now
 
 function App() {
+  const [activeTab, setActiveTab] = useState('Dashboard');
+  const [chartData, setChartData] = useState([]);
+  const [positions, setPositions] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [stats, setStats] = useState({ total_profit: '$0.00', active_bots_count: 0, active_bot_names: 'Loading...' });
+  const [status, setStatus] = useState({ is_running: false });
+  const [loading, setLoading] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    try {
+      // 1. Status
+      const statusRes = await axios.get(`${API_BASE}/status/${USER_ID}`);
+      setStatus(statusRes.data);
+
+      // 2. Positions
+      const posRes = await axios.get(`${API_BASE}/positions/${USER_ID}`);
+      setPositions(posRes.data);
+
+      // 3. Trade Logs
+      const logsRes = await axios.get(`${API_BASE}/trades/${USER_ID}`);
+      setLogs(logsRes.data);
+
+      // 4. Stats
+      const statsRes = await axios.get(`${API_BASE}/stats/${USER_ID}`);
+      setStats(statsRes.data);
+
+      // 5. Chart Data (Default BTC/USDT)
+      const chartRes = await axios.get(`${API_BASE}/chart/BTC/USDT`);
+      setChartData(chartRes.data);
+    } catch (err) {
+      console.error("API Error:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 10000); // Poll every 10s
+    return () => clearInterval(interval);
+  }, [fetchData]);
+
+  const toggleBot = async () => {
+    setLoading(true);
+    try {
+      if (status.is_running) {
+        await axios.post(`${API_BASE}/users/stop/${USER_ID}`);
+      } else {
+        await axios.post(`${API_BASE}/users/start/${USER_ID}`);
+      }
+      await fetchData();
+    } catch (err) {
+      alert("Failed to toggle bot. Check console or backend logs.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="dashboard-layout">
       {/* Sidebar */}
@@ -49,20 +90,30 @@ function App() {
         </div>
 
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" active />
-          <NavItem icon={<TrendingUp size={20} />} label="Live Markets" />
-          <NavItem icon={<Wallet size={20} />} label="Portfolio" />
-          <NavItem icon={<History size={20} />} label="Trade History" />
-          <NavItem icon={<ShieldCheck size={20} />} label="Safety Audit" />
-          <NavItem icon={<Settings size={20} />} label="Settings" />
+          <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />
+          <NavItem icon={<TrendingUp size={20} />} label="Live Markets" active={activeTab === 'Live Markets'} onClick={() => setActiveTab('Live Markets')} />
+          <NavItem icon={<Wallet size={20} />} label="Portfolio" active={activeTab === 'Portfolio'} onClick={() => setActiveTab('Portfolio')} />
+          <NavItem icon={<History size={20} />} label="Trade History" active={activeTab === 'Trade History'} onClick={() => setActiveTab('Trade History')} />
+          <NavItem icon={<ShieldCheck size={20} />} label="Safety Audit" active={activeTab === 'Safety Audit'} onClick={() => setActiveTab('Safety Audit')} />
+          <NavItem icon={<Settings size={20} />} label="Settings" active={activeTab === 'Settings'} onClick={() => setActiveTab('Settings')} />
         </nav>
 
         <div style={{ marginTop: 'auto' }}>
           <div className="glass" style={{ padding: '16px', background: 'rgba(255,255,255,0.05)' }}>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>SYSTEM STATUS</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-              <div style={{ width: '8px', height: '8px', background: 'var(--success)', borderRadius: '50%' }}></div>
-              <span style={{ fontSize: '0.875rem' }}>Bot Active</span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ width: '8px', height: '8px', background: status.is_running ? 'var(--success)' : 'var(--danger)', borderRadius: '50%' }}></div>
+                <span style={{ fontSize: '0.875rem' }}>{status.is_running ? 'Bot Active' : 'Bot Idle'}</span>
+              </div>
+              <button
+                onClick={toggleBot}
+                disabled={loading}
+                className="glass"
+                style={{ padding: '6px', borderRadius: '8px', cursor: 'pointer', background: status.is_running ? 'rgba(255, 71, 87, 0.1)' : 'rgba(0, 255, 204, 0.1)' }}
+              >
+                {status.is_running ? <Square size={16} color="var(--danger)" /> : <Play size={16} color="var(--accent-color)" />}
+              </button>
             </div>
           </div>
         </div>
@@ -80,7 +131,7 @@ function App() {
             />
           </div>
           <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-            <div className="glass" style={{ padding: '8px', borderRadius: '12px' }}><Bell size={20} /></div>
+            <div className="glass" style={{ padding: '8px', borderRadius: '12px', cursor: 'pointer' }} onClick={fetchData}><RefreshCw size={20} className={loading ? 'spin' : ''} /></div>
             <div className="glass" style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'linear-gradient(45deg, #00ffcc, #0099ff)' }}></div>
           </div>
         </header>
@@ -89,18 +140,21 @@ function App() {
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
             <div>
               <h1 style={{ fontSize: '2rem' }}>BTC / USDT</h1>
-              <p style={{ color: 'var(--text-secondary)' }}>$94,204.32 <span style={{ color: 'var(--success)' }}>+2.45%</span></p>
+              <p style={{ color: 'var(--text-secondary)' }}>
+                {chartData.length > 0 ? `$${chartData[chartData.length - 1].price.toLocaleString()}` : '$0.00'}
+                <span style={{ color: 'var(--success)', marginLeft: '8px' }}>LIVE</span>
+              </p>
             </div>
             <div className="glass" style={{ display: 'flex', padding: '4px' }}>
-              <button className="glass" style={{ padding: '6px 16px', background: 'rgba(255,255,255,0.1)' }}>1H</button>
-              <button style={{ padding: '6px 16px', color: 'var(--text-secondary)' }}>4H</button>
+              <button className="glass" style={{ padding: '6px 16px', background: 'rgba(255,255,255,0.1)' }}>5M</button>
+              <button style={{ padding: '6px 16px', color: 'var(--text-secondary)' }}>1H</button>
               <button style={{ padding: '6px 16px', color: 'var(--text-secondary)' }}>1D</button>
             </div>
           </div>
 
-          <div style={{ height: '100%', minHeight: '300px' }}>
+          <div style={{ height: '300px' }}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={mockChartData}>
+              <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#00ffcc" stopOpacity={0.3} />
@@ -108,47 +162,51 @@ function App() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 12 }} />
-                <YAxis hide />
+                <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                <YAxis domain={['auto', 'auto']} hide />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
                   itemStyle={{ color: '#00ffcc' }}
                 />
-                <Area type="monotone" dataKey="price" stroke="#00ffcc" strokeWidth={3} fillOpacity={1} fill="url(#colorPrice)" />
+                <Area animationDuration={1000} type="monotone" dataKey="price" stroke="#00ffcc" strokeWidth={3} fillOpacity={1} fill="url(#colorPrice)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </section>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-          <StatCard label="Total Profit" value="$1,245.00" sub="+12.5% this week" color="var(--success)" />
-          <StatCard label="Active Bots" value="3 Running" sub="XRP, SOL, ETH" color="var(--accent-color)" />
+          <StatCard label="Total Profit" value={stats.total_profit} sub="+0% total" color="var(--success)" />
+          <StatCard label="Active Strategy" value={stats.active_bot_names} sub={`${stats.active_bots_count} bot(s) online`} color="var(--accent-color)" />
         </div>
       </main>
 
       {/* Right Panel */}
       <aside className="right-panel">
-        <section className="glass glow-shadow" style={{ padding: '24px', flex: 1 }}>
+        <section className="glass glow-shadow" style={{ padding: '24px', flex: 1, minHeight: '300px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <h3>Active Positions</h3>
-            <ChevronRight size={20} color="var(--text-secondary)" />
+            {positions.length > 0 && <span className="badge badge-success">{positions.length}</span>}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {mockPositions.map((pos, i) => (
-              <PositionItem key={i} {...pos} />
-            ))}
+            {positions.length > 0 ? (
+              positions.map((pos, i) => <PositionItem key={i} {...pos} />)
+            ) : (
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>No active trades.</p>
+            )}
           </div>
         </section>
 
-        <section className="glass glow-shadow" style={{ padding: '24px', flex: 1 }}>
+        <section className="glass glow-shadow" style={{ padding: '24px', flex: 1, minHeight: '300px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
             <h3>Recent Activity</h3>
             <History size={20} color="var(--text-secondary)" />
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {mockLogs.map((log, i) => (
-              <LogItem key={i} {...log} />
-            ))}
+            {logs.length > 0 ? (
+              logs.map((log, i) => <LogItem key={i} {...log} />)
+            ) : (
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Empty log.</p>
+            )}
           </div>
         </section>
       </aside>
@@ -156,14 +214,15 @@ function App() {
   );
 }
 
-function NavItem({ icon, label, active = false }) {
+function NavItem({ icon, label, active = false, onClick }) {
   return (
-    <div className={`glass`} style={{
+    <div className={`glass`} onClick={onClick} style={{
       display: 'flex',
       alignItems: 'center',
       gap: '12px',
       padding: '12px 16px',
       cursor: 'pointer',
+      transition: 'all 0.3s ease',
       background: active ? 'rgba(0, 255, 204, 0.1)' : 'transparent',
       borderColor: active ? 'rgba(0, 255, 204, 0.3)' : 'transparent',
       color: active ? 'var(--accent-color)' : 'var(--text-secondary)'
@@ -184,7 +243,7 @@ function StatCard({ label, value, sub, color }) {
   );
 }
 
-function PositionItem({ symbol, entry, current, profit, side }) {
+function PositionItem({ symbol, entry, current, profit }) {
   const isProfit = profit.startsWith('+');
   return (
     <div className="glass" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>

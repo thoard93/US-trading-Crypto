@@ -4,6 +4,9 @@ from collectors.crypto_collector import CryptoCollector
 from analysis.technical_engine import TechnicalAnalysis
 from trading_executive import TradingExecutive
 from analysis.safety_checker import SafetyChecker
+from database import SessionLocal
+import models
+import datetime
 
 class TradingEngine:
     """A standalone trading bot instance for a specific user."""
@@ -14,7 +17,7 @@ class TradingEngine:
         self.trader = TradingExecutive(api_key, api_secret)
         self.safety = SafetyChecker()
         
-        self.watchlist = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
+        self.watchlist = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'PEPE/USDT']
         self.is_running = False
         self._task = None
 
@@ -38,7 +41,9 @@ class TradingEngine:
                         if symbol in self.trader.active_positions:
                             exit_reason = self.trader.check_exit_conditions(symbol, current_price)
                             if exit_reason:
-                                self.trader.execute_market_sell(symbol)
+                                sell_res = self.trader.execute_market_sell(symbol)
+                                if "error" not in sell_res:
+                                    self._record_trade(symbol, "SELL", sell_res.get('amount', 0), current_price)
                         
                         # 2. Check Signals
                         if result.get('signal') == 'BUY':
@@ -47,13 +52,35 @@ class TradingEngine:
                                 buy_res = self.trader.execute_market_buy(symbol, amount_usdt=10.0)
                                 if "error" not in buy_res:
                                     self.trader.track_position(symbol, current_price, buy_res.get('amount', 0))
+                                    self._record_trade(symbol, "BUY", buy_res.get('amount', 0), current_price)
 
                     await asyncio.sleep(1) # Gap between symbols
                     
-                await asyncio.sleep(300) # 5-minute cycle
+                await asyncio.sleep(60) # Increased frequency for more active feel
             except Exception as e:
                 print(f"❌ Engine error for user {self.user_id}: {e}")
                 await asyncio.sleep(30)
+
+    def _record_trade(self, symbol, side, amount, price):
+        """Record trade to database."""
+        db = SessionLocal()
+        try:
+            trade = models.Trade(
+                symbol=symbol,
+                side=side,
+                amount=float(amount),
+                price=float(price),
+                cost=float(amount * price),
+                user_id=self.user_id,
+                timestamp=datetime.datetime.utcnow()
+            )
+            db.add(trade)
+            db.commit()
+            print(f"📝 Recorded {side} trade for {symbol}")
+        except Exception as e:
+            print(f"❌ Error recording trade: {e}")
+        finally:
+            db.close()
 
     def start(self):
         if not self.is_running:
