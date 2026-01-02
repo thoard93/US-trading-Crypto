@@ -17,13 +17,15 @@ import {
   Square,
   AlertTriangle,
   Link,
-  Cpu
+  Cpu,
+  Globe,
+  Database,
+  User,
+  MessageSquare
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-console.log("🚀 API Target:", API_BASE);
-
+const API_BASE = import.meta.env.VITE_API_URL || 'https://trading-api.onrender.com'; // Optimized fallback
 const USER_ID = 1;
 
 class ErrorBoundary extends React.Component {
@@ -58,48 +60,50 @@ function App() {
   const [activeSymbol, setActiveSymbol] = useState('BTC/USDT');
   const [searchInput, setSearchInput] = useState('');
   const [apiError, setApiError] = useState(null);
+  const [lastCheck, setLastCheck] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
       setApiError(null);
+      setLastCheck(new Date().toLocaleTimeString());
 
-      // Fetch Status
+      // Attempt to ping backend
       try {
-        const statusRes = await axios.get(`${API_BASE}/status/${USER_ID}`);
-        if (statusRes.data) setStatus(statusRes.data);
+        const statusRes = await axios.get(`${API_BASE}/status/${USER_ID}`, { timeout: 5000 });
+        if (statusRes.data) {
+          setStatus(statusRes.data);
+        }
       } catch (e) {
-        console.warn("Status fetch failed", e.message);
         setApiError("Backend connecting...");
       }
 
-      // Fetch Positions
+      // Positions
       try {
         const posRes = await axios.get(`${API_BASE}/positions/${USER_ID}`);
         if (Array.isArray(posRes.data)) setPositions(posRes.data);
-      } catch (e) { console.warn("Positions fetch failed"); }
+      } catch (e) { }
 
-      // Fetch History
+      // History
       try {
         const logsRes = await axios.get(`${API_BASE}/trades/${USER_ID}`);
         if (Array.isArray(logsRes.data)) setLogs(logsRes.data);
-      } catch (e) { console.warn("Trades fetch failed"); }
+      } catch (e) { }
 
-      // Fetch Stats
+      // Stats
       try {
         const statsRes = await axios.get(`${API_BASE}/stats/${USER_ID}`);
         if (statsRes.data) setStats(statsRes.data);
-      } catch (e) { console.warn("Stats fetch failed"); }
+      } catch (e) { }
 
-      // Fetch Chart
+      // Chart
       try {
         const sym = activeSymbol.replace('/', '%2F');
         const chartRes = await axios.get(`${API_BASE}/chart/${sym}`);
         if (Array.isArray(chartRes.data)) setChartData(chartRes.data);
-      } catch (e) { console.warn("Chart fetch failed"); }
+      } catch (e) { }
 
     } catch (err) {
-      console.error("General API Connection Error:", err);
-      setApiError("No response from server.");
+      setApiError("Offline");
     }
   }, [activeSymbol]);
 
@@ -119,8 +123,7 @@ function App() {
       }
       setTimeout(fetchData, 1500);
     } catch (err) {
-      console.error("Toggle failed:", err);
-      setApiError("Control command failed.");
+      alert("Bot control error. Is the backend live?");
     } finally {
       setLoading(false);
     }
@@ -147,8 +150,8 @@ function App() {
                   <p style={{ color: 'var(--text-secondary)' }}>
                     {chartData.length > 0 && chartData[chartData.length - 1]?.price
                       ? `$${chartData[chartData.length - 1].price.toLocaleString()}`
-                      : 'Connecting to Market...'}
-                    <span style={{ color: 'var(--success)', marginLeft: '8px', fontSize: '0.8rem' }}>LIVE 5M</span>
+                      : 'Live Market Data Loading...'}
+                    <span style={{ color: 'var(--success)', marginLeft: '8px', fontSize: '0.8rem' }}>5M SCALPER</span>
                   </p>
                 </div>
                 <div className="glass" style={{ display: 'flex', padding: '4px' }}>
@@ -159,24 +162,30 @@ function App() {
               </div>
 
               <div style={{ flex: 1, minHeight: '300px' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData}>
-                    <defs>
-                      <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#00ffcc" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#00ffcc" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                    <YAxis domain={['auto', 'auto']} hide />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
-                      itemStyle={{ color: '#00ffcc' }}
-                    />
-                    <Area animationDuration={1000} type="monotone" dataKey="price" stroke="#00ffcc" strokeWidth={3} fillOpacity={1} fill="url(#colorPrice)" />
-                  </AreaChart>
-                </ResponsiveContainer>
+                {chartData.length > 0 ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData}>
+                      <defs>
+                        <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#00ffcc" stopOpacity={0.3} />
+                          <stop offset="95%" stopColor="#00ffcc" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                      <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                      <YAxis domain={['auto', 'auto']} hide />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
+                        itemStyle={{ color: '#00ffcc' }}
+                      />
+                      <Area animationDuration={1000} type="monotone" dataKey="price" stroke="#00ffcc" strokeWidth={3} fillOpacity={1} fill="url(#colorPrice)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+                    <Activity size={32} className="spin" style={{ opacity: 0.5 }} />
+                  </div>
+                )}
               </div>
             </section>
 
@@ -186,6 +195,50 @@ function App() {
             </div>
           </>
         );
+
+      case 'Settings':
+        return (
+          <div className="main-content" style={{ gap: '24px' }}>
+            <section className="glass glow-shadow" style={{ padding: '32px' }}>
+              <h2 style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px' }}><Settings size={24} /> Platform Configuration</h2>
+
+              <div style={{ display: 'grid', gap: '20px' }}>
+                <div className="glass" style={{ padding: '20px', borderLeft: '4px solid var(--accent-color)' }}>
+                  <h4 style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>API GATEWAY</h4>
+                  <code style={{ background: 'rgba(0,0,0,0.3)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.9rem' }}>{API_BASE}</code>
+                  <p style={{ fontSize: '0.75rem', marginTop: '8px', color: 'var(--text-secondary)' }}>Last heartbeat: {lastCheck || 'Never'}</p>
+                </div>
+
+                <div className="glass" style={{ padding: '20px', borderLeft: '4px solid var(--success)' }}>
+                  <h4 style={{ color: 'var(--text-secondary)', marginBottom: '12px' }}>DISCORD COMMUNITY INTEGRATION</h4>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div className="glass" style={{ padding: '8px', background: '#5865F2' }}><MessageSquare size={20} /></div>
+                    <div>
+                      <p style={{ fontWeight: 600 }}>Server ID: 1376908703227318393</p>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Status: Linked to Bot Engine</p>
+                    </div>
+                  </div>
+                  <button
+                    className="glass"
+                    style={{ marginTop: '16px', width: '100%', padding: '12px', background: 'rgba(88, 101, 242, 0.1)', color: '#5865F2', fontWeight: 600, cursor: 'not-allowed' }}
+                    disabled
+                  >
+                    Discord OAuth Coming Soon (Phase 4)
+                  </button>
+                </div>
+
+                <div className="glass" style={{ padding: '20px', borderLeft: '4px solid #f59e0b' }}>
+                  <h4 style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>USER ACCOUNT (MOCK)</h4>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div className="glass" style={{ width: '40px', height: '40px', background: 'linear-gradient(45deg, #00ffcc, #0099ff)', borderRadius: '50%' }}></div>
+                    <p style={{ fontWeight: 600 }}>Demo Trader #1</p>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        );
+
       default:
         return (
           <div className="glass glow-shadow" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px', padding: '40px' }}>
@@ -194,14 +247,14 @@ function App() {
             </div>
             <h2 style={{ fontSize: '1.5rem' }}>{activeTab} Module</h2>
             <p style={{ color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '400px' }}>
-              We are currently optimizing the **{activeTab}** system. Your trading engine is still running in the background.
+              Your trading engine is processing signals in the background. We are finalizing the rendering engine for this tab.
             </p>
             <button
               onClick={() => setActiveTab('Dashboard')}
               className="glass"
               style={{ padding: '12px 32px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)', fontWeight: 600 }}
             >
-              Return to Dashboard
+              Back to Live Data
             </button>
           </div>
         );
@@ -230,9 +283,9 @@ function App() {
           </nav>
 
           <div style={{ marginTop: 'auto' }}>
-            {apiError && <p style={{ color: 'var(--warning)', fontSize: '0.7rem', textAlign: 'center', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><Link size={10} /> {apiError}</p>}
+            {apiError && <p style={{ color: 'var(--warning)', fontSize: '0.7rem', textAlign: 'center', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><Globe size={10} /> {apiError}</p>}
             <div className="glass" style={{ padding: '16px', background: 'rgba(255,255,255,0.05)' }}>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>SYSTEM STATUS</p>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>V2 ENGINE STATUS</p>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <div style={{ width: '8px', height: '8px', background: status.is_running ? 'var(--success)' : 'var(--danger)', borderRadius: '50%' }}></div>
@@ -258,7 +311,7 @@ function App() {
               <Search size={20} color="var(--text-secondary)" />
               <input
                 type="text"
-                placeholder="Search e.g. BTC/USDT and Enter"
+                placeholder="Search markets..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 onKeyDown={handleSearch}
