@@ -14,12 +14,35 @@ import {
   Bell,
   RefreshCw,
   Play,
-  Square
+  Square,
+  AlertTriangle
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const USER_ID = 1; // Default for now
+const USER_ID = 1;
+
+// Error Boundary Wrapper
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(error) { return { hasError: true }; }
+  componentDidCatch(error, errorInfo) { console.error("UI Crash:", error, errorInfo); }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#ef4444', gap: '16px', background: '#05070a' }}>
+          <AlertTriangle size={48} />
+          <h2>Dashboard Crashed</h2>
+          <button onClick={() => window.location.reload()} style={{ padding: '8px 24px', background: '#00ffcc', borderRadius: '8px', color: '#000' }}>Reload Platform</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function App() {
   const [activeTab, setActiveTab] = useState('Dashboard');
@@ -31,30 +54,45 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [activeSymbol, setActiveSymbol] = useState('BTC/USDT');
   const [searchInput, setSearchInput] = useState('');
+  const [apiError, setApiError] = useState(null);
 
   const fetchData = useCallback(async () => {
     try {
-      // 1. Status
-      const statusRes = await axios.get(`${API_BASE}/status/${USER_ID}`);
-      setStatus(statusRes.data);
+      setApiError(null);
 
-      // 2. Positions
-      const posRes = await axios.get(`${API_BASE}/positions/${USER_ID}`);
-      setPositions(posRes.data);
+      // Fetch Status
+      try {
+        const statusRes = await axios.get(`${API_BASE}/status/${USER_ID}`);
+        if (statusRes.data) setStatus(statusRes.data);
+      } catch (e) { console.warn("Status fetch failed"); }
 
-      // 3. Trade Logs
-      const logsRes = await axios.get(`${API_BASE}/trades/${USER_ID}`);
-      setLogs(logsRes.data);
+      // Fetch Positions
+      try {
+        const posRes = await axios.get(`${API_BASE}/positions/${USER_ID}`);
+        if (Array.isArray(posRes.data)) setPositions(posRes.data);
+      } catch (e) { console.warn("Positions fetch failed"); }
 
-      // 4. Stats
-      const statsRes = await axios.get(`${API_BASE}/stats/${USER_ID}`);
-      setStats(statsRes.data);
+      // Fetch History
+      try {
+        const logsRes = await axios.get(`${API_BASE}/trades/${USER_ID}`);
+        if (Array.isArray(logsRes.data)) setLogs(logsRes.data);
+      } catch (e) { console.warn("Trades fetch failed"); }
 
-      // 5. Chart Data
-      const chartRes = await axios.get(`${API_BASE}/chart/${activeSymbol.replace('/', '%2F')}`);
-      setChartData(chartRes.data);
+      // Fetch Stats
+      try {
+        const statsRes = await axios.get(`${API_BASE}/stats/${USER_ID}`);
+        if (statsRes.data) setStats(statsRes.data);
+      } catch (e) { console.warn("Stats fetch failed"); }
+
+      // Fetch Chart
+      try {
+        const chartRes = await axios.get(`${API_BASE}/chart/${activeSymbol.replace('/', '%2F')}`);
+        if (Array.isArray(chartRes.data)) setChartData(chartRes.data);
+      } catch (e) { console.warn("Chart fetch failed"); }
+
     } catch (err) {
-      console.error("API Error:", err);
+      console.error("General API Connection Error:", err);
+      setApiError("Backend connection unstable. Retrying...");
     }
   }, [activeSymbol]);
 
@@ -72,9 +110,9 @@ function App() {
       } else {
         await axios.post(`${API_BASE}/users/start/${USER_ID}`);
       }
-      await fetchData();
+      setTimeout(fetchData, 1000); // Small delay to let engine spin up
     } catch (err) {
-      alert("Bot control error. Please check if backend is live.");
+      alert("Bot control error. Check backend connection.");
     } finally {
       setLoading(false);
     }
@@ -90,141 +128,144 @@ function App() {
   };
 
   return (
-    <div className="dashboard-layout">
-      {/* Sidebar */}
-      <aside className="glass glow-shadow sidebar">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div className="glass" style={{ width: '40px', height: '40px', background: 'var(--accent-color)', borderRadius: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-            <Zap size={24} color="#05070a" fill="#05070a" />
-          </div>
-          <h2 style={{ fontSize: '1.25rem' }}>ANTIGRAVITY <span style={{ fontSize: '0.6rem', color: 'var(--accent-color)', verticalAlign: 'top' }}>V2.0 LIVE</span></h2>
-        </div>
-
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />
-          <NavItem icon={<TrendingUp size={20} />} label="Live Markets" active={activeTab === 'Live Markets'} onClick={() => setActiveTab('Live Markets')} />
-          <NavItem icon={<Wallet size={20} />} label="Portfolio" active={activeTab === 'Portfolio'} onClick={() => setActiveTab('Portfolio')} />
-          <NavItem icon={<History size={20} />} label="Trade History" active={activeTab === 'Trade History'} onClick={() => setActiveTab('Trade History')} />
-          <NavItem icon={<ShieldCheck size={20} />} label="Safety Audit" active={activeTab === 'Safety Audit'} onClick={() => setActiveTab('Safety Audit')} />
-          <NavItem icon={<Settings size={20} />} label="Settings" active={activeTab === 'Settings'} onClick={() => setActiveTab('Settings')} />
-        </nav>
-
-        <div style={{ marginTop: 'auto' }}>
-          <div className="glass" style={{ padding: '16px', background: 'rgba(255,255,255,0.05)' }}>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>SYSTEM STATUS</p>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <div style={{ width: '8px', height: '8px', background: status.is_running ? 'var(--success)' : 'var(--danger)', borderRadius: '50%' }}></div>
-                <span style={{ fontSize: '0.875rem' }}>{status.is_running ? 'Bot Active' : 'Bot Idle'}</span>
-              </div>
-              <button
-                onClick={toggleBot}
-                disabled={loading}
-                className="glass"
-                style={{ padding: '6px', borderRadius: '8px', cursor: 'pointer', background: status.is_running ? 'rgba(255, 71, 87, 0.1)' : 'rgba(0, 255, 204, 0.1)' }}
-              >
-                {status.is_running ? <Square size={16} color="var(--danger)" /> : <Play size={16} color="var(--accent-color)" />}
-              </button>
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="main-content">
-        <header className="glass glow-shadow" style={{ padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <ErrorBoundary>
+      <div className="dashboard-layout">
+        {/* Sidebar */}
+        <aside className="glass glow-shadow sidebar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <Search size={20} color="var(--text-secondary)" />
-            <input
-              type="text"
-              placeholder="Search e.g. BTC/USDT and press Enter"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={handleSearch}
-              style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', outline: 'none', fontSize: '1rem', width: '300px' }}
-            />
-          </div>
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-            <div className="glass" style={{ padding: '8px', borderRadius: '12px', cursor: 'pointer' }} onClick={fetchData}><RefreshCw size={20} className={loading ? 'spin' : ''} /></div>
-            <div className="glass" style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'linear-gradient(45deg, #00ffcc, #0099ff)' }}></div>
-          </div>
-        </header>
-
-        <section className="glass glow-shadow chart-container">
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
-            <div>
-              <h1 style={{ fontSize: '2rem' }}>{activeSymbol}</h1>
-              <p style={{ color: 'var(--text-secondary)' }}>
-                {chartData.length > 0 ? `$${chartData[chartData.length - 1].price.toLocaleString()}` : 'Loading...'}
-                <span style={{ color: 'var(--success)', marginLeft: '8px', fontSize: '0.8rem' }}>LIVE 5M</span>
-              </p>
+            <div className="glass" style={{ width: '40px', height: '40px', background: 'var(--accent-color)', borderRadius: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+              <Zap size={24} color="#05070a" fill="#05070a" />
             </div>
-            <div className="glass" style={{ display: 'flex', padding: '4px' }}>
-              <button className="glass" style={{ padding: '6px 16px', background: 'rgba(255,255,255,0.1)' }}>5M</button>
-              <button style={{ padding: '6px 16px', color: 'var(--text-secondary)' }}>1H</button>
-              <button style={{ padding: '6px 16px', color: 'var(--text-secondary)' }}>1D</button>
+            <h2 style={{ fontSize: '1.25rem' }}>ANTIGRAVITY <span style={{ fontSize: '0.6rem', color: 'var(--accent-color)', verticalAlign: 'top' }}>V2.0 LIVE</span></h2>
+          </div>
+
+          <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />
+            <NavItem icon={<TrendingUp size={20} />} label="Live Markets" active={activeTab === 'Live Markets'} onClick={() => setActiveTab('Live Markets')} />
+            <NavItem icon={<Wallet size={20} />} label="Portfolio" active={activeTab === 'Portfolio'} onClick={() => setActiveTab('Portfolio')} />
+            <NavItem icon={<History size={20} />} label="Trade History" active={activeTab === 'Trade History'} onClick={() => setActiveTab('Trade History')} />
+            <NavItem icon={<ShieldCheck size={20} />} label="Safety Audit" active={activeTab === 'Safety Audit'} onClick={() => setActiveTab('Safety Audit')} />
+            <NavItem icon={<Settings size={20} />} label="Settings" active={activeTab === 'Settings'} onClick={() => setActiveTab('Settings')} />
+          </nav>
+
+          <div style={{ marginTop: 'auto' }}>
+            {apiError && <p style={{ color: 'var(--danger)', fontSize: '0.7rem', textAlign: 'center', marginBottom: '8px' }}>{apiError}</p>}
+            <div className="glass" style={{ padding: '16px', background: 'rgba(255,255,255,0.05)' }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>SYSTEM STATUS</p>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <div style={{ width: '8px', height: '8px', background: status.is_running ? 'var(--success)' : 'var(--danger)', borderRadius: '50%' }}></div>
+                  <span style={{ fontSize: '0.875rem' }}>{status.is_running ? 'Bot Active' : 'Bot Idle'}</span>
+                </div>
+                <button
+                  onClick={toggleBot}
+                  disabled={loading}
+                  className="glass"
+                  style={{ padding: '6px', borderRadius: '8px', cursor: 'pointer', background: status.is_running ? 'rgba(255, 71, 87, 0.1)' : 'rgba(0, 255, 204, 0.1)' }}
+                >
+                  {status.is_running ? <Square size={16} color="var(--danger)" /> : <Play size={16} color="var(--accent-color)" />}
+                </button>
+              </div>
             </div>
           </div>
+        </aside>
 
-          <div style={{ height: '300px' }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#00ffcc" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#00ffcc" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                <YAxis domain={['auto', 'auto']} hide />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
-                  itemStyle={{ color: '#00ffcc' }}
-                />
-                <Area animationDuration={1000} type="monotone" dataKey="price" stroke="#00ffcc" strokeWidth={3} fillOpacity={1} fill="url(#colorPrice)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
+        {/* Main Content */}
+        <main className="main-content">
+          <header className="glass glow-shadow" style={{ padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Search size={20} color="var(--text-secondary)" />
+              <input
+                type="text"
+                placeholder="Search e.g. BTC/USDT and Enter"
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onKeyDown={handleSearch}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', outline: 'none', fontSize: '1rem', width: '300px' }}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+              <div className="glass" style={{ padding: '8px', borderRadius: '12px', cursor: 'pointer' }} onClick={fetchData}><RefreshCw size={20} className={loading ? 'spin' : ''} /></div>
+              <div className="glass" style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'linear-gradient(45deg, #00ffcc, #0099ff)' }}></div>
+            </div>
+          </header>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-          <StatCard label="Total Profit" value={stats.total_profit} sub="Combined performance" color="var(--success)" />
-          <StatCard label="Active Strategy" value={stats.active_bot_names} sub={`${stats.active_bots_count} engine(s) monitoring`} color="var(--accent-color)" />
-        </div>
-      </main>
+          <section className="glass glow-shadow chart-container" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
+              <div>
+                <h1 style={{ fontSize: '2rem' }}>{activeSymbol}</h1>
+                <p style={{ color: 'var(--text-secondary)' }}>
+                  {chartData.length > 0 && chartData[chartData.length - 1]?.price ? `$${chartData[chartData.length - 1].price.toLocaleString()}` : 'Loading...'}
+                  <span style={{ color: 'var(--success)', marginLeft: '8px', fontSize: '0.8rem' }}>LIVE 5M</span>
+                </p>
+              </div>
+              <div className="glass" style={{ display: 'flex', padding: '4px' }}>
+                <button className="glass" style={{ padding: '6px 16px', background: 'rgba(255,255,255,0.1)' }}>5M</button>
+                <button style={{ padding: '6px 16px', color: 'var(--text-secondary)' }}>1H</button>
+                <button style={{ padding: '6px 16px', color: 'var(--text-secondary)' }}>1D</button>
+              </div>
+            </div>
 
-      {/* Right Panel */}
-      <aside className="right-panel">
-        <section className="glass glow-shadow" style={{ padding: '24px', flex: 1, minHeight: '300px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h3>Active Positions</h3>
-            {positions.length > 0 && <span className="badge badge-success">{positions.length}</span>}
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {positions.length > 0 ? (
-              positions.map((pos, i) => <PositionItem key={i} {...pos} />)
-            ) : (
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>No active trades detected.</p>
-            )}
-          </div>
-        </section>
+            <div style={{ flex: 1, minHeight: '300px' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#00ffcc" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#00ffcc" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                  <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                  <YAxis domain={['auto', 'auto']} hide />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
+                    itemStyle={{ color: '#00ffcc' }}
+                  />
+                  <Area animationDuration={1000} type="monotone" dataKey="price" stroke="#00ffcc" strokeWidth={3} fillOpacity={1} fill="url(#colorPrice)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </section>
 
-        <section className="glass glow-shadow" style={{ padding: '24px', flex: 1, minHeight: '300px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h3>Recent Activity</h3>
-            <History size={20} color="var(--text-secondary)" />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+            <StatCard label="Total Profit" value={stats.total_profit || '$0.00'} sub="Combined performance" color="var(--success)" />
+            <StatCard label="Active Strategy" value={stats.active_bot_names || 'None'} sub={`${stats.active_bots_count || 0} engine(s) monitoring`} color="var(--accent-color)" />
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            {logs.length > 0 ? (
-              logs.map((log, i) => <LogItem key={i} {...log} />)
-            ) : (
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>History is empty.</p>
-            )}
-          </div>
-        </section>
-      </aside>
-    </div>
+        </main>
+
+        {/* Right Panel */}
+        <aside className="right-panel">
+          <section className="glass glow-shadow" style={{ padding: '24px', flex: 1, minHeight: '300px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3>Active Positions</h3>
+              {positions.length > 0 && <span className="badge badge-success">{positions.length}</span>}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {Array.isArray(positions) && positions.length > 0 ? (
+                positions.map((pos, i) => <PositionItem key={i} {...pos} />)
+              ) : (
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>No active trades detected.</p>
+              )}
+            </div>
+          </section>
+
+          <section className="glass glow-shadow" style={{ padding: '24px', flex: 1, minHeight: '300px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3>Recent Activity</h3>
+              <History size={20} color="var(--text-secondary)" />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {Array.isArray(logs) && logs.length > 0 ? (
+                logs.map((log, i) => <LogItem key={i} {...log} />)
+              ) : (
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>History is empty.</p>
+              )}
+            </div>
+          </section>
+        </aside>
+      </div>
+    </ErrorBoundary>
   );
 }
 
@@ -258,16 +299,16 @@ function StatCard({ label, value, sub, color }) {
 }
 
 function PositionItem({ symbol, entry, current, profit }) {
-  const isProfit = parseFloat(profit) >= 0;
+  const isProfit = profit && typeof profit === 'string' && profit.startsWith('+');
   return (
     <div className="glass" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-        <span style={{ fontWeight: 600 }}>{symbol}</span>
-        <span className={`badge ${isProfit ? 'badge-success' : 'badge-danger'}`}>{profit}</span>
+        <span style={{ fontWeight: 600 }}>{symbol || 'Unknown'}</span>
+        <span className={`badge ${isProfit ? 'badge-success' : 'badge-danger'}`}>{profit || '0%'}</span>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-        <span>Entry: ${entry}</span>
-        <span>Now: ${current}</span>
+        <span>Entry: ${entry || '0.00'}</span>
+        <span>Now: ${current || '0.00'}</span>
       </div>
     </div>
   );
