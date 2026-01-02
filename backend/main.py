@@ -79,16 +79,31 @@ async def get_market_data(user_id: int):
     watchlist = active_engines[user_id].watchlist if is_running else ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT"]
     
     market_data = []
-    for symbol in watchlist:
-        try:
-            ticker = crypto_collector.exchange.fetch_ticker(symbol)
-            market_data.append({
-                "symbol": symbol,
-                "price": ticker['last'],
-                "change": ticker.get('percentage', 0),
-                "volume": ticker.get('quoteVolume', 0)
-            })
-        except: continue
+    try:
+        # Batch fetch all tickers at once to save time and avoid unlinking
+        tickers = crypto_collector.exchange.fetch_tickers(watchlist)
+        for symbol in watchlist:
+            if symbol in tickers:
+                t = tickers[symbol]
+                market_data.append({
+                    "symbol": symbol,
+                    "price": t['last'],
+                    "change": t.get('percentage', 0),
+                    "volume": t.get('quoteVolume', 0)
+                })
+    except Exception as e:
+        print(f"⚠️ Market data batch fetch error: {e}")
+        # Fallback to single fetches if batch fails
+        for symbol in watchlist:
+            try:
+                ticker = crypto_collector.exchange.fetch_ticker(symbol)
+                market_data.append({
+                    "symbol": symbol,
+                    "price": ticker['last'],
+                    "change": ticker.get('percentage', 0),
+                    "volume": ticker.get('quoteVolume', 0)
+                })
+            except: continue
     return market_data
 
 @app.get("/portfolio/{user_id}")
@@ -101,26 +116,35 @@ async def get_portfolio(user_id: int):
         if total_usdt == 0: total_usdt = balances.get('ZUSD', {}).get('total', 0)
         if total_usdt == 0: total_usdt = balances.get('USD', {}).get('total', 0)
         
-        assets = []
+        # Prepare symbols for batch fetch
+        symbol_map = {}
         for currency, data in balances.get('total', {}).items():
             if data > 0 and currency not in ['USDT', 'USD', 'ZUSD', 'EUR', 'ZEUR']:
-                try:
-                    # Kraken often uses X for crypto assets (e.g. XXBT)
-                    # CCXT handles this but fetch_ticker might need the clean symbol
-                    clean_currency = currency[1:] if currency.startswith('X') and len(currency) > 3 else currency
-                    # Special cases
-                    if clean_currency == 'XBT': clean_currency = 'BTC'
-                    
-                    symbol = f"{clean_currency}/USDT"
-                    ticker = crypto_collector.exchange.fetch_ticker(symbol)
-                    price = ticker['last']
-                    assets.append({
-                        "asset": clean_currency,
-                        "amount": data,
-                        "price": price,
-                        "value_usdt": data * price
-                    })
-                except: continue
+                clean_currency = currency[1:] if currency.startswith('X') and len(currency) > 3 else currency
+                if clean_currency == 'XBT': clean_currency = 'BTC'
+                symbol = f"{clean_currency}/USDT"
+                symbol_map[symbol] = (clean_currency, data)
+
+        if symbol_map:
+            try:
+                tickers = crypto_collector.exchange.fetch_tickers(list(symbol_map.keys()))
+                for symbol, (currency, amount) in symbol_map.items():
+                    if symbol in tickers:
+                        price = tickers[symbol]['last']
+                        assets.append({
+                            "asset": currency,
+                            "amount": amount,
+                            "price": price,
+                            "value_usdt": amount * price
+                        })
+            except Exception as e:
+                print(f"⚠️ Portfolio batch fetch failed: {e}")
+                # Fallback to single fetches if needed
+                for symbol, (currency, amount) in symbol_map.items():
+                    try:
+                        price = crypto_collector.exchange.fetch_ticker(symbol)['last']
+                        assets.append({"asset": currency, "amount": amount, "price": price, "value_usdt": amount * price})
+                    except: continue
                     
         return {
             "usdt_balance": total_usdt,
@@ -135,16 +159,15 @@ async def get_positions(user_id: int):
     """Retrieve active trading positions."""
     is_running = user_id in active_engines and active_engines[user_id].is_running
     
-    # If bot is running, get tracked positions. Otherwise, return raw Kraken assets.
+    pos_data = []
+    # 1. Fetch from running engine memory
     if is_running:
-        pos_data = []
         for symbol, data in active_engines[user_id].trader.active_positions.items():
             try:
                 ticker = crypto_collector.exchange.fetch_ticker(symbol)
                 current_price = ticker['last']
                 entry_price = data['entry_price']
                 profit_pct = ((current_price - entry_price) / entry_price) * 100
-                
                 pos_data.append({
                     "symbol": symbol,
                     "entry": round(entry_price, 8),
@@ -153,17 +176,40 @@ async def get_positions(user_id: int):
                     "side": "BUY"
                 })
             except: continue
+    
+    # 2. Add database-tracked positions (if not already added)
+    db = SessionLocal()
+    db_positions = db.query(models.Position).filter(models.Position.user_id == user_id).all()
+    db.close()
+    
+    tracked_symbols = {p['symbol'] for p in pos_data}
+    for db_pos in db_positions:
+        if db_pos.symbol not in tracked_symbols:
+            try:
+                ticker = crypto_collector.exchange.fetch_ticker(db_pos.symbol)
+                current_price = ticker['last']
+                profit_pct = ((current_price - db_pos.entry_price) / db_pos.entry_price) * 100
+                pos_data.append({
+                    "symbol": db_pos.symbol,
+                    "entry": round(db_pos.entry_price, 8),
+                    "current": round(current_price, 8),
+                    "profit": f"{'+' if profit_pct >= 0 else ''}{round(profit_pct, 2)}%",
+                    "side": "BUY"
+                })
+            except: continue
+
+    if pos_data:
         return pos_data
     else:
-        # Return summary of assets from Portfolio logic
+        # Fallback: return raw holdings if no tracked positions
         portfolio = await get_portfolio(user_id)
         return [{
             "symbol": f"{a['asset']}/USDT",
-            "entry": 0, # Entry unknown when idle
+            "entry": a['price'], # Approximation
             "current": a['price'],
-            "profit": "---",
+            "profit": "0.00%",
             "side": "HOLD"
-        } for a in portfolio['assets'][:5]] # Show top 5
+        } for a in portfolio['assets'][:5]]
 
 @app.get("/trades/{user_id}")
 async def get_trades(user_id: int, db: Session = Depends(get_db)):

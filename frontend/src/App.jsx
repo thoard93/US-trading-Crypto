@@ -89,6 +89,7 @@ function App() {
   const [apiError, setApiError] = useState(null);
   const [lastHeartbeat, setLastHeartbeat] = useState(null);
   const [connectionActive, setConnectionActive] = useState(false);
+  const [failCount, setFailCount] = useState(0);
 
   const saveApiOverride = () => {
     let url = manualUrl.trim().replace(/\/$/, '');
@@ -107,6 +108,7 @@ function App() {
         setStatus(statusRes.data);
         setLastHeartbeat(new Date().toLocaleTimeString());
         setConnectionActive(true);
+        setFailCount(0);
         setApiError(null);
       }
 
@@ -127,8 +129,14 @@ function App() {
       if (Array.isArray(marketRes.data)) setMarketData(marketRes.data);
 
     } catch (err) {
-      setConnectionActive(false);
-      setApiError("Bridge restricted. Verify URL in Settings.");
+      setFailCount(prev => {
+        const newCount = prev + 1;
+        if (newCount >= 2) {
+          setConnectionActive(false);
+          setApiError("Bridge restricted. Verify URL in Settings.");
+        }
+        return newCount;
+      });
     }
   }, [activeSymbol, apiBase, chartTimeframe]);
 
