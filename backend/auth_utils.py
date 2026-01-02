@@ -15,14 +15,14 @@ DISCORD_USER_URL = f"{DISCORD_API_BASE}/users/@me"
 
 def get_discord_auth_url():
     """Generate the Discord authorization URL."""
+    import urllib.parse
     params = {
         "client_id": DISCORD_CLIENT_ID,
         "redirect_uri": DISCORD_REDIRECT_URI,
         "response_type": "code",
         "scope": "identify email"
     }
-    query_string = "&".join([f"{k}={v}" for k, v in params.items()])
-    return f"{DISCORD_AUTH_URL}?{query_string}"
+    return f"{DISCORD_AUTH_URL}?{urllib.parse.urlencode(params)}"
 
 def get_discord_token(code):
     """Exchangeauth code for access token."""
