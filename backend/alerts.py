@@ -11,6 +11,7 @@ from analysis.safety_checker import SafetyChecker
 class AlertSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        from collectors.crypto_collector import CryptoCollector
         self.crypto = CryptoCollector()
         self.stocks = StockCollector()
         self.analyzer = TechnicalAnalysis()

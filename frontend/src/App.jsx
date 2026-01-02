@@ -48,7 +48,7 @@ const getInitialApiBase = () => {
   return base.replace(/\/$/, '') || 'https://trading-api.onrender.com';
 };
 
-const USER_ID = 1;
+// No global USER_ID anymore, we use user?.id from state
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -149,8 +149,9 @@ function App() {
   };
 
   const fetchData = useCallback(async () => {
+    if (!user) return;
     try {
-      const statusRes = await axios.get(`${apiBase}/status/${USER_ID}`, { timeout: 5000 });
+      const statusRes = await axios.get(`${apiBase}/status/${user.id}`, { timeout: 5000 });
       if (statusRes.data) {
         setStatus(statusRes.data);
         setLastHeartbeat(new Date().toLocaleTimeString());
@@ -160,12 +161,12 @@ function App() {
       }
 
       const [posRes, portfolioRes, logsRes, statsRes, chartRes, marketRes] = await Promise.all([
-        axios.get(`${apiBase}/positions/${USER_ID}`).catch(() => ({ data: [] })),
-        axios.get(`${apiBase}/portfolio/${USER_ID}`).catch(() => ({ data: { usdt_balance: 0, assets: [] } })),
-        axios.get(`${apiBase}/trades/${USER_ID}`).catch(() => ({ data: [] })),
-        axios.get(`${apiBase}/stats/${USER_ID}`).catch(() => ({ data: {} })),
+        axios.get(`${apiBase}/positions/${user.id}`).catch(() => ({ data: [] })),
+        axios.get(`${apiBase}/portfolio/${user.id}`).catch(() => ({ data: { usdt_balance: 0, assets: [] } })),
+        axios.get(`${apiBase}/trades/${user.id}`).catch(() => ({ data: [] })),
+        axios.get(`${apiBase}/stats/${user.id}`).catch(() => ({ data: {} })),
         axios.get(`${apiBase}/chart/${activeSymbol.replace('/', '%2F')}?timeframe=${chartTimeframe}`).catch(() => ({ data: [] })),
-        axios.get(`${apiBase}/market_data/${USER_ID}`).catch(() => ({ data: [] }))
+        axios.get(`${apiBase}/market_data/${user.id}`).catch(() => ({ data: [] }))
       ]);
 
       if (Array.isArray(posRes.data)) setPositions(posRes.data);
@@ -185,7 +186,7 @@ function App() {
         return newCount;
       });
     }
-  }, [activeSymbol, apiBase, chartTimeframe]);
+  }, [activeSymbol, apiBase, chartTimeframe, user]);
 
   useEffect(() => {
     fetchData();
@@ -194,12 +195,13 @@ function App() {
   }, [fetchData, chartTimeframe]);
 
   const toggleBot = async () => {
+    if (!user) return alert("Login required");
     setLoading(true);
     try {
       if (status.is_running) {
-        await axios.post(`${apiBase}/users/stop/${USER_ID}`);
+        await axios.post(`${apiBase}/users/stop/${user.id}`);
       } else {
-        await axios.post(`${apiBase}/users/start/${USER_ID}`);
+        await axios.post(`${apiBase}/users/start/${user.id}`);
       }
       setTimeout(fetchData, 1500);
     } catch (err) {
@@ -564,6 +566,39 @@ function App() {
     }
   };
 
+  if (!user) {
+    return (
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#05070a', color: '#fff', gap: '32px', textAlign: 'center' }}>
+        <div style={{ padding: '32px', borderRadius: '50%', background: 'rgba(0, 255, 204, 0.05)', boxShadow: '0 0 50px rgba(0, 255, 204, 0.1)' }}>
+          <Zap size={64} color="var(--accent-color)" />
+        </div>
+        <div>
+          <h1 style={{ fontSize: '3rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '8px' }}>ANTIGRAVITY</h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem', maxWidth: '400px' }}>
+            Professional-grade crypto scalping for individual traders.
+            Secure yours now.
+          </p>
+        </div>
+        <button onClick={loginWithDiscord} className="glass glow-shadow" style={{
+          padding: '16px 40px',
+          background: '#5865f2',
+          color: '#fff',
+          fontSize: '1.1rem',
+          fontWeight: 600,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          borderRadius: '16px',
+          border: 'none',
+          cursor: 'pointer'
+        }}>
+          <MessageSquare size={24} /> Login with Discord
+        </button>
+        <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.3)' }}>Protected by AES-256 Multi-tenant Encryption</p>
+      </div>
+    );
+  }
+
   return (
     <ErrorBoundary>
       <div className="dashboard-layout">
@@ -580,7 +615,7 @@ function App() {
             <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />
             <NavItem icon={<TrendingUp size={20} />} label="Live Markets" active={activeTab === 'Live Markets'} onClick={() => setActiveTab('Live Markets')} />
             <NavItem icon={<Wallet size={20} />} label="Portfolio" active={activeTab === 'Portfolio'} onClick={() => setActiveTab('Portfolio')} />
-            <NavItem icon={<History size={20} />} label="Trade History" active={activeTab === 'Trade History'} onClick={() => setActiveTab('Trade History')} />
+            <NavItem icon={<History size={20} />} label="Trade History" active={activeTab === 'History'} onClick={() => setActiveTab('History')} />
             <NavItem icon={<ShieldCheck size={20} />} label="Safety Audit" active={activeTab === 'Safety Audit'} onClick={() => setActiveTab('Safety Audit')} />
             <NavItem icon={<Settings size={20} />} label="Settings" active={activeTab === 'Settings'} onClick={() => setActiveTab('Settings')} />
           </nav>
@@ -646,16 +681,23 @@ function App() {
             </div>
           </section>
 
-          <section className="glass glow-shadow" style={{ padding: '24px', flex: 1, minHeight: '320px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3>Recent Activity</h3>
-              <History size={20} color="var(--text-secondary)" />
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {connectionActive && Array.isArray(logs) && logs.length > 0 ? (
-                logs.map((log, i) => <LogItem key={i} {...log} />)
+          <section className="glass glow-shadow" style={{ padding: '24px', flex: 1, marginTop: '24px' }}>
+            <h3 style={{ marginBottom: '20px' }}>Market Radar</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {marketData.length > 0 ? (
+                marketData.slice(0, 5).map((m, i) => (
+                  <div key={i} className="glass" style={{ padding: '12px', display: 'flex', justifyContent: 'space-between', background: 'rgba(255,255,255,0.02)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div style={{ width: '4px', height: '4px', background: m.change > 0 ? 'var(--success)' : 'var(--danger)', borderRadius: '50%' }}></div>
+                      <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{m.symbol}</span>
+                    </div>
+                    <span style={{ color: m.change > 0 ? 'var(--success)' : 'var(--danger)', fontSize: '0.8rem' }}>
+                      {m.change > 0 ? '+' : ''}{m.change}%
+                    </span>
+                  </div>
+                ))
               ) : (
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{connectionActive ? 'Awaiting first dashboard signal...' : 'Bridge syncing...'}</p>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Scanning markets...</p>
               )}
             </div>
           </section>
