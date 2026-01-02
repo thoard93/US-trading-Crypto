@@ -7,6 +7,9 @@ from typing import List, Dict
 from datetime import datetime, timedelta
 
 # Local imports
+from dotenv import load_dotenv
+load_dotenv()
+
 from database import SessionLocal, engine
 import models
 from engine import TradingEngine
@@ -92,33 +95,39 @@ async def get_market_data(user_id: int):
 async def get_portfolio(user_id: int):
     """Fetch real-time account balances from Kraken."""
     try:
-        # Kraken balance fetch
         balances = crypto_collector.exchange.fetch_balance()
+        # Kraken common keys for USD/USDT
         total_usdt = balances.get('USDT', {}).get('total', 0)
+        if total_usdt == 0: total_usdt = balances.get('ZUSD', {}).get('total', 0)
+        if total_usdt == 0: total_usdt = balances.get('USD', {}).get('total', 0)
         
         assets = []
-        for currency, data in balances['total'].items():
-            if data > 0 and currency not in ['USDT', 'USD', 'EUR']:
-                # Get current price
+        for currency, data in balances.get('total', {}).items():
+            if data > 0 and currency not in ['USDT', 'USD', 'ZUSD', 'EUR', 'ZEUR']:
                 try:
-                    symbol = f"{currency}/USDT"
+                    # Kraken often uses X for crypto assets (e.g. XXBT)
+                    # CCXT handles this but fetch_ticker might need the clean symbol
+                    clean_currency = currency[1:] if currency.startswith('X') and len(currency) > 3 else currency
+                    # Special cases
+                    if clean_currency == 'XBT': clean_currency = 'BTC'
+                    
+                    symbol = f"{clean_currency}/USDT"
                     ticker = crypto_collector.exchange.fetch_ticker(symbol)
                     price = ticker['last']
                     assets.append({
-                        "asset": currency,
+                        "asset": clean_currency,
                         "amount": data,
                         "price": price,
                         "value_usdt": data * price
                     })
-                except:
-                    continue
+                except: continue
                     
         return {
             "usdt_balance": total_usdt,
             "assets": sorted(assets, key=lambda x: x['value_usdt'], reverse=True)
         }
     except Exception as e:
-        print(f"Portfolio fetch error: {e}")
+        print(f"❌ Portfolio fetch error: {e}")
         return {"usdt_balance": 0, "assets": []}
 
 @app.get("/positions/{user_id}")
@@ -158,28 +167,51 @@ async def get_positions(user_id: int):
 
 @app.get("/trades/{user_id}")
 async def get_trades(user_id: int, db: Session = Depends(get_db)):
-    trades = db.query(models.Trade).filter(models.Trade.user_id == user_id).order_by(models.Trade.timestamp.desc()).limit(10).all()
-    return [{
-        "type": t.side,
+    """Retrieve execution history from DB with Kraken fetch fallback."""
+    trades = db.query(models.Trade).filter(models.Trade.user_id == user_id).order_by(models.Trade.timestamp.desc()).limit(20).all()
+    
+    formatted = [{
+        "type": t.type if hasattr(t, 'type') else "TRADE", # Defensive check
         "symbol": t.symbol,
         "price": round(t.price, 8),
-        "time": t.timestamp.strftime("%H:%M:%S")
+        "time": t.timestamp.strftime("%Y-%m-%d %H:%M:%S")
     } for t in trades]
 
+    # If DB is empty, try fetching from Kraken if bot is linked
+    if not formatted:
+        try:
+            # Only if we've successfully initialized with keys
+            if crypto_collector.exchange.apiKey:
+                kraken_trades = crypto_collector.exchange.fetch_my_trades(limit=10)
+                for kt in kraken_trades:
+                    formatted.append({
+                        "type": kt['side'].upper(),
+                        "symbol": kt['symbol'],
+                        "price": kt['price'],
+                        "time": datetime.fromtimestamp(kt['timestamp']/1000).strftime("%Y-%m-%d %H:%M:%S")
+                    })
+        except: pass
+        
+    return formatted
+
 @app.get("/chart/{symbol:path}")
-async def get_chart_data(symbol: str):
+async def get_chart_data(symbol: str, timeframe: str = '5m'):
     # Sanitize symbol (FastAPI might escape the /)
     if "%2F" in symbol:
         symbol = symbol.replace("%2f", "/").replace("%2F", "/")
     
-    data = crypto_collector.fetch_ohlcv(symbol, timeframe='5m', limit=50)
+    data = crypto_collector.fetch_ohlcv(symbol, timeframe=timeframe, limit=50)
     if data is None or data.empty:
         raise HTTPException(status_code=404, detail="Symbol not found or no data")
     
     chart_data = []
     for index, row in data.iterrows():
+        # Adjust time format based on timeframe
+        time_format = "%H:%M" if timeframe in ['1m', '5m', '15m'] else "%d %H:%M"
+        if timeframe == '1d': time_format = "%m/%d"
+        
         chart_data.append({
-            "time": row['timestamp'].strftime("%H:%M"),
+            "time": row['timestamp'].strftime(time_format),
             "price": row['close']
         })
     return chart_data

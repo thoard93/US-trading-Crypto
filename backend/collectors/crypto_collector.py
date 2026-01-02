@@ -4,7 +4,20 @@ import time
 
 class CryptoCollector:
     def __init__(self, exchange_id='kraken'):
-        self.exchange = getattr(ccxt, exchange_id)()
+        import os
+        api_key = os.getenv('KRAKEN_API_KEY')
+        api_secret = os.getenv('KRAKEN_SECRET_KEY')
+        
+        if api_key and api_secret:
+            self.exchange = getattr(ccxt, exchange_id)({
+                'apiKey': api_key,
+                'secret': api_secret,
+                'enableRateLimit': True
+            })
+            print(f"✅ CryptoCollector initialized with API keys for {exchange_id}.")
+        else:
+            self.exchange = getattr(ccxt, exchange_id)()
+            print(f"⚠️ CryptoCollector initialized WITHOUT API keys for {exchange_id}. Private endpoints will fail.")
         
     def fetch_ohlcv(self, symbol, timeframe='1h', limit=100):
         """

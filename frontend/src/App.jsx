@@ -82,6 +82,7 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [stats, setStats] = useState({ total_profit: '$0.00', active_bots_count: 0, active_bot_names: 'Connecting...' });
   const [status, setStatus] = useState({ is_running: false });
+  const [chartTimeframe, setChartTimeframe] = useState('5m');
   const [loading, setLoading] = useState(false);
   const [activeSymbol, setActiveSymbol] = useState('BTC/USDT');
   const [searchInput, setSearchInput] = useState('');
@@ -114,7 +115,7 @@ function App() {
         axios.get(`${apiBase}/portfolio/${USER_ID}`).catch(() => ({ data: { usdt_balance: 0, assets: [] } })),
         axios.get(`${apiBase}/trades/${USER_ID}`).catch(() => ({ data: [] })),
         axios.get(`${apiBase}/stats/${USER_ID}`).catch(() => ({ data: {} })),
-        axios.get(`${apiBase}/chart/${activeSymbol.replace('/', '%2F')}`).catch(() => ({ data: [] })),
+        axios.get(`${apiBase}/chart/${activeSymbol.replace('/', '%2F')}?timeframe=${chartTimeframe}`).catch(() => ({ data: [] })),
         axios.get(`${apiBase}/market_data/${USER_ID}`).catch(() => ({ data: [] }))
       ]);
 
@@ -129,13 +130,13 @@ function App() {
       setConnectionActive(false);
       setApiError("Bridge restricted. Verify URL in Settings.");
     }
-  }, [activeSymbol, apiBase]);
+  }, [activeSymbol, apiBase, chartTimeframe]);
 
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
-  }, [fetchData]);
+  }, [fetchData, chartTimeframe]);
 
   const toggleBot = async () => {
     setLoading(true);
@@ -194,13 +195,25 @@ function App() {
                     {chartData.length > 0 && chartData[chartData.length - 1]?.price
                       ? `$${chartData[chartData.length - 1].price.toLocaleString()}`
                       : 'Connecting to Market...'}
-                    <span style={{ color: 'var(--success)', marginLeft: '8px', fontSize: '0.8rem' }}>LIVE 5M</span>
+                    <span style={{ color: 'var(--success)', marginLeft: '8px', fontSize: '0.8rem', textTransform: 'uppercase' }}>LIVE {chartTimeframe}</span>
                   </p>
                 </div>
                 <div className="glass" style={{ display: 'flex', padding: '4px' }}>
-                  <button className="glass" style={{ padding: '6px 16px', background: 'rgba(255,255,255,0.1)' }}>5M</button>
-                  <button style={{ padding: '6px 16px', color: 'var(--text-secondary)' }}>1H</button>
-                  <button style={{ padding: '6px 16px', color: 'var(--text-secondary)' }}>1D</button>
+                  <button
+                    onClick={() => setChartTimeframe('5m')}
+                    className="glass"
+                    style={{ padding: '6px 16px', background: chartTimeframe === '5m' ? 'rgba(255,255,255,0.1)' : 'transparent', color: chartTimeframe === '5m' ? 'var(--text-primary)' : 'var(--text-secondary)' }}
+                  >5M</button>
+                  <button
+                    onClick={() => setChartTimeframe('1h')}
+                    className="glass"
+                    style={{ padding: '6px 16px', background: chartTimeframe === '1h' ? 'rgba(255,255,255,0.1)' : 'transparent', color: chartTimeframe === '1h' ? 'var(--text-primary)' : 'var(--text-secondary)' }}
+                  >1H</button>
+                  <button
+                    onClick={() => setChartTimeframe('1d')}
+                    className="glass"
+                    style={{ padding: '6px 16px', background: chartTimeframe === '1d' ? 'rgba(255,255,255,0.1)' : 'transparent', color: chartTimeframe === '1d' ? 'var(--text-primary)' : 'var(--text-secondary)' }}
+                  >1D</button>
                 </div>
               </div>
 
