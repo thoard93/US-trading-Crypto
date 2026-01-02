@@ -37,9 +37,9 @@ class AlertSystem(commands.Cog):
         
         # DEX Auto-trading configuration
         self.dex_auto_trade = True  # Toggle for DEX auto-trading
-        self.dex_min_safety_score = 80  # Minimum safety score to trade
-        self.dex_min_liquidity = 10000  # Minimum $10k liquidity
-        self.dex_max_positions = 3  # Max concurrent DEX positions
+        self.dex_min_safety_score = 70  # Lowered from 80 for more opportunities
+        self.dex_min_liquidity = 5000  # Lowered from $10k to $5k
+        self.dex_max_positions = 5  # Increased from 3 to 5
         
         # STOCK Auto-trading configuration
         self.stock_auto_trade = True  # Toggle for stock auto-trading
@@ -50,8 +50,20 @@ class AlertSystem(commands.Cog):
         # User defined watchlists
         self.majors_watchlist = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT']
         self.memes_watchlist = ['PEPE/USDT', 'SHIB/USDT', 'DOGE/USDT', 'BONK/USDT', 'WIF/USDT']
+        
+        # Expanded DEX watchlist - Hot Solana memecoins for day trading
         self.dex_watchlist = [
-            {"chain": "solana", "address": "HBoNJ5v8g71s2boRivrHnfSB5MVPLDHHyVjruPfhGkvL"} # Purple Pepe
+            # Top Solana Memecoins
+            {"chain": "solana", "address": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"},  # BONK
+            {"chain": "solana", "address": "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm"},  # WIF (dogwifhat)
+            {"chain": "solana", "address": "7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr"},  # POPCAT
+            {"chain": "solana", "address": "MEW1gQWJ3nEXg2qgERiKu7FAFj79PHvQVREQUzScPP5"},   # MEW
+            {"chain": "solana", "address": "ukHH6c7mMyiWCf1b9pnWe25TSpkDDt3H5pQZgZ74J82"},   # BOME
+            {"chain": "solana", "address": "7BgBvyjrZX1YKz4oh9mjb8ZScatkkwb8DzFx7LoiVkM3"},  # SLERF
+            {"chain": "solana", "address": "A8C3xuqscfmyLrte3VmTqrAq8kgMASius9AFNANwpump"},  # FARTCOIN
+            {"chain": "solana", "address": "Df6yfrKC8kZE3KNkrHERKzAetSxbrWeniQfyJY4Jpump"},  # AI16Z
+            {"chain": "solana", "address": "8x5VqbHA8D7NkD52uNuS5nnt3PwA8pLD34ymskeSo2Wn"},  # ZEREBRO
+            {"chain": "solana", "address": "HBoNJ5v8g71s2boRivrHnfSB5MVPLDHHyVjruPfhGkvL"},  # Purple Pepe
         ]
         # Expanded stock watchlist - mix of large, mid, and small caps
         self.stock_watchlist = [
