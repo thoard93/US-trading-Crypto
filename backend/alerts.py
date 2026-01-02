@@ -334,8 +334,9 @@ class AlertSystem(commands.Cog):
                                 trade_title = "📉 SCALP: EXECUTED SELL" if scalp_mode else "📉 AUTO-TRADE: EXECUTED SELL"
                         else:
                             # Log it but don't try to trade
-                            print(f"ℹ️ Sell signal for {symbol} but no active position to close.")
-                            trade_result = {"error": "No position"}
+                            if symbol in self.watchlist: 
+                                print(f"ℹ️ Sell signal for {symbol} but no active position to close.")
+                            trade_result = None # Set to None to skip error block below
 
                     if trade_result and "error" not in trade_result:
                         # Record position for SL/TP tracking (only for BUYs, or if a SELL actually executed)

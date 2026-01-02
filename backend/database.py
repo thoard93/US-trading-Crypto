@@ -20,6 +20,8 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
+    from migrate import run_migrations
+    run_migrations()
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
