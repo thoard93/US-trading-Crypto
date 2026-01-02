@@ -116,29 +116,48 @@ async def discord_callback(code: str, db: Session = Depends(get_db)):
     return {"token": token, "user": {"id": user.id, "username": user.username, "avatar": user.avatar}}
 
 # --- API KEY MANAGEMENT ---
+from pydantic import BaseModel
+from typing import Optional
+
+class ApiKeyRequest(BaseModel):
+    user_id: int
+    exchange: str
+    api_key: str
+    api_secret: str
+    extra_config: Optional[str] = None
+
 @app.post("/settings/keys")
-async def save_api_keys(user_id: int, exchange: str, api_key: str, api_secret: str, extra_config: str = None, db: Session = Depends(get_db)):
-    # Encrypt keys before saving
-    encrypted_key = encrypt_key(api_key)
-    encrypted_secret = encrypt_key(api_secret)
-    
-    existing = db.query(models.ApiKey).filter(models.ApiKey.user_id == user_id, models.ApiKey.exchange == exchange).first()
-    if existing:
-        existing.api_key = encrypted_key
-        existing.api_secret = encrypted_secret
-        existing.extra_config = extra_config
-    else:
-        new_key = models.ApiKey(
-            exchange=exchange,
-            api_key=encrypted_key,
-            api_secret=encrypted_secret,
-            extra_config=extra_config,
-            user_id=user_id
-        )
-        db.add(new_key)
-    
-    db.commit()
-    return {"message": "API keys saved and encrypted"}
+async def save_api_keys(request: ApiKeyRequest, db: Session = Depends(get_db)):
+    try:
+        # Encrypt keys before saving
+        encrypted_key = encrypt_key(request.api_key)
+        encrypted_secret = encrypt_key(request.api_secret)
+        
+        existing = db.query(models.ApiKey).filter(
+            models.ApiKey.user_id == request.user_id, 
+            models.ApiKey.exchange == request.exchange
+        ).first()
+        
+        if existing:
+            existing.api_key = encrypted_key
+            existing.api_secret = encrypted_secret
+            existing.extra_config = request.extra_config
+        else:
+            new_key = models.ApiKey(
+                exchange=request.exchange,
+                api_key=encrypted_key,
+                api_secret=encrypted_secret,
+                extra_config=request.extra_config,
+                user_id=request.user_id
+            )
+            db.add(new_key)
+        
+        db.commit()
+        print(f"✅ Saved {request.exchange} keys for user {request.user_id}")
+        return {"message": "API keys saved and encrypted"}
+    except Exception as e:
+        print(f"❌ Failed to save keys: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/users/start/{user_id}")
 async def start_bot(user_id: int, db: Session = Depends(get_db)):
