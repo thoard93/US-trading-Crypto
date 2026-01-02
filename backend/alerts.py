@@ -35,11 +35,17 @@ class AlertSystem(commands.Cog):
         else:
             self.dex_trader = None
         
-        # Auto-trading configuration
+        # DEX Auto-trading configuration
         self.dex_auto_trade = True  # Toggle for DEX auto-trading
         self.dex_min_safety_score = 80  # Minimum safety score to trade
         self.dex_min_liquidity = 10000  # Minimum $10k liquidity
         self.dex_max_positions = 3  # Max concurrent DEX positions
+        
+        # STOCK Auto-trading configuration
+        self.stock_auto_trade = True  # Toggle for stock auto-trading
+        self.stock_trade_amount = 5.0  # $5 per trade (fractional shares)
+        self.stock_max_positions = 5  # Max concurrent stock positions
+        self.stock_positions = {}  # Track stock positions locally
         
         # User defined watchlists
         self.majors_watchlist = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT']
@@ -47,7 +53,15 @@ class AlertSystem(commands.Cog):
         self.dex_watchlist = [
             {"chain": "solana", "address": "HBoNJ5v8g71s2boRivrHnfSB5MVPLDHHyVjruPfhGkvL"} # Purple Pepe
         ]
-        self.stock_watchlist = ['AAPL', 'TSLA', 'NVDA', 'AMD', 'MSFT', 'META', 'AMZN']
+        # Expanded stock watchlist - mix of large, mid, and small caps
+        self.stock_watchlist = [
+            # Large Caps
+            'AAPL', 'TSLA', 'NVDA', 'AMD', 'MSFT', 'META', 'AMZN', 'GOOGL',
+            # Mid Caps / Growth
+            'PLTR', 'SOFI', 'HOOD', 'COIN', 'RBLX', 'SNAP', 'PINS',
+            # Smaller / Volatile
+            'GME', 'AMC', 'BBBY', 'MARA', 'RIOT', 'SOUN', 'IONQ'
+        ]
         
         # User defined channel IDs
         self.STOCKS_CHANNEL_ID = 1456078814567202960
@@ -74,6 +88,13 @@ class AlertSystem(commands.Cog):
         if self.dex_trader and self.dex_trader.wallet_address:
             sol_balance = self.dex_trader.get_sol_balance()
             print(f"💰 DEX Wallet SOL Balance: {sol_balance:.4f} SOL")
+        
+        # Log Stock trading status
+        if self.stocks and self.stocks.api:
+            account = self.stocks.get_account()
+            if account:
+                print(f"📈 Alpaca Account - Cash: ${account['cash']:.2f}, Buying Power: ${account['buying_power']:.2f}")
+
 
 
     def cog_unload(self):
@@ -407,8 +428,20 @@ class AlertSystem(commands.Cog):
                             # Note: For Kraken-listed tokens, we check for high RSI/Volatility instead.
                         
                         if asset_type == "Stock":
-                            trade_result = self.trader.execute_market_buy_stock(symbol, qty=1)
+                            # Skip if auto-trading disabled or max positions reached
+                            if not self.stock_auto_trade:
+                                print(f"ℹ️ Stock auto-trading disabled for {symbol}")
+                                return
+                            if len(self.stock_positions) >= self.stock_max_positions:
+                                print(f"⚠️ Max stock positions ({self.stock_max_positions}) reached. Skipping {symbol}.")
+                                return
+                            
+                            trade_result = self.trader.execute_market_buy_stock(symbol, notional=self.stock_trade_amount)
                             trade_title = "💰 ALPACA: EXECUTED BUY"
+                            trade_amount = self.stock_trade_amount
+                            
+                            if trade_result.get('success'):
+                                self.stock_positions[symbol] = trade_result
                         else:
                             trade_result = self.trader.execute_market_buy(symbol, amount_usdt=trade_amount)
                             trade_title = "💰 SCALP: EXECUTED BUY" if scalp_mode else "💰 AUTO-TRADE: EXECUTED BUY"
@@ -417,19 +450,21 @@ class AlertSystem(commands.Cog):
                         elif scalp_mode: trade_title = "📉 SCALP: EXIT OPPORTUNITY"
                         else: trade_title = "📉 AUTO-TRADE: EXIT OPPORTUNITY"
                         
-                        # ONLY execute sell if we actually own the coin
-                        if symbol in self.trader.active_positions:
+                        # ONLY execute sell if we actually own the asset
+                        has_position = (symbol in self.trader.active_positions or 
+                                       (asset_type == "Stock" and symbol in self.stock_positions))
+                        
+                        if has_position:
                             if asset_type == "Stock":
                                 trade_result = self.trader.execute_market_sell_stock(symbol)
                                 trade_title = "📉 ALPACA: EXECUTED SELL"
+                                if trade_result.get('success') and symbol in self.stock_positions:
+                                    del self.stock_positions[symbol]
                             else:
                                 trade_result = self.trader.execute_market_sell(symbol)
                                 trade_title = "📉 SCALP: EXECUTED SELL" if scalp_mode else "📉 AUTO-TRADE: EXECUTED SELL"
                         else:
-                            # Log it but don't try to trade
-                            if symbol in self.watchlist: 
-                                print(f"ℹ️ Sell signal for {symbol} but no active position to close.")
-                            trade_result = None # Set to None to skip error block below
+                            trade_result = None # No position to sell
 
                     if trade_result and "error" not in trade_result:
                         # Record position for SL/TP tracking (only for BUYs, or if a SELL actually executed)

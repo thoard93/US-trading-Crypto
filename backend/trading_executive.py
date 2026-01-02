@@ -192,41 +192,75 @@ class TradingExecutive:
             print(f"Error executing sell for {symbol}: {e}")
             return {"error": str(e)}
 
-    def execute_market_buy_stock(self, symbol, qty=1):
-        """Execute a market buy order for a stock."""
+    def execute_market_buy_stock(self, symbol, notional=5.0, qty=None):
+        """Execute a market buy order for a stock using fractional shares."""
         if not self.stock_api:
             return {"error": "Alpaca API not configured"}
         try:
-            print(f"🚀 Executing ALPACA MARKET BUY for {symbol} (Qty: {qty})")
-            order = self.stock_api.submit_order(
-                symbol=symbol,
-                qty=qty,
-                side='buy',
-                type='market',
-                time_in_force='gtc'
-            )
-            return order
+            # Use notional (dollar amount) for fractional share purchases
+            if notional and not qty:
+                print(f"🚀 Executing ALPACA MARKET BUY for {symbol} (${notional})")
+                order = self.stock_api.submit_order(
+                    symbol=symbol,
+                    notional=notional,
+                    side='buy',
+                    type='market',
+                    time_in_force='day'
+                )
+            else:
+                print(f"🚀 Executing ALPACA MARKET BUY for {symbol} (Qty: {qty})")
+                order = self.stock_api.submit_order(
+                    symbol=symbol,
+                    qty=qty,
+                    side='buy',
+                    type='market',
+                    time_in_force='day'
+                )
+            
+            return {
+                "success": True,
+                "id": order.id,
+                "symbol": symbol,
+                "side": "buy",
+                "notional": notional,
+                "amount": notional  # For tracking
+            }
         except Exception as e:
             print(f"Error executing stock buy for {symbol}: {e}")
             return {"error": str(e)}
 
-    def execute_market_sell_stock(self, symbol):
-        """Execute a market sell order for the entire balance of a stock."""
+    def execute_market_sell_stock(self, symbol, percentage=100):
+        """Execute a market sell order for a stock position (supports fractional)."""
         if not self.stock_api:
             return {"error": "Alpaca API not configured"}
         try:
             # Fetch current position to get quantity
             pos = self.stock_api.get_position(symbol)
-            qty = pos.qty
+            qty = float(pos.qty)
+            
+            if percentage < 100:
+                qty = qty * (percentage / 100)
+            
             print(f"📉 Executing ALPACA MARKET SELL for {symbol} (Qty: {qty})")
             order = self.stock_api.submit_order(
                 symbol=symbol,
                 qty=qty,
                 side='sell',
                 type='market',
-                time_in_force='gtc'
+                time_in_force='day'
             )
-            return order
+            
+            # Remove from positions if full sell
+            if percentage == 100 and symbol in self.active_positions:
+                del self.active_positions[symbol]
+            
+            return {
+                "success": True,
+                "id": order.id,
+                "symbol": symbol,
+                "side": "sell",
+                "qty": qty
+            }
         except Exception as e:
             print(f"Error executing stock sell for {symbol}: {e}")
             return {"error": str(e)}

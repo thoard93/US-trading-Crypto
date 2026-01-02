@@ -90,3 +90,109 @@ class StockCollector:
             print(f"Error fetching stock price for {symbol}: {e}")
             return None
 
+    def get_account(self):
+        """Get account info including buying power."""
+        if not self.api:
+            return None
+        try:
+            account = self.api.get_account()
+            return {
+                "buying_power": float(account.buying_power),
+                "cash": float(account.cash),
+                "portfolio_value": float(account.portfolio_value),
+                "equity": float(account.equity)
+            }
+        except Exception as e:
+            print(f"Error getting account: {e}")
+            return None
+    
+    def get_position(self, symbol):
+        """Get current position for a symbol."""
+        if not self.api:
+            return None
+        try:
+            position = self.api.get_position(symbol)
+            return {
+                "qty": float(position.qty),
+                "avg_entry_price": float(position.avg_entry_price),
+                "market_value": float(position.market_value),
+                "unrealized_pl": float(position.unrealized_pl)
+            }
+        except:
+            return None  # No position
+    
+    def buy_stock(self, symbol, notional=None, qty=None):
+        """
+        Buy stock using Alpaca.
+        notional: Dollar amount to buy (e.g., $10)
+        qty: Number of shares (for whole shares only)
+        """
+        if not self.api:
+            return {"error": "Alpaca not initialized"}
+        
+        try:
+            if notional:
+                # Fractional shares - buy by dollar amount
+                order = self.api.submit_order(
+                    symbol=symbol,
+                    notional=notional,
+                    side='buy',
+                    type='market',
+                    time_in_force='day'
+                )
+            elif qty:
+                # Whole shares
+                order = self.api.submit_order(
+                    symbol=symbol,
+                    qty=qty,
+                    side='buy',
+                    type='market',
+                    time_in_force='day'
+                )
+            else:
+                return {"error": "Must specify notional or qty"}
+            
+            print(f"✅ STOCK BUY ORDER: {symbol} - Order ID: {order.id}")
+            return {
+                "success": True,
+                "order_id": order.id,
+                "symbol": symbol,
+                "side": "buy",
+                "notional": notional,
+                "qty": qty
+            }
+        except Exception as e:
+            print(f"❌ Stock buy error for {symbol}: {e}")
+            return {"error": str(e)}
+    
+    def sell_stock(self, symbol, qty=None, percentage=100):
+        """Sell stock position."""
+        if not self.api:
+            return {"error": "Alpaca not initialized"}
+        
+        try:
+            position = self.get_position(symbol)
+            if not position:
+                return {"error": f"No position in {symbol}"}
+            
+            sell_qty = position['qty'] if percentage == 100 else position['qty'] * (percentage / 100)
+            
+            order = self.api.submit_order(
+                symbol=symbol,
+                qty=sell_qty,
+                side='sell',
+                type='market',
+                time_in_force='day'
+            )
+            
+            print(f"✅ STOCK SELL ORDER: {symbol} - Order ID: {order.id}")
+            return {
+                "success": True,
+                "order_id": order.id,
+                "symbol": symbol,
+                "side": "sell",
+                "qty": sell_qty
+            }
+        except Exception as e:
+            print(f"❌ Stock sell error for {symbol}: {e}")
+            return {"error": str(e)}
