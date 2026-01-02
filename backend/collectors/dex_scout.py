@@ -56,3 +56,29 @@ class DexScout:
             "url": pair_data.get('url'),
             "chain": pair_data.get('chainId')
         }
+
+    async def get_latest_boosted_tokens(self):
+        """Fetch tokens with the latest boosts."""
+        url = "https://api.dexscreener.com/token-boosts/latest/v1"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    return []
+        except Exception as e:
+            self.logger.error(f"Error fetching boosted tokens: {e}")
+            return []
+
+    async def get_latest_token_profiles(self):
+        """Fetch the latest token profiles."""
+        url = "https://api.dexscreener.com/token-profiles/latest/v1"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        return await response.json()
+                    return []
+        except Exception as e:
+            self.logger.error(f"Error fetching token profiles: {e}")
+            return []

@@ -29,10 +29,14 @@ class AlertSystem(commands.Cog):
         self.CRYPTO_CHANNEL_ID = 1456078864684945531
         self.MEMECOINS_CHANNEL_ID = 1456439911896060028
         
+        self.trending_dex_gems = [] # Temporarily tracked trending gems
+        
         self.monitor_market.start()
+        self.discovery_loop.start()
 
     def cog_unload(self):
         self.monitor_market.cancel()
+        self.discovery_loop.cancel()
 
     @tasks.loop(minutes=5)
     async def monitor_market(self):
@@ -56,9 +60,11 @@ class AlertSystem(commands.Cog):
                 await self._check_and_alert(symbol, channel_memes, "Meme")
 
         # 3. Monitor DEX Scout (New Gems)
-        print(f"Scouting DEX tokens: {self.dex_watchlist}")
+        print(f"Scouting DEX tokens: {self.dex_watchlist} + {len(self.trending_dex_gems)} trending")
         if channel_memes:
-            for item in self.dex_watchlist:
+            # Combined list of manual watchlist and trending gems
+            all_dex = self.dex_watchlist + self.trending_dex_gems
+            for item in all_dex:
                 pair_data = await self.dex_scout.get_pair_data(item['chain'], item['address'])
                 if pair_data:
                     info = self.dex_scout.extract_token_info(pair_data)
@@ -78,7 +84,7 @@ class AlertSystem(commands.Cog):
                         embed.add_field(name="DEX Link", value=f"[View on DexScreener]({info['url']})", inline=False)
                         
                         await channel_memes.send(embed=embed)
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.5)
 
         # 4. Monitor Stocks
         print(f"Checking stock markets: {self.stock_watchlist}")
@@ -114,7 +120,44 @@ class AlertSystem(commands.Cog):
                     del self.trader.active_positions[symbol]
 
         await self._process_alert(channel, symbol, data, asset_type)
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.3)
+
+    @tasks.loop(minutes=10)
+    async def discovery_loop(self):
+        """Find new trending DEX gems automatically."""
+        if not self.bot.is_ready(): return
+        
+        print("🔍 Running DEX Gem Discovery...")
+        profiles = await self.dex_scout.get_latest_token_profiles()
+        channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
+        
+        new_gems = []
+        if profiles and channel_memes:
+            # Profiles is a list of dicts with 'chainId', 'tokenAddress', 'url', etc.
+            # Take top 5 latest profiles
+            for p in profiles[:5]:
+                addr = p.get('tokenAddress')
+                chain = p.get('chainId')
+                
+                # Check if already tracking
+                if any(item['address'] == addr for item in self.dex_watchlist + self.trending_dex_gems):
+                    continue
+                    
+                # Basic Safety Audit
+                audit = await self.trader.safety.check_token(addr, "solana" if chain == 'solana' else "1")
+                if audit.get('safety_status') == 'SAFE':
+                    new_gems.append({"chain": chain, "address": addr})
+                    embed = discord.Embed(
+                        title=f"✨ NEW TRENDING GEM: {p.get('url').split('/')[-1]}",
+                        description=f"AI discovered a new safe profile on **{chain.upper()}**!",
+                        color=discord.Color.teal()
+                    )
+                    embed.add_field(name="Address", value=f"`{addr}`", inline=False)
+                    embed.add_field(name="Action", value="Adding to 5m tracking list for 30 minutes.", inline=False)
+                    await channel_memes.send(embed=embed)
+
+        # Update trending gems (keep them for 3-4 cycles)
+        self.trending_dex_gems = new_gems + self.trending_dex_gems[:10]
 
     async def _process_alert(self, channel, symbol, data, asset_type):
         if data is not None:
