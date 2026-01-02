@@ -234,21 +234,26 @@ class TradingExecutive:
         if not self.stock_api:
             return {"error": "Alpaca API not configured"}
         try:
-            # Fetch current position to get quantity
-            pos = self.stock_api.get_position(symbol)
-            qty = float(pos.qty)
-            
-            if percentage < 100:
-                qty = qty * (percentage / 100)
-            
-            print(f"📉 Executing ALPACA MARKET SELL for {symbol} (Qty: {qty})")
-            order = self.stock_api.submit_order(
-                symbol=symbol,
-                qty=qty,
-                side='sell',
-                type='market',
-                time_in_force='day'
-            )
+            if percentage == 100:
+                print(f"📉 Executing ALPACA CLOSE POSITION for {symbol}")
+                # close_position automatically liquidates the full amount
+                order = self.stock_api.close_position(symbol)
+                # Note: close_position returns a different object (Order) or just the order details
+                # It avoids precision errors with fractional shares
+            else:
+                # Partial sell logic
+                pos = self.stock_api.get_position(symbol)
+                qty = float(pos.qty)
+                qty_to_sell = qty * (percentage / 100)
+                
+                print(f"📉 Executing ALPACA MARKET SELL for {symbol} (Qty: {qty_to_sell})")
+                order = self.stock_api.submit_order(
+                    symbol=symbol,
+                    qty=qty_to_sell,
+                    side='sell',
+                    type='market',
+                    time_in_force='day'
+                )
             
             # Remove from positions if full sell
             if percentage == 100 and symbol in self.active_positions:
