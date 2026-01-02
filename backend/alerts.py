@@ -153,6 +153,7 @@ class AlertSystem(commands.Cog):
                 # --- SCALPING & AUTO-TRADING LOGIC ---
                 if asset_type in ["Crypto", "Meme"] and result['signal'] in ['BUY', 'SELL']:
                     symbol_price = result['price']
+                    trade_result = None
                     
                     # Target memes or coins under $1 for "Micro-Scalping"
                     if asset_type == "Meme" or symbol_price < 1.0:
@@ -188,8 +189,8 @@ class AlertSystem(commands.Cog):
                         trade_embed.add_field(name="Amount Used", value=f"${trade_amount}", inline=True)
                         trade_embed.add_field(name="Order ID", value=trade_result.get('id', 'N/A'), inline=True)
                         await channel.send(embed=trade_embed)
-                else:
-                    print(f"❌ Auto-trade failed for {symbol}: {trade_result['error']}")
+                    elif trade_result and "error" in trade_result:
+                        print(f"❌ Auto-trade failed for {symbol}: {trade_result['error']}")
             else:
                 sig = result.get('signal', 'UNKNOWN')
                 print(f"ℹ️ Analysis for {symbol}: {sig} - {result.get('reason', 'N/A')}")
@@ -219,14 +220,14 @@ class AlertSystem(commands.Cog):
         # Majors
         for s in self.majors_watchlist:
             data = self.crypto.fetch_ohlcv(s, timeframe='1h', limit=2)
-            if data:
+            if data is not None and not data.empty:
                 p = data.iloc[-1]['close']
                 scan_results.append(f"🔵 `{s}`: ${p:.2f}")
 
         # Memes
         for s in self.memes_watchlist:
             data = self.crypto.fetch_ohlcv(s, timeframe='1h', limit=2)
-            if data:
+            if data is not None and not data.empty:
                 p = data.iloc[-1]['close']
                 scan_results.append(f"🟡 `{s}`: ${p:.8f}")
 
