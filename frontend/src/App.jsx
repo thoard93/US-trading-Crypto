@@ -16,16 +16,20 @@ import {
   Play,
   Square,
   AlertTriangle,
-  Link,
-  Cpu,
   Globe,
   Database,
   User,
-  MessageSquare
+  MessageSquare,
+  Cpu,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'https://trading-api.onrender.com'; // Optimized fallback
+const API_BASE = import.meta.env.VITE_API_URL
+  ? (import.meta.env.VITE_API_URL.startsWith('http') ? import.meta.env.VITE_API_URL : `https://${import.meta.env.VITE_API_URL}`)
+  : 'https://trading-api.onrender.com'; // Robust fallback
+
 const USER_ID = 1;
 
 class ErrorBoundary extends React.Component {
@@ -60,50 +64,41 @@ function App() {
   const [activeSymbol, setActiveSymbol] = useState('BTC/USDT');
   const [searchInput, setSearchInput] = useState('');
   const [apiError, setApiError] = useState(null);
-  const [lastCheck, setLastCheck] = useState(null);
+  const [lastHeartbeat, setLastHeartbeat] = useState(null);
+  const [connectionActive, setConnectionActive] = useState(false);
 
   const fetchData = useCallback(async () => {
     try {
-      setApiError(null);
-      setLastCheck(new Date().toLocaleTimeString());
-
-      // Attempt to ping backend
-      try {
-        const statusRes = await axios.get(`${API_BASE}/status/${USER_ID}`, { timeout: 5000 });
-        if (statusRes.data) {
-          setStatus(statusRes.data);
-        }
-      } catch (e) {
-        setApiError("Backend connecting...");
+      // 1. Check Status (Heartbeat)
+      const statusRes = await axios.get(`${API_BASE}/status/${USER_ID}`, { timeout: 3000 });
+      if (statusRes.data) {
+        setStatus(statusRes.data);
+        setLastHeartbeat(new Date().toLocaleTimeString());
+        setConnectionActive(true);
+        setApiError(null);
       }
 
-      // Positions
-      try {
-        const posRes = await axios.get(`${API_BASE}/positions/${USER_ID}`);
-        if (Array.isArray(posRes.data)) setPositions(posRes.data);
-      } catch (e) { }
+      // 2. Positions
+      const posRes = await axios.get(`${API_BASE}/positions/${USER_ID}`);
+      if (Array.isArray(posRes.data)) setPositions(posRes.data);
 
-      // History
-      try {
-        const logsRes = await axios.get(`${API_BASE}/trades/${USER_ID}`);
-        if (Array.isArray(logsRes.data)) setLogs(logsRes.data);
-      } catch (e) { }
+      // 3. Trade Logs
+      const logsRes = await axios.get(`${API_BASE}/trades/${USER_ID}`);
+      if (Array.isArray(logsRes.data)) setLogs(logsRes.data);
 
-      // Stats
-      try {
-        const statsRes = await axios.get(`${API_BASE}/stats/${USER_ID}`);
-        if (statsRes.data) setStats(statsRes.data);
-      } catch (e) { }
+      // 4. Stats
+      const statsRes = await axios.get(`${API_BASE}/stats/${USER_ID}`);
+      if (statsRes.data) setStats(statsRes.data);
 
-      // Chart
-      try {
-        const sym = activeSymbol.replace('/', '%2F');
-        const chartRes = await axios.get(`${API_BASE}/chart/${sym}`);
-        if (Array.isArray(chartRes.data)) setChartData(chartRes.data);
-      } catch (e) { }
+      // 5. Chart Data
+      const sym = activeSymbol.replace('/', '%2F');
+      const chartRes = await axios.get(`${API_BASE}/chart/${sym}`);
+      if (Array.isArray(chartRes.data)) setChartData(chartRes.data);
 
     } catch (err) {
-      setApiError("Offline");
+      console.error("API Connection Lost:", err.message);
+      setConnectionActive(false);
+      setApiError("Backend unreachable. Checking route...");
     }
   }, [activeSymbol]);
 
@@ -123,7 +118,7 @@ function App() {
       }
       setTimeout(fetchData, 1500);
     } catch (err) {
-      alert("Bot control error. Is the backend live?");
+      alert("Command failed. Is the API Gateway live?");
     } finally {
       setLoading(false);
     }
@@ -139,6 +134,25 @@ function App() {
   };
 
   const renderTabContent = () => {
+    if (!connectionActive && activeTab === 'Dashboard') {
+      return (
+        <div className="glass glow-shadow" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px', padding: '40px' }}>
+          <div className="glass" style={{ padding: '24px', borderRadius: '50%', background: 'rgba(239, 68, 68, 0.05)' }}>
+            <WifiOff size={48} color="var(--danger)" />
+          </div>
+          <h2 style={{ fontSize: '1.5rem' }}>Connection Awaiting</h2>
+          <p style={{ color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '400px' }}>
+            The dashboard is currently unable to reach the bot at <code>{API_BASE}</code>.
+            Please ensure your <b>trading-api</b> service on Render is "Live".
+          </p>
+          <div style={{ display: 'flex', gap: '12px' }}>
+            <button onClick={fetchData} className="glass" style={{ padding: '12px 32px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)' }}>Retry Connection</button>
+            <button onClick={() => setActiveTab('Settings')} className="glass" style={{ padding: '12px 32px' }}>Check Settings</button>
+          </div>
+        </div>
+      );
+    }
+
     switch (activeTab) {
       case 'Dashboard':
         return (
@@ -150,7 +164,7 @@ function App() {
                   <p style={{ color: 'var(--text-secondary)' }}>
                     {chartData.length > 0 && chartData[chartData.length - 1]?.price
                       ? `$${chartData[chartData.length - 1].price.toLocaleString()}`
-                      : 'Live Market Data Loading...'}
+                      : 'Syncing Market Data...'}
                     <span style={{ color: 'var(--success)', marginLeft: '8px', fontSize: '0.8rem' }}>5M SCALPER</span>
                   </p>
                 </div>
@@ -203,35 +217,33 @@ function App() {
               <h2 style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px' }}><Settings size={24} /> Platform Configuration</h2>
 
               <div style={{ display: 'grid', gap: '20px' }}>
-                <div className="glass" style={{ padding: '20px', borderLeft: '4px solid var(--accent-color)' }}>
-                  <h4 style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>API GATEWAY</h4>
+                <div className="glass" style={{ padding: '20px', borderLeft: `4px solid ${connectionActive ? 'var(--success)' : 'var(--danger)'}` }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <h4 style={{ color: 'var(--text-secondary)' }}>API GATEWAY</h4>
+                    {connectionActive ? <Wifi size={16} color="var(--success)" /> : <WifiOff size={16} color="var(--danger)" />}
+                  </div>
                   <code style={{ background: 'rgba(0,0,0,0.3)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.9rem' }}>{API_BASE}</code>
-                  <p style={{ fontSize: '0.75rem', marginTop: '8px', color: 'var(--text-secondary)' }}>Last heartbeat: {lastCheck || 'Never'}</p>
+                  <p style={{ fontSize: '0.75rem', marginTop: '8px', color: 'var(--text-secondary)' }}>
+                    {connectionActive ? `Healthy Connection (Heartbeat: ${lastHeartbeat})` : 'Connection Failed. Browser cannot reach this URL.'}
+                  </p>
                 </div>
 
-                <div className="glass" style={{ padding: '20px', borderLeft: '4px solid var(--success)' }}>
+                <div className="glass" style={{ padding: '20px', borderLeft: '4px solid #5865F2' }}>
                   <h4 style={{ color: 'var(--text-secondary)', marginBottom: '12px' }}>DISCORD COMMUNITY INTEGRATION</h4>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div className="glass" style={{ padding: '8px', background: '#5865F2' }}><MessageSquare size={20} /></div>
                     <div>
                       <p style={{ fontWeight: 600 }}>Server ID: 1376908703227318393</p>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Status: Linked to Bot Engine</p>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Status: Link Pending (Phase 4)</p>
                     </div>
                   </div>
-                  <button
-                    className="glass"
-                    style={{ marginTop: '16px', width: '100%', padding: '12px', background: 'rgba(88, 101, 242, 0.1)', color: '#5865F2', fontWeight: 600, cursor: 'not-allowed' }}
-                    disabled
-                  >
-                    Discord OAuth Coming Soon (Phase 4)
-                  </button>
                 </div>
 
                 <div className="glass" style={{ padding: '20px', borderLeft: '4px solid #f59e0b' }}>
-                  <h4 style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>USER ACCOUNT (MOCK)</h4>
+                  <h4 style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>USER ACCOUNT</h4>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div className="glass" style={{ width: '40px', height: '40px', background: 'linear-gradient(45deg, #00ffcc, #0099ff)', borderRadius: '50%' }}></div>
-                    <p style={{ fontWeight: 600 }}>Demo Trader #1</p>
+                    <p style={{ fontWeight: 600 }}>Demo Trader #1 (Global Admin)</p>
                   </div>
                 </div>
               </div>
@@ -247,15 +259,9 @@ function App() {
             </div>
             <h2 style={{ fontSize: '1.5rem' }}>{activeTab} Module</h2>
             <p style={{ color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '400px' }}>
-              Your trading engine is processing signals in the background. We are finalizing the rendering engine for this tab.
+              We are currently optimizing the real-time render for this module.
             </p>
-            <button
-              onClick={() => setActiveTab('Dashboard')}
-              className="glass"
-              style={{ padding: '12px 32px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)', fontWeight: 600 }}
-            >
-              Back to Live Data
-            </button>
+            <button onClick={() => setActiveTab('Dashboard')} className="glass" style={{ padding: '12px 32px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)' }}>Back to Data</button>
           </div>
         );
     }
@@ -283,19 +289,19 @@ function App() {
           </nav>
 
           <div style={{ marginTop: 'auto' }}>
-            {apiError && <p style={{ color: 'var(--warning)', fontSize: '0.7rem', textAlign: 'center', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><Globe size={10} /> {apiError}</p>}
+            {apiError && <p style={{ color: 'var(--warning)', fontSize: '0.7rem', textAlign: 'center', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><Globe size={12} /> {apiError}</p>}
             <div className="glass" style={{ padding: '16px', background: 'rgba(255,255,255,0.05)' }}>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>V2 ENGINE STATUS</p>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ width: '8px', height: '8px', background: status.is_running ? 'var(--success)' : 'var(--danger)', borderRadius: '50%' }}></div>
-                  <span style={{ fontSize: '0.875rem' }}>{status.is_running ? 'Bot Active' : 'Bot Idle'}</span>
+                  <div style={{ width: '8px', height: '8px', background: (connectionActive && status.is_running) ? 'var(--success)' : 'var(--danger)', borderRadius: '50%' }}></div>
+                  <span style={{ fontSize: '0.875rem' }}>{(connectionActive && status.is_running) ? 'Bot Active' : 'Bot Idle'}</span>
                 </div>
                 <button
                   onClick={toggleBot}
-                  disabled={loading}
+                  disabled={loading || !connectionActive}
                   className="glass"
-                  style={{ padding: '6px', borderRadius: '8px', cursor: 'pointer', background: status.is_running ? 'rgba(255, 71, 87, 0.1)' : 'rgba(0, 255, 204, 0.1)' }}
+                  style={{ padding: '6px', borderRadius: '8px', cursor: connectionActive ? 'pointer' : 'not-allowed', background: status.is_running ? 'rgba(255, 71, 87, 0.1)' : 'rgba(0, 255, 204, 0.1)' }}
                 >
                   {status.is_running ? <Square size={16} color="var(--danger)" /> : <Play size={16} color="var(--accent-color)" />}
                 </button>
@@ -335,10 +341,10 @@ function App() {
               {positions.length > 0 && <span className="badge badge-success">{positions.length}</span>}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {Array.isArray(positions) && positions.length > 0 ? (
+              {connectionActive && Array.isArray(positions) && positions.length > 0 ? (
                 positions.map((pos, i) => <PositionItem key={i} {...pos} />)
               ) : (
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>No open trades found.</p>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{connectionActive ? 'No open trades found.' : 'Waiting for connection...'}</p>
               )}
             </div>
           </section>
@@ -349,10 +355,10 @@ function App() {
               <History size={20} color="var(--text-secondary)" />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {Array.isArray(logs) && logs.length > 0 ? (
+              {connectionActive && Array.isArray(logs) && logs.length > 0 ? (
                 logs.map((log, i) => <LogItem key={i} {...log} />)
               ) : (
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Awaiting first trade...</p>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{connectionActive ? 'Awaiting first trade...' : 'Waiting for connection...'}</p>
               )}
             </div>
           </section>

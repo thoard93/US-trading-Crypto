@@ -35,7 +35,7 @@ services:
         fromService:
           name: trading-api
           type: web
-          property: url
+          property: host
 
 databases:
   # 3. Database: PostgreSQL
