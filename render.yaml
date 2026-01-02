@@ -18,18 +18,20 @@ services:
         value: 3.12.0
 
   # 2. Frontend: Static Site (React/Vite)
-  - type: web
+  - type: static_site
     name: trading-dashboard
-    env: static
     buildCommand: cd frontend && npm install && npm run build
-    staticPublishPath: frontend/dist
+    publishPath: frontend/dist
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
     routes:
       - type: rewrite
         source: /*
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        # Note: We use the full URL to ensure browser connectivity
         fromService:
           name: trading-api
           type: web

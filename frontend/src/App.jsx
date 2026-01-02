@@ -15,14 +15,17 @@ import {
   RefreshCw,
   Play,
   Square,
-  AlertTriangle
+  AlertTriangle,
+  Link,
+  Cpu
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+console.log("🚀 API Target:", API_BASE);
+
 const USER_ID = 1;
 
-// Error Boundary Wrapper
 class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -35,8 +38,8 @@ class ErrorBoundary extends React.Component {
       return (
         <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#ef4444', gap: '16px', background: '#05070a' }}>
           <AlertTriangle size={48} />
-          <h2>Dashboard Crashed</h2>
-          <button onClick={() => window.location.reload()} style={{ padding: '8px 24px', background: '#00ffcc', borderRadius: '8px', color: '#000' }}>Reload Platform</button>
+          <h2>Dashboard Component Error</h2>
+          <button onClick={() => window.location.reload()} style={{ padding: '8px 24px', background: '#00ffcc', borderRadius: '8px', color: '#000' }}>Fix & Refresh</button>
         </div>
       );
     }
@@ -64,7 +67,10 @@ function App() {
       try {
         const statusRes = await axios.get(`${API_BASE}/status/${USER_ID}`);
         if (statusRes.data) setStatus(statusRes.data);
-      } catch (e) { console.warn("Status fetch failed"); }
+      } catch (e) {
+        console.warn("Status fetch failed", e.message);
+        setApiError("Backend connecting...");
+      }
 
       // Fetch Positions
       try {
@@ -86,13 +92,14 @@ function App() {
 
       // Fetch Chart
       try {
-        const chartRes = await axios.get(`${API_BASE}/chart/${activeSymbol.replace('/', '%2F')}`);
+        const sym = activeSymbol.replace('/', '%2F');
+        const chartRes = await axios.get(`${API_BASE}/chart/${sym}`);
         if (Array.isArray(chartRes.data)) setChartData(chartRes.data);
       } catch (e) { console.warn("Chart fetch failed"); }
 
     } catch (err) {
       console.error("General API Connection Error:", err);
-      setApiError("Backend connection unstable. Retrying...");
+      setApiError("No response from server.");
     }
   }, [activeSymbol]);
 
@@ -110,9 +117,10 @@ function App() {
       } else {
         await axios.post(`${API_BASE}/users/start/${USER_ID}`);
       }
-      setTimeout(fetchData, 1000); // Small delay to let engine spin up
+      setTimeout(fetchData, 1500);
     } catch (err) {
-      alert("Bot control error. Check backend connection.");
+      console.error("Toggle failed:", err);
+      setApiError("Control command failed.");
     } finally {
       setLoading(false);
     }
@@ -124,6 +132,79 @@ function App() {
       if (!sym.includes('/')) sym = `${sym}/USDT`;
       setActiveSymbol(sym);
       setSearchInput('');
+    }
+  };
+
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'Dashboard':
+        return (
+          <>
+            <section className="glass glow-shadow chart-container" style={{ display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
+                <div>
+                  <h1 style={{ fontSize: '2rem' }}>{activeSymbol}</h1>
+                  <p style={{ color: 'var(--text-secondary)' }}>
+                    {chartData.length > 0 && chartData[chartData.length - 1]?.price
+                      ? `$${chartData[chartData.length - 1].price.toLocaleString()}`
+                      : 'Connecting to Market...'}
+                    <span style={{ color: 'var(--success)', marginLeft: '8px', fontSize: '0.8rem' }}>LIVE 5M</span>
+                  </p>
+                </div>
+                <div className="glass" style={{ display: 'flex', padding: '4px' }}>
+                  <button className="glass" style={{ padding: '6px 16px', background: 'rgba(255,255,255,0.1)' }}>5M</button>
+                  <button style={{ padding: '6px 16px', color: 'var(--text-secondary)' }}>1H</button>
+                  <button style={{ padding: '6px 16px', color: 'var(--text-secondary)' }}>1D</button>
+                </div>
+              </div>
+
+              <div style={{ flex: 1, minHeight: '300px' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#00ffcc" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#00ffcc" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                    <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                    <YAxis domain={['auto', 'auto']} hide />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
+                      itemStyle={{ color: '#00ffcc' }}
+                    />
+                    <Area animationDuration={1000} type="monotone" dataKey="price" stroke="#00ffcc" strokeWidth={3} fillOpacity={1} fill="url(#colorPrice)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+              <StatCard label="Total Profit" value={stats.total_profit || '$0.00'} sub="Performance Tracker" color="var(--success)" />
+              <StatCard label="Live Strategy" value={stats.active_bot_names || 'None'} sub={`${stats.active_bots_count || 0} active loop(s)`} color="var(--accent-color)" />
+            </div>
+          </>
+        );
+      default:
+        return (
+          <div className="glass glow-shadow" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px', padding: '40px' }}>
+            <div className="glass" style={{ padding: '24px', borderRadius: '50%', background: 'rgba(0, 255, 204, 0.05)' }}>
+              <Cpu size={48} color="var(--accent-color)" />
+            </div>
+            <h2 style={{ fontSize: '1.5rem' }}>{activeTab} Module</h2>
+            <p style={{ color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '400px' }}>
+              We are currently optimizing the **{activeTab}** system. Your trading engine is still running in the background.
+            </p>
+            <button
+              onClick={() => setActiveTab('Dashboard')}
+              className="glass"
+              style={{ padding: '12px 32px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)', fontWeight: 600 }}
+            >
+              Return to Dashboard
+            </button>
+          </div>
+        );
     }
   };
 
@@ -149,7 +230,7 @@ function App() {
           </nav>
 
           <div style={{ marginTop: 'auto' }}>
-            {apiError && <p style={{ color: 'var(--danger)', fontSize: '0.7rem', textAlign: 'center', marginBottom: '8px' }}>{apiError}</p>}
+            {apiError && <p style={{ color: 'var(--warning)', fontSize: '0.7rem', textAlign: 'center', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><Link size={10} /> {apiError}</p>}
             <div className="glass" style={{ padding: '16px', background: 'rgba(255,255,255,0.05)' }}>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>SYSTEM STATUS</p>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
@@ -190,53 +271,12 @@ function App() {
             </div>
           </header>
 
-          <section className="glass glow-shadow chart-container" style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
-              <div>
-                <h1 style={{ fontSize: '2rem' }}>{activeSymbol}</h1>
-                <p style={{ color: 'var(--text-secondary)' }}>
-                  {chartData.length > 0 && chartData[chartData.length - 1]?.price ? `$${chartData[chartData.length - 1].price.toLocaleString()}` : 'Loading...'}
-                  <span style={{ color: 'var(--success)', marginLeft: '8px', fontSize: '0.8rem' }}>LIVE 5M</span>
-                </p>
-              </div>
-              <div className="glass" style={{ display: 'flex', padding: '4px' }}>
-                <button className="glass" style={{ padding: '6px 16px', background: 'rgba(255,255,255,0.1)' }}>5M</button>
-                <button style={{ padding: '6px 16px', color: 'var(--text-secondary)' }}>1H</button>
-                <button style={{ padding: '6px 16px', color: 'var(--text-secondary)' }}>1D</button>
-              </div>
-            </div>
-
-            <div style={{ flex: 1, minHeight: '300px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#00ffcc" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#00ffcc" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="time" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                  <YAxis domain={['auto', 'auto']} hide />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#111827', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px' }}
-                    itemStyle={{ color: '#00ffcc' }}
-                  />
-                  <Area animationDuration={1000} type="monotone" dataKey="price" stroke="#00ffcc" strokeWidth={3} fillOpacity={1} fill="url(#colorPrice)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </section>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-            <StatCard label="Total Profit" value={stats.total_profit || '$0.00'} sub="Combined performance" color="var(--success)" />
-            <StatCard label="Active Strategy" value={stats.active_bot_names || 'None'} sub={`${stats.active_bots_count || 0} engine(s) monitoring`} color="var(--accent-color)" />
-          </div>
+          {renderTabContent()}
         </main>
 
         {/* Right Panel */}
         <aside className="right-panel">
-          <section className="glass glow-shadow" style={{ padding: '24px', flex: 1, minHeight: '300px' }}>
+          <section className="glass glow-shadow" style={{ padding: '24px', flex: 1, minHeight: '320px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h3>Active Positions</h3>
               {positions.length > 0 && <span className="badge badge-success">{positions.length}</span>}
@@ -245,12 +285,12 @@ function App() {
               {Array.isArray(positions) && positions.length > 0 ? (
                 positions.map((pos, i) => <PositionItem key={i} {...pos} />)
               ) : (
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>No active trades detected.</p>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>No open trades found.</p>
               )}
             </div>
           </section>
 
-          <section className="glass glow-shadow" style={{ padding: '24px', flex: 1, minHeight: '300px' }}>
+          <section className="glass glow-shadow" style={{ padding: '24px', flex: 1, minHeight: '320px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h3>Recent Activity</h3>
               <History size={20} color="var(--text-secondary)" />
@@ -259,7 +299,7 @@ function App() {
               {Array.isArray(logs) && logs.length > 0 ? (
                 logs.map((log, i) => <LogItem key={i} {...log} />)
               ) : (
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>History is empty.</p>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Awaiting first trade...</p>
               )}
             </div>
           </section>
@@ -299,7 +339,8 @@ function StatCard({ label, value, sub, color }) {
 }
 
 function PositionItem({ symbol, entry, current, profit }) {
-  const isProfit = profit && typeof profit === 'string' && profit.startsWith('+');
+  const profitNum = parseFloat(profit) || 0;
+  const isProfit = profitNum >= 0;
   return (
     <div className="glass" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
@@ -307,8 +348,8 @@ function PositionItem({ symbol, entry, current, profit }) {
         <span className={`badge ${isProfit ? 'badge-success' : 'badge-danger'}`}>{profit || '0%'}</span>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-        <span>Entry: ${entry || '0.00'}</span>
-        <span>Now: ${current || '0.00'}</span>
+        <span>Entry: ${parseFloat(entry).toFixed(4)}</span>
+        <span>Now: ${parseFloat(current).toFixed(4)}</span>
       </div>
     </div>
   );
