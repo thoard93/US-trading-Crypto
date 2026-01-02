@@ -23,6 +23,10 @@ bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
 @bot.event
 async def on_ready():
+    # Ensure DB is initialized before anything else
+    from database import init_db
+    init_db()
+    
     print(f'Logged in as {bot.user.name} (ID: {bot.user.id})')
     print('US trading Crypto bot is online!')
     await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="the markets 📈"))

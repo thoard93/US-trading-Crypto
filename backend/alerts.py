@@ -62,6 +62,14 @@ class AlertSystem(commands.Cog):
         channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
         channel_stocks = self.bot.get_channel(self.STOCKS_CHANNEL_ID)
 
+        # 0. Monitor Active Positions (Critical for SL/TP compliance)
+        all_owned = list(self.trader.active_positions.keys())
+        if all_owned:
+            print(f"🛡️ Monitoring {len(all_owned)} active positions for exits...")
+            for symbol in all_owned:
+                if channel_crypto:
+                    await self._check_and_alert(symbol, channel_crypto, "Crypto")
+
         # 1. Monitor Majors
         print(f"Checking major crypto: {self.majors_watchlist}")
         if channel_crypto:

@@ -32,7 +32,9 @@ class TradingEngine:
         
         while self.is_running:
             try:
-                for symbol in self.watchlist:
+                # Merge watchlist and active positions to ensure everything we OWN is monitored
+                check_list = list(set(self.watchlist + list(self.trader.active_positions.keys())))
+                for symbol in check_list:
                     # Fetch 5m data for scalping
                     data = self.crypto.fetch_ohlcv(symbol, timeframe='5m', limit=100)
                     if data is not None and not data.empty:

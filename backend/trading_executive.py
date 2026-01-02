@@ -182,26 +182,34 @@ class TradingExecutive:
         print("🔄 Loading live positions from Kraken...")
         try:
             balance = self.exchange.fetch_balance()
-            for asset, data in balance.items():
+            # Standard CCXT balance iteration
+            total_bals = balance.get('total', {})
+            for asset, total_amount in total_bals.items():
                 if asset in ['USDT', 'USD', 'ZUSD', 'EUR', 'CAD']: continue
-                free = data.get('free', 0)
-                if free > 0:
+                if total_amount > 0:
                     # Construct USDT symbol
                     symbol = f"{asset}/USDT"
                     try:
                         # Check market existence
                         if symbol not in self.exchange.markets:
                             self.exchange.load_markets()
+                        
                         if symbol not in self.exchange.markets:
-                            continue
+                            # Try with 'X' prefix if needed (common in Kraken raw symbols)
+                            alt_symbol = f"X{asset}/USDT"
+                            if alt_symbol in self.exchange.markets:
+                                symbol = alt_symbol
+                            else:
+                                continue
                             
                         ticker = self.exchange.fetch_ticker(symbol)
                         price = ticker['last']
-                        value = free * price
+                        value = total_amount * price
                         if value > 5.0: # Adopt if > $5
-                            self.track_position(symbol, price, free)
-                            print(f"✅ Adopting position: {symbol} ({free:.4f} @ ${price:.4f})")
-                    except:
+                            self.track_position(symbol, price, total_amount)
+                            print(f"✅ Adopting position: {symbol} ({total_amount:.4f} @ ${price:.4f})")
+                    except Exception as inner_e:
+                        print(f"⚠️ Failed to sync {asset}: {inner_e}")
                         continue
         except Exception as e:
             print(f"❌ Position sync error: {e}")
