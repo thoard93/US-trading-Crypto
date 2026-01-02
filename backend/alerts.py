@@ -101,29 +101,41 @@ class AlertSystem(commands.Cog):
 
     async def _check_and_alert(self, symbol, channel, asset_type):
         """Helper to fetch data, check exits, and process alerts."""
-        data = self.crypto.fetch_ohlcv(symbol, timeframe='1h', limit=100)
-        if data is None:
-            print(f"❌ Failed to fetch data for {symbol}")
-            return
+        try:
+            data = self.crypto.fetch_ohlcv(symbol, timeframe='1h', limit=100)
+            if data is None:
+                print(f"❌ Failed to fetch data for {symbol}")
+            # Use 5m timeframe for scalping/memes, 1h for stocks or legacy majors
+            tf = '5m' if asset_type in ["Meme", "Crypto"] else '1h'
+            data = self.crypto.fetch_ohlcv(symbol, timeframe=tf, limit=100)
+            
+            if data is None or data.empty:
+                # Silently skip if ticker not found (handles regional restrictions)
+                return
 
-        current_price = data.iloc[-1]['close']
-        p_str = f"{current_price:.8f}" if current_price < 1.0 else f"{current_price:.2f}"
-        
-        # Stop-Loss / Take-Profit
-        exit_reason = self.trader.check_exit_conditions(symbol, current_price)
-        if exit_reason:
-            exit_res = self.trader.execute_market_sell(symbol)
-            if "error" not in exit_res:
-                embed = discord.Embed(
-                    title=f"🚨 AUTO-EXIT: {exit_reason}",
-                    description=f"Closed position for **{symbol}** at ${p_str}",
-                    color=discord.Color.orange()
-                )
-                await channel.send(embed=embed)
-                if symbol in self.trader.active_positions:
-                    del self.trader.active_positions[symbol]
-
-        await self._process_alert(channel, symbol, data, asset_type)
+            current_price = data.iloc[-1]['close']
+            p_str = f"{current_price:.8f}" if current_price < 1.0 else f"{current_price:.2f}"
+            
+            # Stop-Loss / Take-Profit (Only if we have a position)
+            if symbol in self.trader.active_positions:
+                exit_reason = self.trader.check_exit_conditions(symbol, current_price)
+                if exit_reason:
+                    exit_res = self.trader.execute_market_sell(symbol)
+                    if "error" not in exit_res:
+                        embed = discord.Embed(
+                            title=f"🚨 AUTO-EXIT: {exit_reason}",
+                            description=f"Closed position for **{symbol}** at ${p_str}",
+                            color=discord.Color.orange()
+                        )
+                        await channel.send(embed=embed)
+                        if symbol in self.trader.active_positions:
+                            del self.trader.active_positions[symbol]
+            
+            await self._process_alert(channel, symbol, data, asset_type)
+        except Exception as e:
+            # Don't spam discovery errors
+            if "does not have market symbol" not in str(e):
+                print(f"⚠️ Error checking {symbol}: {e}")
         await asyncio.sleep(0.3)
 
     @tasks.loop(minutes=10)
@@ -170,20 +182,26 @@ class AlertSystem(commands.Cog):
         
         print("🔍 Running Kraken Market Discovery...")
         try:
+            # Load markets to ensure valid mapping
+            markets = self.crypto.exchange.load_markets()
+            
             # Fetch all tickers from Kraken
             tickers = self.crypto.exchange.fetch_tickers()
             usdt_tickers = []
             
             for symbol, ticker in tickers.items():
-                if '/USDT' in symbol and ticker.get('quoteVolume'):
-                    usdt_tickers.append({
-                        'symbol': symbol,
-                        'volume': float(ticker.get('quoteVolume', 0)),
-                        'price': float(ticker.get('last', 0))
-                    })
+                # Filter for USDT pairs that are ACTUALLY tradable
+                if '/USDT' in symbol and ticker.get('quoteVolume') and symbol in markets:
+                    m = markets[symbol]
+                    if m.get('active') and m.get('spot'):
+                        usdt_tickers.append({
+                            'symbol': symbol,
+                            'volume': float(ticker.get('quoteVolume', 0)),
+                            'price': float(ticker.get('last', 0))
+                        })
             
-            # Sort by volume (Top 25)
-            sorted_tickers = sorted(usdt_tickers, key=lambda x: x['volume'], reverse=True)[:25]
+            # Sort by volume (Top 30)
+            sorted_tickers = sorted(usdt_tickers, key=lambda x: x['volume'], reverse=True)[:30]
             
             new_majors = []
             new_memes = []
@@ -192,21 +210,23 @@ class AlertSystem(commands.Cog):
                 s = t['symbol']
                 p = t['price']
                 
+                # Exclude USDC/USDT and specific restricted pairs if we find them
+                if 'USDC' in s or 'PYUSD' in s: continue
+                
                 # Exclude sub-pennies/memes from majors
-                if p > 1.0 and s not in new_majors:
+                if p > 0.5 and s not in new_majors:
                     new_majors.append(s)
-                elif p <= 1.0 and s not in new_memes:
+                elif p <= 0.5 and s not in new_memes:
                     new_memes.append(s)
             
-            # Static list + Top discovered ones
-            # We keep our core list and append new high volume ones
-            core_majors = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT']
-            core_memes = ['PEPE/USDT', 'SHIB/USDT', 'DOGE/USDT', 'BONK/USDT', 'WIF/USDT']
+            # Core pairs (that we know work or want anyway)
+            core_majors = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
+            core_memes = ['DOGE/USDT', 'SHIB/USDT', 'ADA/USDT']
             
-            self.majors_watchlist = sorted(list(set(core_majors + new_majors[:6])))
-            self.memes_watchlist = sorted(list(set(core_memes + new_memes[:10])))
+            self.majors_watchlist = sorted(list(set(core_majors + new_majors[:8])))
+            self.memes_watchlist = sorted(list(set(core_memes + new_memes[:12])))
             
-            print(f"✅ Kraken Watchlist Updated. Majors: {len(self.majors_watchlist)}, Memes: {len(self.memes_watchlist)}")
+            print(f"✅ Kraken Watchlist Updated: Majors({len(self.majors_watchlist)}), Memes({len(self.memes_watchlist)})")
             
         except Exception as e:
             print(f"❌ Kraken Discovery error: {e}")
@@ -268,13 +288,24 @@ class AlertSystem(commands.Cog):
                         
                         trade_result = self.trader.execute_market_buy(symbol, amount_usdt=trade_amount)
                         trade_title = "💰 SCALP: EXECUTED BUY" if scalp_mode else "💰 AUTO-TRADE: EXECUTED BUY"
-                    else:
-                        trade_result = self.trader.execute_market_sell(symbol)
-                        trade_title = "📉 SCALP: EXECUTED SELL" if scalp_mode else "📉 AUTO-TRADE: EXECUTED SELL"
+                    else: # SELL signal
+                        if scalp_mode: trade_title = "📉 SCALP: EXIT OPPORTUNITY"
+                        else: trade_title = "📉 AUTO-TRADE: EXIT OPPORTUNITY"
+                        
+                        # ONLY execute sell if we actually own the coin
+                        if symbol in self.trader.active_positions:
+                            trade_result = self.trader.execute_market_sell(symbol)
+                            trade_title = "📉 SCALP: EXECUTED SELL" if scalp_mode else "📉 AUTO-TRADE: EXECUTED SELL"
+                        else:
+                            # Log it but don't try to trade
+                            print(f"ℹ️ Sell signal for {symbol} but no active position to close.")
+                            trade_result = {"error": "No position"}
 
-                    if "error" not in trade_result:
-                        # Record position for SL/TP tracking
-                        self.trader.track_position(symbol, symbol_price, trade_result.get('amount', 0))
+                    if trade_result and "error" not in trade_result:
+                        # Record position for SL/TP tracking (only for BUYs, or if a SELL actually executed)
+                        # For sells, the position is removed by execute_market_sell internally
+                        if result['signal'] == 'BUY':
+                            self.trader.track_position(symbol, symbol_price, trade_result.get('amount', 0))
                         
                         trade_embed = discord.Embed(
                             title=trade_title,
