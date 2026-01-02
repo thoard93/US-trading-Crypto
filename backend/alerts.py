@@ -17,11 +17,8 @@ class AlertSystem(commands.Cog):
         self.dex_scout = DexScout()
         
         # User defined watchlists
-        # Expanded Full-Throttle Watchlist
-        self.crypto_watchlist = [
-            'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 
-            'PEPE/USDT', 'SHIB/USDT', 'DOGE/USDT', 'BONK/USDT', 'WIF/USDT'
-        ]
+        self.majors_watchlist = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT']
+        self.memes_watchlist = ['PEPE/USDT', 'SHIB/USDT', 'DOGE/USDT', 'BONK/USDT', 'WIF/USDT']
         self.dex_watchlist = [
             {"chain": "solana", "address": "HBoNJ5v8g71s2boRivrHnfSB5MVPLDHHyVjruPfhGkvL"} # Purple Pepe
         ]
@@ -30,6 +27,7 @@ class AlertSystem(commands.Cog):
         # User defined channel IDs
         self.STOCKS_CHANNEL_ID = 1456078814567202960
         self.CRYPTO_CHANNEL_ID = 1456078864684945531
+        self.MEMECOINS_CHANNEL_ID = 1456439911896060028
         
         self.monitor_market.start()
 
@@ -41,55 +39,25 @@ class AlertSystem(commands.Cog):
         if not self.bot.is_ready():
             await self.bot.wait_until_ready()
 
-        # 1. Monitor Crypto
-        print(f"Checking crypto markets: {self.crypto_watchlist}")
         channel_crypto = self.bot.get_channel(self.CRYPTO_CHANNEL_ID)
-        
-        scan_results = []
+        channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
+        channel_stocks = self.bot.get_channel(self.STOCKS_CHANNEL_ID)
+
+        # 1. Monitor Majors
+        print(f"Checking major crypto: {self.majors_watchlist}")
         if channel_crypto:
-            for symbol in self.crypto_watchlist:
-                data = self.crypto.fetch_ohlcv(symbol, timeframe='1h', limit=100)
-                if data is None:
-                    print(f"❌ Failed to fetch crypto data for {symbol}")
-                    scan_results.append(f"❌ `{symbol}`: Data Error")
-                    continue
+            for symbol in self.majors_watchlist:
+                await self._check_and_alert(symbol, channel_crypto, "Crypto")
 
-                # --- STOP-LOSS / TAKE-PROFIT CHECK ---
-                current_price = data.iloc[-1]['close']
-                
-                # Format price for readability
-                p_str = f"{current_price:.8f}" if current_price < 1.0 else f"{current_price:.2f}"
-                
-                exit_reason = self.trader.check_exit_conditions(symbol, current_price)
-                if exit_reason:
-                    exit_res = self.trader.execute_market_sell(symbol)
-                    if "error" not in exit_res:
-                        embed = discord.Embed(
-                            title=f"🚨 AUTO-EXIT: {exit_reason}",
-                            description=f"Closed position for **{symbol}** at ${p_str}",
-                            color=discord.Color.orange()
-                        )
-                        await channel_crypto.send(embed=embed)
-                        if symbol in self.trader.active_positions:
-                            del self.trader.active_positions[symbol]
+        # 2. Monitor Memes (on Kraken)
+        print(f"Checking memecoins: {self.memes_watchlist}")
+        if channel_memes:
+            for symbol in self.memes_watchlist:
+                await self._check_and_alert(symbol, channel_memes, "Meme")
 
-                # Run analysis for alerts
-                result = await self._process_alert(channel_crypto, symbol, data, "Crypto")
-                scan_results.append(f"✅ `{symbol}`: ${p_str} (RSI: {result['rsi']})")
-                await asyncio.sleep(1)
-
-            # Send a summary if this was a manual !scan or every few hours
-            # Optional: Send a small heartbeat to show it's alive
-            summary_embed = discord.Embed(
-                title="🔍 5-Minute Market Scan Summary",
-                description="\n".join(scan_results),
-                color=discord.Color.light_grey()
-            )
-            summary_embed.set_footer(text="Scan complete. Signals only post if Buy/Sell/Trend detected.")
-            
-        # 2. Monitor DEX Scout (New Gems)
+        # 3. Monitor DEX Scout (New Gems)
         print(f"Scouting DEX tokens: {self.dex_watchlist}")
-        if channel_crypto:
+        if channel_memes:
             for item in self.dex_watchlist:
                 pair_data = await self.dex_scout.get_pair_data(item['chain'], item['address'])
                 if pair_data:
@@ -109,19 +77,44 @@ class AlertSystem(commands.Cog):
                         embed.add_field(name="Safety Status", value=f"**{audit.get('safety_status', 'N/A')}**", inline=False)
                         embed.add_field(name="DEX Link", value=f"[View on DexScreener]({info['url']})", inline=False)
                         
-                        await channel_crypto.send(embed=embed)
+                        await channel_memes.send(embed=embed)
                 await asyncio.sleep(1)
 
-        # 2. Monitor Stocks
+        # 4. Monitor Stocks
         print(f"Checking stock markets: {self.stock_watchlist}")
-        channel_stocks = self.bot.get_channel(self.STOCKS_CHANNEL_ID)
         if channel_stocks:
             for symbol in self.stock_watchlist:
                 data = self.stocks.fetch_ohlcv(symbol, timeframe='1Hour', limit=100)
-                if data is None:
-                    print(f"❌ Failed to fetch stock data for {symbol}")
-                await self._process_alert(channel_stocks, symbol, data, "Stock")
+                if data is not None:
+                    await self._process_alert(channel_stocks, symbol, data, "Stock")
                 await asyncio.sleep(1)
+
+    async def _check_and_alert(self, symbol, channel, asset_type):
+        """Helper to fetch data, check exits, and process alerts."""
+        data = self.crypto.fetch_ohlcv(symbol, timeframe='1h', limit=100)
+        if data is None:
+            print(f"❌ Failed to fetch data for {symbol}")
+            return
+
+        current_price = data.iloc[-1]['close']
+        p_str = f"{current_price:.8f}" if current_price < 1.0 else f"{current_price:.2f}"
+        
+        # Stop-Loss / Take-Profit
+        exit_reason = self.trader.check_exit_conditions(symbol, current_price)
+        if exit_reason:
+            exit_res = self.trader.execute_market_sell(symbol)
+            if "error" not in exit_res:
+                embed = discord.Embed(
+                    title=f"🚨 AUTO-EXIT: {exit_reason}",
+                    description=f"Closed position for **{symbol}** at ${p_str}",
+                    color=discord.Color.orange()
+                )
+                await channel.send(embed=embed)
+                if symbol in self.trader.active_positions:
+                    del self.trader.active_positions[symbol]
+
+        await self._process_alert(channel, symbol, data, asset_type)
+        await asyncio.sleep(0.5)
 
     async def _process_alert(self, channel, symbol, data, asset_type):
         if data is not None:
@@ -158,11 +151,11 @@ class AlertSystem(commands.Cog):
                 await channel.send(embed=embed)
                 
                 # --- SCALPING & AUTO-TRADING LOGIC ---
-                if asset_type == "Crypto" and result['signal'] in ['BUY', 'SELL']:
+                if asset_type in ["Crypto", "Meme"] and result['signal'] in ['BUY', 'SELL']:
                     symbol_price = result['price']
                     
-                    # Target coins under $1 for "Micro-Scalping"
-                    if symbol_price < 1.0:
+                    # Target memes or coins under $1 for "Micro-Scalping"
+                    if asset_type == "Meme" or symbol_price < 1.0:
                         trade_amount = 2.0  # Scalp with $2 for high-volatility micro-caps
                         scalp_mode = True
                     else:
@@ -220,22 +213,31 @@ class AlertSystem(commands.Cog):
     @commands.command()
     async def scan(self, ctx):
         """Manually trigger a market scan."""
-        await ctx.send("⚡ Manually triggering market scan...")
+        await ctx.send("⚡ Triggering Full Market Scan summary...")
         
-        # Capture results for manual scan
-        channel_crypto = self.bot.get_channel(self.CRYPTO_CHANNEL_ID)
         scan_results = []
-        for symbol in self.crypto_watchlist:
-            data = self.crypto.fetch_ohlcv(symbol, timeframe='1h', limit=100)
+        # Majors
+        for s in self.majors_watchlist:
+            data = self.crypto.fetch_ohlcv(s, timeframe='1h', limit=2)
             if data:
-                res = self.analyzer.analyze_trend(data)
                 p = data.iloc[-1]['close']
-                p_str = f"{p:.8f}" if p < 1.0 else f"{p:.2f}"
-                scan_results.append(f"✅ `{symbol}`: ${p_str} (RSI: {res['rsi']})")
-        
-        summary = discord.Embed(title="🔍 Manual Scan Results", description="\n".join(scan_results), color=discord.Color.blue())
+                scan_results.append(f"🔵 `{s}`: ${p:.2f}")
+
+        # Memes
+        for s in self.memes_watchlist:
+            data = self.crypto.fetch_ohlcv(s, timeframe='1h', limit=2)
+            if data:
+                p = data.iloc[-1]['close']
+                scan_results.append(f"🟡 `{s}`: ${p:.8f}")
+
+        # DEX
+        for item in self.dex_watchlist:
+            pair = await self.dex_scout.get_pair_data(item['chain'], item['address'])
+            if pair:
+                scan_results.append(f"🟣 `{pair['baseToken']['symbol']}`: ${pair['priceUsd']}")
+
+        summary = discord.Embed(title="🔍 Market Status Summary", description="\n".join(scan_results), color=discord.Color.blue())
         await ctx.send(embed=summary)
-        await ctx.send("✅ Full background monitor cycle finishing...")
 
     @commands.command()
     async def track(self, ctx, address: str, chain: str = "solana"):
