@@ -102,9 +102,6 @@ class AlertSystem(commands.Cog):
     async def _check_and_alert(self, symbol, channel, asset_type):
         """Helper to fetch data, check exits, and process alerts."""
         try:
-            data = self.crypto.fetch_ohlcv(symbol, timeframe='1h', limit=100)
-            if data is None:
-                print(f"❌ Failed to fetch data for {symbol}")
             # Use 5m timeframe for scalping/memes, 1h for stocks or legacy majors
             tf = '5m' if asset_type in ["Meme", "Crypto"] else '1h'
             data = self.crypto.fetch_ohlcv(symbol, timeframe=tf, limit=100)
@@ -269,22 +266,27 @@ class AlertSystem(commands.Cog):
                 if asset_type in ["Crypto", "Meme"] and result['signal'] in ['BUY', 'SELL']:
                     symbol_price = result['price']
                     trade_result = None
+                    MAX_POSITIONS = 5
                     
-                    # Target memes or coins under $1 for "Micro-Scalping"
-                    if asset_type == "Meme" or symbol_price < 1.0:
-                        trade_amount = 2.0  # Scalp with $2 for high-volatility micro-caps
-                        scalp_mode = True
-                    else:
-                        trade_amount = 10.0 # Standard trade for major coins
-                        scalp_mode = False
+                    # Kraken requires ~$10 minimum for most pairs
+                    trade_amount = 10.0 
+                    scalp_mode = (asset_type == "Meme" or symbol_price < 1.0)
 
                     if result['signal'] == 'BUY':
-                        # Automated Safety Audit for small coins
+                        # 1. Check if we already have a position
+                        if symbol in self.trader.active_positions:
+                            print(f"ℹ️ Buy signal for {symbol} but already holding.")
+                            return
+
+                        # 2. Check position cap
+                        if len(self.trader.active_positions) >= MAX_POSITIONS:
+                            print(f"⚠️ Position cap ({MAX_POSITIONS}) reached. Skipping buy for {symbol}.")
+                            return
+
+                        # 3. Automated Safety Audit for small coins
                         if symbol_price < 1.0:
                             await channel.send(f"🛡️ **Scalp Safety Check:** Auditing `{symbol}` before entry...")
-                            # Note: Real rug-pull check usually needs contract address. 
-                            # For Kraken-listed tokens, we check for high RSI/Volatility instead.
-                            # We will add a placeholder for address-based audit if available.
+                            # Note: For Kraken-listed tokens, we check for high RSI/Volatility instead.
                         
                         trade_result = self.trader.execute_market_buy(symbol, amount_usdt=trade_amount)
                         trade_title = "💰 SCALP: EXECUTED BUY" if scalp_mode else "💰 AUTO-TRADE: EXECUTED BUY"
@@ -324,14 +326,19 @@ class AlertSystem(commands.Cog):
             return result
 
     @commands.command()
-    async def add_watchlist(self, ctx, symbol: str, asset_type: str = "crypto"):
-        """Add to watchlist. Usage: !add_watchlist BTC crypto OR !add_watchlist TSLA stock"""
+    async def add_watchlist(self, ctx, symbol: str, category: str = "majors"):
+        """Add to watchlist. Usage: !add_watchlist BTC majors OR !add_watchlist DOGE memes"""
         symbol = symbol.upper()
-        if asset_type.lower() == "crypto":
-            if '/' not in symbol: symbol = f"{symbol}/USDT"
-            if symbol not in self.crypto_watchlist:
-                self.crypto_watchlist.append(symbol)
-                await ctx.send(f"✅ Added {symbol} to Crypto watchlist.")
+        if '/' not in symbol: symbol = f"{symbol}/USDT"
+        
+        if category.lower() == "majors":
+            if symbol not in self.majors_watchlist:
+                self.majors_watchlist.append(symbol)
+                await ctx.send(f"✅ Added {symbol} to Majors watchlist.")
+        elif category.lower() == "memes":
+            if symbol not in self.memes_watchlist:
+                self.memes_watchlist.append(symbol)
+                await ctx.send(f"✅ Added {symbol} to Memes watchlist.")
         else:
             if symbol not in self.stock_watchlist:
                 self.stock_watchlist.append(symbol)
