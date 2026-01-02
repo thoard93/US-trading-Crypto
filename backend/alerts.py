@@ -131,8 +131,12 @@ class AlertSystem(commands.Cog):
         if all_owned:
             print(f"🛡️ Monitoring {len(all_owned)} active positions for exits...")
             for symbol in all_owned:
-                if channel_crypto:
-                    await self._check_and_alert(symbol, channel_crypto, "Crypto")
+                # Detect asset type based on symbol format
+                a_type = "Stock" if "/" not in symbol else "Crypto"
+                if a_type == "Crypto" and channel_crypto:
+                    await self._check_and_alert(symbol, channel_crypto, a_type)
+                elif a_type == "Stock" and channel_stocks:
+                    await self._check_and_alert(symbol, channel_stocks, a_type)
 
         # 1. Monitor Majors
         print(f"Checking major crypto: {self.majors_watchlist}")
@@ -284,7 +288,13 @@ class AlertSystem(commands.Cog):
                         await channel.send(embed=embed)
                         if symbol in self.trader.active_positions:
                             del self.trader.active_positions[symbol]
+                        
+                        # CRITICAL: Return here to prevent the bot from immediately re-buying
+                        # if the trend analysis still says 'BUY'
+                        print(f"🛑 Position exited for {symbol}. Skipping further analysis this loop.")
+                        return 
             
+            await asyncio.sleep(0.1) # Tiny delay to allow state to settle
             await self._process_alert(channel, symbol, data, asset_type)
         except Exception as e:
             # Don't spam discovery errors

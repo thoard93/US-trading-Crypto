@@ -81,13 +81,24 @@ class StockCollector:
 
     def get_current_price(self, symbol):
         """Fetch the latest trade price."""
+        data = self.get_stock_data(symbol)
+        return data['price'] if data else None
+
+    def get_stock_data(self, symbol):
+        """Fetch latest price and 24h change using get_snapshot."""
         if not self.api:
             return None
         try:
-            trade = self.api.get_latest_trade(symbol)
-            return trade.price
+            snapshot = self.api.get_snapshot(symbol)
+            price = snapshot.latest_trade.price
+            prev_close = snapshot.prev_daily_bar.close if snapshot.prev_daily_bar else price
+            change = ((price / prev_close) - 1) * 100 if prev_close else 0.0
+            return {
+                "price": price,
+                "change": round(change, 2)
+            }
         except Exception as e:
-            print(f"Error fetching stock price for {symbol}: {e}")
+            print(f"Error fetching snapshot for {symbol}: {e}")
             return None
 
     def get_account(self):

@@ -237,15 +237,15 @@ async def get_market_data(user_id: int):
         print(f"⚠️ Market crypto error: {e}")
 
     # 2. Stock Prices
-    s_coll = engine.stock_collector if engine else None
+    s_coll = engine.stock_collector if (engine and hasattr(engine, 'stock_collector')) else None
     if s_coll:
         for symbol in stock_watchlist:
             try:
-                price = s_coll.get_current_price(symbol)
-                if price:
+                stock_res = s_coll.get_stock_data(symbol)
+                if stock_res:
                     market_data.append({
-                        "symbol": symbol, "price": price,
-                        "change": 0.0, "volume": 0.0, # Alpaca free tier change data is limited
+                        "symbol": symbol, "price": stock_res['price'],
+                        "change": stock_res['change'], "volume": 0.0,
                         "type": "STOCK"
                     })
             except: continue

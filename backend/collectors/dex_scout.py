@@ -7,20 +7,26 @@ class DexScout:
         self.base_url = "https://api.dexscreener.com/latest/dex"
         self.logger = logging.getLogger(__name__)
 
-    async def get_pair_data(self, chain_id, pair_address):
-        """Fetch data for a specific pair from DexScreener."""
-        url = f"{self.base_url}/pairs/{chain_id}/{pair_address}"
+    async def get_pair_data(self, chain_id, token_address):
+        """Fetch data for a specific token/pair from DexScreener."""
+        # Use simple tokens endpoint which is robust for token addresses
+        url = f"{self.base_url}/tokens/{token_address}"
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     if response.status == 200:
                         data = await response.json()
-                        return data.get('pair')
+                        pairs = data.get('pairs', [])
+                        if not pairs:
+                            return None
+                        # Sort by liquidity to get the main pair
+                        pairs.sort(key=lambda x: float(x.get('liquidity', {}).get('usd', 0)), reverse=True)
+                        return pairs[0]
                     else:
-                        self.logger.error(f"DexScreener API error: {response.status}")
+                        print(f"❌ DexScreener API error: {response.status} for {token_address}")
                         return None
         except Exception as e:
-            self.logger.error(f"Error fetching DexScreener data: {e}")
+            print(f"❌ Error fetching DexScreener data for {token_address}: {e}")
             return None
 
     async def search_tokens(self, query):
