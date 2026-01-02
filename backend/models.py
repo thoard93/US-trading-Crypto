@@ -24,6 +24,7 @@ class ApiKey(Base):
     exchange = Column(String)  # 'kraken', 'alpaca', etc.
     api_key = Column(String)   # Encrypted
     api_secret = Column(String) # Encrypted
+    extra_config = Column(String, nullable=True) # JSON or simple string
     user_id = Column(Integer, ForeignKey("users.id"))
     
     owner = relationship("User", back_populates="api_keys")

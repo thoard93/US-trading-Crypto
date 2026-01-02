@@ -101,7 +101,7 @@ async def discord_callback(code: str, db: Session = Depends(get_db)):
 
 # --- API KEY MANAGEMENT ---
 @app.post("/settings/keys")
-async def save_api_keys(user_id: int, exchange: str, api_key: str, api_secret: str, db: Session = Depends(get_db)):
+async def save_api_keys(user_id: int, exchange: str, api_key: str, api_secret: str, extra_config: str = None, db: Session = Depends(get_db)):
     # Encrypt keys before saving
     encrypted_key = encrypt_key(api_key)
     encrypted_secret = encrypt_key(api_secret)
@@ -110,11 +110,13 @@ async def save_api_keys(user_id: int, exchange: str, api_key: str, api_secret: s
     if existing:
         existing.api_key = encrypted_key
         existing.api_secret = encrypted_secret
+        existing.extra_config = extra_config
     else:
         new_key = models.ApiKey(
             exchange=exchange,
             api_key=encrypted_key,
             api_secret=encrypted_secret,
+            extra_config=extra_config,
             user_id=user_id
         )
         db.add(new_key)
@@ -137,16 +139,18 @@ async def start_bot(user_id: int, db: Session = Depends(get_db)):
 
     # 2. Fetch Alpaca Keys
     alpaca_entry = db.query(models.ApiKey).filter(models.ApiKey.user_id == user_id, models.ApiKey.exchange == 'alpaca').first()
-    alp_key, alp_secret = None, None
+    alp_key, alp_secret, alp_url = None, None, None
     if alpaca_entry:
         alp_key = decrypt_key(alpaca_entry.api_key)
         alp_secret = decrypt_key(alpaca_entry.api_secret)
-        print(f"🔑 Loaded Alpaca keys for user {user_id}")
+        alp_url = alpaca_entry.extra_config
+        print(f"🔑 Loaded Alpaca keys for user {user_id} (URL: {alp_url})")
 
     engine_instance = TradingEngine(
         user_id, 
         api_key=api_key, api_secret=api_secret,
-        alpaca_key=alp_key, alpaca_secret=alp_secret
+        alpaca_key=alp_key, alpaca_secret=alp_secret,
+        alpaca_url=alp_url
     )
     engine_instance.start()
     active_engines[user_id] = engine_instance

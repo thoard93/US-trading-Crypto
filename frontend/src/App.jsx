@@ -96,6 +96,7 @@ function App() {
   const [apiSecret, setApiSecret] = useState('');
   const [alpacaKey, setAlpacaKey] = useState('');
   const [alpacaSecret, setAlpacaSecret] = useState('');
+  const [alpacaEnv, setAlpacaEnv] = useState('paper'); // 'paper' or 'live'
 
   const loginWithDiscord = async () => {
     setAuthError(null);
@@ -153,14 +154,16 @@ function App() {
   const saveAlpacaKeys = async () => {
     if (!user) return alert("Please login first");
     setLoading(true);
+    const baseUrl = alpacaEnv === 'live' ? 'https://api.alpaca.markets' : 'https://paper-api.alpaca.markets';
     try {
       await axios.post(`${apiBase}/settings/keys`, {
         user_id: user.id,
         exchange: 'alpaca',
         api_key: alpacaKey,
-        api_secret: alpacaSecret
+        api_secret: alpacaSecret,
+        extra_config: baseUrl
       });
-      alert("Alpaca Keys saved securely (AES-256 Encrypted)");
+      alert(`Alpaca ${alpacaEnv.toUpperCase()} Keys saved securely.`);
       setAlpacaKey('');
       setAlpacaSecret('');
     } catch (err) {
@@ -528,7 +531,19 @@ function App() {
                   </div>
 
                   <div className="glass" style={{ padding: '20px', borderLeft: '4px solid var(--accent-color)' }}>
-                    <h4 style={{ color: 'var(--text-secondary)', marginBottom: '16px' }}>ALPACA API KEYS (US STOCKS)</h4>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                      <h4 style={{ color: 'var(--text-secondary)' }}>ALPACA API KEYS (US STOCKS)</h4>
+                      <div className="glass" style={{ display: 'flex', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                        <button
+                          onClick={() => setAlpacaEnv('paper')}
+                          style={{ padding: '4px 12px', fontSize: '0.7rem', background: alpacaEnv === 'paper' ? 'var(--accent-color)' : 'transparent', color: alpacaEnv === 'paper' ? '#000' : '#fff', border: 'none', cursor: 'pointer' }}
+                        >PAPER</button>
+                        <button
+                          onClick={() => setAlpacaEnv('live')}
+                          style={{ padding: '4px 12px', fontSize: '0.7rem', background: alpacaEnv === 'live' ? 'var(--success)' : 'transparent', color: alpacaEnv === 'live' ? '#000' : '#fff', border: 'none', cursor: 'pointer' }}
+                        >LIVE</button>
+                      </div>
+                    </div>
                     <div style={{ display: 'grid', gap: '12px' }}>
                       <input
                         type="password"

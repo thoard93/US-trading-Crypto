@@ -10,11 +10,11 @@ import datetime
 
 class TradingEngine:
     """A standalone trading bot instance for a specific user."""
-    def __init__(self, user_id: int, api_key: str = None, api_secret: str = None, alpaca_key: str = None, alpaca_secret: str = None):
+    def __init__(self, user_id: int, api_key: str = None, api_secret: str = None, alpaca_key: str = None, alpaca_secret: str = None, alpaca_url: str = None):
         self.user_id = user_id
         # If keys are provided, they are likely already decrypted.
         # If not, TradingExecutive will check env as fallback.
-        self.trader = TradingExecutive(api_key, api_secret, alpaca_key, alpaca_secret, user_id=user_id)
+        self.trader = TradingExecutive(api_key, api_secret, alpaca_key, alpaca_secret, alpaca_url=alpaca_url, user_id=user_id)
         self.crypto = self.trader.crypto # Share the same ccxt instance
         self.stock_collector = self.trader.stock_collector
         self.analyzer = TechnicalAnalysis()

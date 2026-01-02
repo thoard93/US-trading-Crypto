@@ -3,11 +3,12 @@ import os
 import logging
 
 class TradingExecutive:
-    def __init__(self, api_key=None, secret_key=None, alpaca_key=None, alpaca_secret=None, user_id=1):
+    def __init__(self, api_key=None, secret_key=None, alpaca_key=None, alpaca_secret=None, alpaca_url=None, user_id=1):
         self.api_key = api_key or os.getenv('KRAKEN_API_KEY')
         self.secret_key = secret_key or os.getenv('KRAKEN_SECRET_KEY')
         self.alpaca_key = alpaca_key or os.getenv('ALPACA_API_KEY')
         self.alpaca_secret = alpaca_secret or os.getenv('ALPACA_SECRET_KEY')
+        self.alpaca_url = alpaca_url or os.getenv('ALPACA_BASE_URL')
         self.user_id = user_id
         
         # Initialize CryptoCollector with specific keys
@@ -17,7 +18,7 @@ class TradingExecutive:
         
         # Initialize StockCollector with specific keys
         from collectors.stock_collector import StockCollector
-        self.stock_collector = StockCollector(api_key=self.alpaca_key, secret_key=self.alpaca_secret)
+        self.stock_collector = StockCollector(api_key=self.alpaca_key, secret_key=self.alpaca_secret, base_url=self.alpaca_url)
         self.stock_api = self.stock_collector.api
         
         if self.exchange and self.exchange.apiKey:
