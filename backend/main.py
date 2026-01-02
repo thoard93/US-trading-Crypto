@@ -62,36 +62,80 @@ async def stop_bot(user_id: int):
 @app.get("/status/{user_id}")
 async def get_bot_status(user_id: int):
     is_running = user_id in active_engines and active_engines[user_id].is_running
-    positions = active_engines[user_id].trader.active_positions if is_running else {}
     return {
         "user_id": user_id,
         "is_running": is_running,
-        "active_positions_count": len(positions),
-        "watchlist": active_engines[user_id].watchlist if is_running else []
+        "active_positions_count": 0, # Placeholder
+        "watchlist": active_engines[user_id].watchlist if is_running else ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
     }
+
+@app.get("/portfolio/{user_id}")
+async def get_portfolio(user_id: int):
+    """Fetch real-time account balances from Kraken."""
+    try:
+        # Kraken balance fetch
+        balances = crypto_collector.exchange.fetch_balance()
+        total_usdt = balances.get('USDT', {}).get('total', 0)
+        
+        assets = []
+        for currency, data in balances['total'].items():
+            if data > 0 and currency not in ['USDT', 'USD', 'EUR']:
+                # Get current price
+                try:
+                    symbol = f"{currency}/USDT"
+                    ticker = crypto_collector.exchange.fetch_ticker(symbol)
+                    price = ticker['last']
+                    assets.append({
+                        "asset": currency,
+                        "amount": data,
+                        "price": price,
+                        "value_usdt": data * price
+                    })
+                except:
+                    continue
+                    
+        return {
+            "usdt_balance": total_usdt,
+            "assets": sorted(assets, key=lambda x: x['value_usdt'], reverse=True)
+        }
+    except Exception as e:
+        print(f"Portfolio fetch error: {e}")
+        return {"usdt_balance": 0, "assets": []}
 
 @app.get("/positions/{user_id}")
 async def get_positions(user_id: int):
+    """Retrieve active trading positions."""
     is_running = user_id in active_engines and active_engines[user_id].is_running
-    if not is_running:
-        return []
     
-    pos_data = []
-    for symbol, data in active_engines[user_id].trader.active_positions.items():
-        # Fetch current price for gain/loss calculation
-        ticker = crypto_collector.exchange.fetch_ticker(symbol)
-        current_price = ticker['last']
-        entry_price = data['entry_price']
-        profit_pct = ((current_price - entry_price) / entry_price) * 100
-        
-        pos_data.append({
-            "symbol": symbol,
-            "entry": round(entry_price, 8),
-            "current": round(current_price, 8),
-            "profit": f"{'+' if profit_pct >= 0 else ''}{round(profit_pct, 2)}%",
-            "side": "BUY"
-        })
-    return pos_data
+    # If bot is running, get tracked positions. Otherwise, return raw Kraken assets.
+    if is_running:
+        pos_data = []
+        for symbol, data in active_engines[user_id].trader.active_positions.items():
+            try:
+                ticker = crypto_collector.exchange.fetch_ticker(symbol)
+                current_price = ticker['last']
+                entry_price = data['entry_price']
+                profit_pct = ((current_price - entry_price) / entry_price) * 100
+                
+                pos_data.append({
+                    "symbol": symbol,
+                    "entry": round(entry_price, 8),
+                    "current": round(current_price, 8),
+                    "profit": f"{'+' if profit_pct >= 0 else ''}{round(profit_pct, 2)}%",
+                    "side": "BUY"
+                })
+            except: continue
+        return pos_data
+    else:
+        # Return summary of assets from Portfolio logic
+        portfolio = await get_portfolio(user_id)
+        return [{
+            "symbol": f"{a['asset']}/USDT",
+            "entry": 0, # Entry unknown when idle
+            "current": a['price'],
+            "profit": "---",
+            "side": "HOLD"
+        } for a in portfolio['assets'][:5]] # Show top 5
 
 @app.get("/trades/{user_id}")
 async def get_trades(user_id: int, db: Session = Depends(get_db)):

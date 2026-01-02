@@ -25,15 +25,17 @@ import {
   WifiOff,
   ExternalLink,
   Edit3,
-  Save
+  Save,
+  DollarSign,
+  ArrowUpRight,
+  ArrowDownRight
 } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
-// --- SMART API RESOLVER + PERSISTENCE ---
+// --- SMART API RESOLVER ---
 const getInitialApiBase = () => {
   const saved = localStorage.getItem('ANTIGRAVITY_API_OVERRIDE');
   if (saved) return saved;
-
   let base = import.meta.env.VITE_API_URL || '';
   if (typeof window !== 'undefined' && window.location.hostname.includes('onrender.com')) {
     const currentHost = window.location.hostname;
@@ -75,6 +77,7 @@ function App() {
   const [manualUrl, setManualUrl] = useState(apiBase);
   const [chartData, setChartData] = useState([]);
   const [positions, setPositions] = useState([]);
+  const [portfolio, setPortfolio] = useState({ usdt_balance: 0, assets: [] });
   const [logs, setLogs] = useState([]);
   const [stats, setStats] = useState({ total_profit: '$0.00', active_bots_count: 0, active_bot_names: 'Connecting...' });
   const [status, setStatus] = useState({ is_running: false });
@@ -97,7 +100,6 @@ function App() {
 
   const fetchData = useCallback(async () => {
     try {
-      // 1. Check Status (Heartbeat)
       const statusRes = await axios.get(`${apiBase}/status/${USER_ID}`, { timeout: 5000 });
       if (statusRes.data) {
         setStatus(statusRes.data);
@@ -106,15 +108,16 @@ function App() {
         setApiError(null);
       }
 
-      // Parallel fetch
-      const [posRes, logsRes, statsRes, chartRes] = await Promise.all([
+      const [posRes, portfolioRes, logsRes, statsRes, chartRes] = await Promise.all([
         axios.get(`${apiBase}/positions/${USER_ID}`).catch(() => ({ data: [] })),
+        axios.get(`${apiBase}/portfolio/${USER_ID}`).catch(() => ({ data: { usdt_balance: 0, assets: [] } })),
         axios.get(`${apiBase}/trades/${USER_ID}`).catch(() => ({ data: [] })),
         axios.get(`${apiBase}/stats/${USER_ID}`).catch(() => ({ data: {} })),
         axios.get(`${apiBase}/chart/${activeSymbol.replace('/', '%2F')}`).catch(() => ({ data: [] }))
       ]);
 
       if (Array.isArray(posRes.data)) setPositions(posRes.data);
+      if (portfolioRes.data) setPortfolio(portfolioRes.data);
       if (Array.isArray(logsRes.data)) setLogs(logsRes.data);
       if (statsRes.data) setStats(statsRes.data);
       if (Array.isArray(chartRes.data)) setChartData(chartRes.data);
@@ -165,12 +168,12 @@ function App() {
           </div>
           <h2 style={{ fontSize: '1.5rem' }}>Bridge Link Awaiting</h2>
           <p style={{ color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '400px' }}>
-            We've predicted the bridge at <code>{apiBase}</code>, but it's not responding.
-            Please paste the exact <b>External URL</b> from your Render dashboard in Settings.
+            Predicting gateway: <code>{apiBase}</code>. Not responding yet.
+            Go to <b>Settings</b> to paste your exact Render URL if this persists.
           </p>
           <div style={{ display: 'flex', gap: '12px' }}>
-            <button onClick={fetchData} className="glass" style={{ padding: '12px 32px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)' }}>Ping predicted route</button>
-            <button onClick={() => setActiveTab('Settings')} className="glass" style={{ padding: '12px 32px' }}>Fix URL manually</button>
+            <button onClick={fetchData} className="glass" style={{ padding: '12px 32px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)' }}>Retry Predicted Route</button>
+            <button onClick={() => setActiveTab('Settings')} className="glass" style={{ padding: '12px 32px' }}>Manual Overwrite</button>
           </div>
         </div>
       );
@@ -187,8 +190,8 @@ function App() {
                   <p style={{ color: 'var(--text-secondary)' }}>
                     {chartData.length > 0 && chartData[chartData.length - 1]?.price
                       ? `$${chartData[chartData.length - 1].price.toLocaleString()}`
-                      : 'Live Market Data Hydrating...'}
-                    <span style={{ color: 'var(--success)', marginLeft: '8px', fontSize: '0.8rem' }}>5M SCALPER</span>
+                      : 'Connecting to Market...'}
+                    <span style={{ color: 'var(--success)', marginLeft: '8px', fontSize: '0.8rem' }}>LIVE 5M</span>
                   </p>
                 </div>
                 <div className="glass" style={{ display: 'flex', padding: '4px' }}>
@@ -227,10 +230,100 @@ function App() {
             </section>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-              <StatCard label="Total Profit" value={stats.total_profit || '$0.00'} sub="Performance Tracker" color="var(--success)" />
-              <StatCard label="Live Strategy" value={stats.active_bot_names || 'None'} sub={`${stats.active_bots_count || 0} active loop(s)`} color="var(--accent-color)" />
+              <StatCard label="Live Performance" value={stats.total_profit || '$0.00'} sub="Total realized gains" color="var(--success)" />
+              <StatCard label="Active Loop" value={stats.active_bot_names || 'None'} sub={`${stats.active_bots_count || 0} engine(s) scanning`} color="var(--accent-color)" />
             </div>
           </>
+        );
+
+      case 'Portfolio':
+        return (
+          <div className="main-content" style={{ gap: '24px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '24px' }}>
+              <section className="glass glow-shadow" style={{ padding: '24px' }}>
+                <h3 style={{ marginBottom: '20px' }}>Asset Distribution</h3>
+                <div style={{ height: '200px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={portfolio.assets}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        paddingAngle={5}
+                        dataKey="value_usdt"
+                      >
+                        {portfolio.assets.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={`hsl(${index * 45}, 70%, 50%)`} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>USDT Balance</span>
+                    <span style={{ fontWeight: 600 }}>${portfolio.usdt_balance.toFixed(2)}</span>
+                  </div>
+                </div>
+              </section>
+
+              <section className="glass glow-shadow" style={{ padding: '24px' }}>
+                <h3 style={{ marginBottom: '20px' }}>Kraken Holdings</h3>
+                <div className="portfolio-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {portfolio.assets.map((asset, i) => (
+                    <div key={i} className="glass" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div className="glass" style={{ width: '32px', height: '32px', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'rgba(255,255,255,0.05)' }}>
+                          {asset.asset[0]}
+                        </div>
+                        <div>
+                          <p style={{ fontWeight: 600 }}>{asset.asset}</p>
+                          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{asset.amount.toFixed(4)} units</p>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <p style={{ fontWeight: 600 }}>${asset.value_usdt.toFixed(2)}</p>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--success)' }}>${asset.price.toFixed(4)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </div>
+        );
+
+      case 'Trade History':
+        return (
+          <div className="main-content">
+            <section className="glass glow-shadow" style={{ padding: '32px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '32px' }}>
+                <h3>Execution History</h3>
+                <button className="glass" style={{ padding: '8px 16px', fontSize: '0.875rem' }}>Export CSV</button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {logs.length > 0 ? logs.map((log, i) => (
+                  <div key={i} className="glass" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                      <div style={{ padding: '8px', borderRadius: '8px', background: log.type === 'BUY' ? 'rgba(0, 255, 204, 0.1)' : 'rgba(255, 71, 87, 0.1)' }}>
+                        {log.type === 'BUY' ? <ArrowDownRight size={20} color="var(--success)" /> : <ArrowUpRight size={20} color="var(--danger)" />}
+                      </div>
+                      <div>
+                        <p style={{ fontWeight: 600 }}>{log.type} {log.symbol}</p>
+                        <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>{log.time}</p>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <p style={{ fontWeight: 600 }}>${parseFloat(log.price).toFixed(6)}</p>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Settled</p>
+                    </div>
+                  </div>
+                )) : <p style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '40px' }}>No trades recorded in database yet.</p>}
+              </div>
+            </section>
+          </div>
         );
 
       case 'Settings':
@@ -238,14 +331,12 @@ function App() {
           <div className="main-content" style={{ gap: '24px' }}>
             <section className="glass glow-shadow" style={{ padding: '32px' }}>
               <h2 style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px' }}><Settings size={24} /> Platform Configuration</h2>
-
               <div style={{ display: 'grid', gap: '20px' }}>
                 <div className="glass" style={{ padding: '20px', borderLeft: `4px solid ${connectionActive ? 'var(--success)' : 'var(--danger)'}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                     <h4 style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>API GATEWAY OVERRIDE <Edit3 size={12} /></h4>
                     {connectionActive ? <Wifi size={16} color="var(--success)" /> : <WifiOff size={16} color="var(--danger)" />}
                   </div>
-
                   <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
                     <input
                       type="text"
@@ -258,28 +349,18 @@ function App() {
                       <Save size={16} /> Save
                     </button>
                   </div>
-
                   <p style={{ fontSize: '0.75rem', marginTop: '12px', color: 'var(--text-secondary)' }}>
-                    {connectionActive ? `🟢 Connected to: ${apiBase} (Heartbeat: ${lastHeartbeat})` : `🔴 Currently trying: ${apiBase}. If this fails, paste the URL from your Render 'trading-api' page.`}
+                    {connectionActive ? `🟢 Connected to: ${apiBase} (Heartbeat: ${lastHeartbeat})` : `🔴 Routing failure. Ensure the above URL matches your Render 'trading-api' homepage exactly.`}
                   </p>
                 </div>
-
                 <div className="glass" style={{ padding: '20px', borderLeft: '4px solid #5865F2' }}>
                   <h4 style={{ color: 'var(--text-secondary)', marginBottom: '12px' }}>DISCORD COMMUNITY INTEGRATION</h4>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div className="glass" style={{ padding: '8px', background: '#5865F2' }}><MessageSquare size={20} /></div>
                     <div>
                       <p style={{ fontWeight: 600 }}>Server ID: 1376908703227318393</p>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Status: Link Pending API Verification</p>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Status: Linked & Scalping Engine Ready</p>
                     </div>
-                  </div>
-                </div>
-
-                <div className="glass" style={{ padding: '20px', borderLeft: '4px solid #f59e0b' }}>
-                  <h4 style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>USER ACCOUNT</h4>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div className="glass" style={{ width: '40px', height: '40px', background: 'linear-gradient(45deg, #00ffcc, #0099ff)', borderRadius: '50%' }}></div>
-                    <p style={{ fontWeight: 600 }}>Demo Trader #1 (Global Admin)</p>
                   </div>
                 </div>
               </div>
@@ -327,7 +408,7 @@ function App() {
           <div style={{ marginTop: 'auto' }}>
             {apiError && <p style={{ color: 'var(--warning)', fontSize: '0.7rem', textAlign: 'center', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><Globe size={12} /> {apiError}</p>}
             <div className="glass" style={{ padding: '16px', background: 'rgba(255,255,255,0.05)' }}>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>V2 ENGINE STATUS</p>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>POWER ENGINE STATUS</p>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <div style={{ width: '8px', height: '8px', background: (connectionActive && status.is_running) ? 'var(--success)' : 'var(--danger)', borderRadius: '50%' }}></div>
@@ -337,9 +418,9 @@ function App() {
                   onClick={toggleBot}
                   disabled={loading || !connectionActive}
                   className="glass"
-                  style={{ padding: '6px', borderRadius: '8px', cursor: connectionActive ? 'pointer' : 'not-allowed', background: status.is_running ? 'rgba(255, 71, 87, 0.1)' : 'rgba(0, 255, 204, 0.1)' }}
+                  style={{ padding: '6px', borderRadius: '8px', cursor: connectionActive ? 'pointer' : 'not-allowed', background: (connectionActive && status.is_running) ? 'rgba(255, 71, 87, 0.1)' : 'rgba(0, 255, 204, 0.1)' }}
                 >
-                  {status.is_running ? <Square size={16} color="var(--danger)" /> : <Play size={16} color="var(--accent-color)" />}
+                  {(connectionActive && status.is_running) ? <Square size={16} color="var(--danger)" /> : <Play size={16} color="var(--accent-color)" />}
                 </button>
               </div>
             </div>
@@ -353,7 +434,7 @@ function App() {
               <Search size={20} color="var(--text-secondary)" />
               <input
                 type="text"
-                placeholder="Search markets..."
+                placeholder="Search markets e.g. XRP..."
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 onKeyDown={handleSearch}
@@ -380,7 +461,7 @@ function App() {
               {connectionActive && Array.isArray(positions) && positions.length > 0 ? (
                 positions.map((pos, i) => <PositionItem key={i} {...pos} />)
               ) : (
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{connectionActive ? 'No open trades found.' : 'Waiting for connection...'}</p>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{connectionActive ? 'No open trades found.' : 'Bridge syncing...'}</p>
               )}
             </div>
           </section>
@@ -394,7 +475,7 @@ function App() {
               {connectionActive && Array.isArray(logs) && logs.length > 0 ? (
                 logs.map((log, i) => <LogItem key={i} {...log} />)
               ) : (
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{connectionActive ? 'Awaiting first trade...' : 'Waiting for connection...'}</p>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{connectionActive ? 'Awaiting first dashboard signal...' : 'Bridge syncing...'}</p>
               )}
             </div>
           </section>
@@ -433,18 +514,17 @@ function StatCard({ label, value, sub, color }) {
   );
 }
 
-function PositionItem({ symbol, entry, current, profit }) {
-  const profitNum = parseFloat(profit) || 0;
-  const isProfit = profitNum >= 0;
+function PositionItem({ symbol, entry, current, profit, side }) {
+  const isProfit = profit && typeof profit === 'string' && profit.startsWith('+');
   return (
     <div className="glass" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
         <span style={{ fontWeight: 600 }}>{symbol || 'Unknown'}</span>
-        <span className={`badge ${isProfit ? 'badge-success' : 'badge-danger'}`}>{profit || '0%'}</span>
+        <span className={`badge ${isProfit ? 'badge-success' : (profit === '---' ? '' : 'badge-danger')}`}>{profit}</span>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-        <span>Entry: ${parseFloat(entry).toFixed(4)}</span>
-        <span>Now: ${parseFloat(current).toFixed(4)}</span>
+        <span>{side === 'HOLD' ? 'Current' : 'Entry'}: ${parseFloat(entry || current).toFixed(4)}</span>
+        <span>{side === 'HOLD' ? 'Price' : 'Now'}: ${parseFloat(current).toFixed(4)}</span>
       </div>
     </div>
   );
