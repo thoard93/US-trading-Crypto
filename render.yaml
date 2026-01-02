@@ -1,17 +1,36 @@
 services:
-  - type: worker
-    name: us-trading-crypto-bot
+  # 1. Backend: FastAPI Web Service
+  - type: web
+    name: trading-api
     env: python
     buildCommand: pip install --upgrade pip && pip install -r backend/requirements.txt
-    startCommand: cd backend && python bot.py
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
-      - key: DISCORD_TOKEN
+      - key: DATABASE_URL
+        fromDatabase:
+          name: trading-db
+          property: connectionString
+      - key: KRAKEN_API_KEY
         sync: false
-      - key: ALPACA_API_KEY
+      - key: KRAKEN_SECRET_KEY
         sync: false
-      - key: ALPACA_SECRET_KEY
-        sync: false
-      - key: ALPACA_BASE_URL
-        value: https://paper-api.alpaca.markets
       - key: PYTHON_VERSION
         value: 3.12.0
+
+  # 2. Frontend: Static Site (React/Vite)
+  - type: static
+    name: trading-dashboard
+    env: static
+    buildCommand: cd frontend && npm install && npm run build
+    publishPath: frontend/dist
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          name: trading-api
+          type: web
+          property: host
+
+databases:
+  # 3. Database: PostgreSQL
+  - name: trading-db
+    plan: free
