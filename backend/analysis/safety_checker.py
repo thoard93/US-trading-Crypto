@@ -27,7 +27,11 @@ class SafetyChecker:
         # Resolve chain_id from map if needed
         c_id = self.chain_map.get(str(chain_id).upper(), str(chain_id))
         
-        # GoPlus API endpoint for token security
+        # USE RUGCHECK FOR SOLANA
+        if c_id.lower() == "solana":
+            return await self._check_solana_rugcheck(address)
+
+        # GoPlus API endpoint for EVM chains
         url = f"{self.BASE_URL}/{c_id}?contract_addresses={address}"
         
         async with aiohttp.ClientSession() as session:
@@ -40,7 +44,6 @@ class SafetyChecker:
 
                     data = await response.json()
                     
-                    # GoPlus result format handling
                     if data.get('code') != 1:
                         # Fallback for some chains or errors
                         print(f"⚠️ GoPlus Error Code {data.get('code')}: {data.get('message')}")
@@ -48,12 +51,86 @@ class SafetyChecker:
                     
                     # GoPlus returns data in a map with address as key (lower case)
                     result_map = data.get('result', {})
-                    # Try both original and lower case
                     token_data = result_map.get(address) or result_map.get(address.lower()) or {}
                     
                     return self._process_data(token_data)
             except Exception as e:
                 print(f"⚠️ Safety Check Failed: {e}")
+                return {"error": str(e), "safety_score": 0}
+
+    async def _check_solana_rugcheck(self, address):
+        """Dedicated safety check for Solana using RugCheck.xyz"""
+        url = f"https://api.rugcheck.xyz/v1/tokens/{address}/report"
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get(url, timeout=5) as response:
+                    if response.status != 200:
+                        return {"error": f"RugCheck Error: {response.status}", "safety_score": 0}
+                    
+                    data = await response.json()
+                    
+                    # Calculate Score based on RugCheck data
+                    score = 100
+                    risks = []
+                    
+                    # 1. Verification (Jupiter Lists are usually safe)
+                    is_verified = False
+                    if "verification" in data:
+                        if data["verification"].get("jup_verified"):
+                            is_verified = True
+                            # If strictly verified, hard set high score
+                            return {
+                                "token_name": data["verification"].get("name", "Unknown"),
+                                "token_symbol": data["verification"].get("symbol", "Unknown"),
+                                "is_honeypot": False,
+                                "risks": ["Jupiter Strict List (SAFE)"],
+                                "safety_score": 95,
+                                "safety_status": "SAFE"
+                            }
+                    
+                    # 2. Authorities (Mint/Freeze)
+                    token_meta = data.get("tokenMeta", {})
+                    # Some responses put it in 'token' or root keys depending on version, check safe defaults
+                    # RugCheck 'risks' array is the best source of truth
+                    
+                    found_risks = data.get("risks", []) 
+                    # risks is a list of objects {name: "...", level: "..."}
+                    
+                    for r in found_risks:
+                        level = r.get("level", "warn")
+                        name = r.get("name", "")
+                        
+                        if level == "danger":
+                            score -= 30
+                            risks.append(f"🚨 {name}")
+                        elif level == "warn":
+                            score -= 10
+                            risks.append(f"⚠️ {name}")
+                            
+                    # 3. Freeze Authority check (explicit if not in risks)
+                    if data.get("token", {}).get("freezeAuthority"):
+                        score -= 50
+                        risks.append("🚨 Freeze Authority Enabled")
+                        
+                    if data.get("token", {}).get("mintAuthority"):
+                        score -= 30
+                        risks.append("⚠️ Mint Authority Enabled")
+
+                    score = max(0, min(100, score))
+                    
+                    return {
+                        "token_name": data.get("tokenMeta", {}).get("name", "Unknown"),
+                        "token_symbol": data.get("tokenMeta", {}).get("symbol", "Unknown"),
+                        "is_honeypot": False, # Solana doesn't have traditional honeypots like EVM
+                        "buy_tax": "0%", # Solana SPL standard usually 0 tax (transfer extensions exist though)
+                        "sell_tax": "0%",
+                        "risks": risks,
+                        "safety_score": score,
+                        "safety_status": "SAFE" if score > 70 else "CAUTION"
+                    }
+
+            except Exception as e:
+                print(f"⚠️ RugCheck Failed: {e}")
                 return {"error": str(e), "safety_score": 0}
 
     def _process_data(self, data):
