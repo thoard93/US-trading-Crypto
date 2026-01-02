@@ -38,14 +38,11 @@ const getInitialApiBase = () => {
   if (saved) return saved;
   let base = import.meta.env.VITE_API_URL || '';
   if (typeof window !== 'undefined' && window.location.hostname.includes('onrender.com')) {
-    const currentHost = window.location.hostname;
-    if (!base || base.includes('-1pe7') || !base.includes('onrender.com')) {
-      const suffix = currentHost.replace('trading-dashboard-', '');
-      base = `https://trading-api-${suffix}`;
-    }
+    // If we're on the dashboard, the API is almost always on the -1pe7 suffix
+    base = `https://trading-api-1pe7.onrender.com`;
   }
   if (!base.startsWith('http') && base) base = `https://${base}`;
-  return base.replace(/\/$/, '') || 'https://trading-api.onrender.com';
+  return base.replace(/\/$/, '') || 'https://trading-api-1pe7.onrender.com';
 };
 
 // No global USER_ID anymore, we use user?.id from state
