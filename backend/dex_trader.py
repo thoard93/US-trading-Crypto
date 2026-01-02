@@ -96,7 +96,8 @@ class DexTrader:
     def get_jupiter_quote(self, input_mint, output_mint, amount_lamports):
         """Get swap quote from Jupiter."""
         try:
-            url = f"https://quote-api.jup.ag/v6/quote"
+            # url = "https://quote-api.jup.ag/v6/quote" # Failed DNS
+            url = "https://public.jupiterapi.com/quote"
             params = {
                 "inputMint": input_mint,
                 "outputMint": output_mint,
@@ -126,7 +127,8 @@ class DexTrader:
                 return {"error": "Failed to get quote"}
             
             # 2. Get swap transaction
-            swap_url = "https://quote-api.jup.ag/v6/swap"
+            # swap_url = "https://quote-api.jup.ag/v6/swap" # Failed DNS
+            swap_url = "https://public.jupiterapi.com/swap" 
             swap_body = {
                 "quoteResponse": quote,
                 "userPublicKey": self.wallet_address,
