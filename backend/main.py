@@ -76,7 +76,9 @@ async def discord_url():
 async def discord_callback(code: str, db: Session = Depends(get_db)):
     token_data = get_discord_token(code)
     if "access_token" not in token_data:
-        raise HTTPException(status_code=400, detail="Invalid code")
+        error_msg = token_data.get("error_description", token_data.get("error", "Unknown error"))
+        print(f"❌ Discord Auth Error: {error_msg}")
+        raise HTTPException(status_code=400, detail=f"Discord Error: {error_msg}")
     
     user_info = get_discord_user(token_data["access_token"])
     discord_id = str(user_info["id"])
