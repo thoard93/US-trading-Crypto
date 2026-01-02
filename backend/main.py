@@ -87,14 +87,27 @@ async def discord_callback(code: str, db: Session = Depends(get_db)):
     
     user = db.query(models.User).filter(models.User.discord_id == discord_id).first()
     if not user:
-        user = models.User(
-            username=user_info["username"],
-            discord_id=discord_id,
-            avatar=f"https://cdn.discordapp.com/avatars/{discord_id}/{user_info['avatar']}.png"
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+        # Check if this is the demo user logging in for the first time
+        demo_user = db.query(models.User).filter(models.User.id == 1).first()
+        if demo_user and demo_user.discord_id is None:
+            # Update the demo user with Discord info instead of creating new
+            demo_user.username = user_info["username"]
+            demo_user.discord_id = discord_id
+            demo_user.avatar = f"https://cdn.discordapp.com/avatars/{discord_id}/{user_info.get('avatar', '')}.png"
+            db.commit()
+            user = demo_user
+            print(f"✅ Updated demo user with Discord: {user_info['username']}")
+        else:
+            # Create a genuinely new user
+            user = models.User(
+                username=user_info["username"],
+                discord_id=discord_id,
+                avatar=f"https://cdn.discordapp.com/avatars/{discord_id}/{user_info.get('avatar', '')}.png"
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            print(f"✅ Created new user: {user_info['username']}")
     
     # Generate JWT
     payload = {"user_id": user.id, "exp": time.time() + 86400}
