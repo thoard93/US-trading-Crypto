@@ -16,57 +16,91 @@ class SafetyChecker:
             "BASE": "8453",
             "OPT": "10"
         }
+        # Explicit Solana support (GoPlus uses 'solana' or specific ID, we try 'solana')
+        # Note: GoPlus API usually requires specific chain ID. For Solana, it is 'solana'.
+        self.chain_map["SOLANA"] = "solana"
 
     async def check_token(self, address, chain_id="1"):
         """
         Fetch security data for a specific token address.
-        Returns a dict with processed safety flags.
         """
-        url = f"{self.BASE_URL}/{chain_id}?contract_addresses={address}"
+        # Resolve chain_id from map if needed
+        c_id = self.chain_map.get(str(chain_id).upper(), str(chain_id))
+        
+        # GoPlus API endpoint for token security
+        url = f"{self.BASE_URL}/{c_id}?contract_addresses={address}"
         
         async with aiohttp.ClientSession() as session:
             try:
-                async with session.get(url) as response:
+                # 3-second timeout to prevent lags
+                async with session.get(url, timeout=3) as response:
+                    # Check for 200 OK
+                    if response.status != 200:
+                        return {"error": f"API Error: {response.status}", "safety_score": 0}
+
                     data = await response.json()
-                    if data.get('code') != 1:
-                        return {"error": "Could not fetch data from GoPlus"}
                     
-                    # GoPlus returns data in a map with address as key
-                    token_data = data.get('result', {}).get(address.lower(), {})
+                    # GoPlus result format handling
+                    if data.get('code') != 1:
+                        # Fallback for some chains or errors
+                        print(f"⚠️ GoPlus Error Code {data.get('code')}: {data.get('message')}")
+                        return {"error": "GoPlus Fetch Failed", "safety_score": 0}
+                    
+                    # GoPlus returns data in a map with address as key (lower case)
+                    result_map = data.get('result', {})
+                    # Try both original and lower case
+                    token_data = result_map.get(address) or result_map.get(address.lower()) or {}
+                    
                     return self._process_data(token_data)
             except Exception as e:
-                return {"error": str(e)}
+                print(f"⚠️ Safety Check Failed: {e}")
+                return {"error": str(e), "safety_score": 0}
 
     def _process_data(self, data):
         """Extract key safety metrics from GoPlus response."""
         if not data:
-            return {"error": "No data found for this address"}
+            # If no data is returned, it might be a BRAND NEW token. 
+            # We assign a default LOW score to be safe, or 0 if we want to be strict.
+            # Let's return 0 to prevent buying unverified tokens.
+            return {"error": "No Data", "safety_score": 0}
 
-        is_honeypot = data.get('is_honeypot') == "1"
+        # Handle different response structures (GoPlus Solana sometimes differs)
+        is_honeypot = str(data.get('is_honeypot', '0')) == "1"
+        is_open_source = str(data.get('is_open_source', '1')) == "1" # Default to 1 if missing? No, 0.
+        
+        # Taxes
         buy_tax = float(data.get('buy_tax', 0)) * 100
         sell_tax = float(data.get('sell_tax', 0)) * 100
-        is_proxy = data.get('is_proxy') == "1"
-        owner_can_mint = data.get('can_take_back_ownership') == "1" or data.get('is_mintable') == "1"
-        is_whitelisted = data.get('is_white_list') == "1" # Risk if only whitelist can sell
-
-        # Risk Score Calculation (Simple)
-        risk_score = 0
+        
+        # Ownership
+        owner_can_mint = str(data.get('can_take_back_ownership', '0')) == "1" or str(data.get('is_mintable', '0')) == "1"
+        
+        # Risk Score Calculation (0 to 100, where 100 is SAFE)
+        # Note: self.dex_monitor uses 'safety_score' where higher is better.
+        # But checks risk. Let's invert: Start at 100, deduct.
+        
+        score = 100
         risks = []
 
         if is_honeypot:
-            risk_score += 100
-            risks.append("🚨 HONEYPOT DETECTED (Cannot sell)")
-        if buy_tax > 10: risks.append(f"⚠️ High Buy Tax: {buy_tax}%")
-        if sell_tax > 10: risks.append(f"⚠️ High Sell Tax: {sell_tax}%")
-        if owner_can_mint: risks.append("⚠️ Owner can mint more tokens")
-        if is_proxy: risks.append("⚠️ Proxy Contract (logic can be changed)")
+            score = 0
+            risks.append("🚨 HONEYPOT (Cannot sell)")
+        else:
+            if buy_tax > 10: 
+                score -= 20
+                risks.append(f"⚠️ High Buy Tax: {buy_tax}%")
+            if sell_tax > 10: 
+                score -= 20
+                risks.append(f"⚠️ High Sell Tax: {sell_tax}%")
+            if owner_can_mint: 
+                score -= 30
+                risks.append("⚠️ Owner can mint (Inflation Risk)")
+            if not is_open_source:
+                score -= 20
+                risks.append("⚠️ Contract not verified/open source")
         
-        # Determine overall safety
-        safety_status = "SAFE"
-        if risk_score >= 100 or is_honeypot:
-            safety_status = "DANGEROUS"
-        elif len(risks) > 2:
-            safety_status = "CAUTION"
+        # Cap score
+        score = max(0, min(100, score))
 
         return {
             "token_name": data.get('token_name', 'Unknown'),
@@ -75,7 +109,8 @@ class SafetyChecker:
             "buy_tax": f"{buy_tax}%",
             "sell_tax": f"{sell_tax}%",
             "risks": risks,
-            "safety_status": safety_status
+            "safety_score": score,
+            "safety_status": "SAFE" if score > 80 else "CAUTION"
         }
 
 if __name__ == "__main__":

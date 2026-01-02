@@ -62,8 +62,8 @@ class AlertSystem(commands.Cog):
         
         # DEX Auto-trading configuration
         self.dex_auto_trade = True  # Toggle for DEX auto-trading
-        self.dex_min_safety_score = 70  # Lowered from 80 for more opportunities
-        self.dex_min_liquidity = 5000  # Lowered from $10k to $5k
+        self.dex_min_safety_score = 50  # Lowered from 70 to 50 for MAXIMUM ACTION
+        self.dex_min_liquidity = 2000  # Lowered from $5k to $2k for fresh gems
         self.dex_max_positions = 5  # Increased from 3 to 5
         
         # STOCK Auto-trading configuration
