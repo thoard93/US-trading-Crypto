@@ -19,6 +19,8 @@
   padding: 0;
   box-sizing: border-box;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  /* Remove blue highlight */
 }
 
 body {
@@ -78,12 +80,15 @@ button:active {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  overflow-y: auto;
+  /* Allow scrolling content */
 }
 
 .right-panel {
   display: flex;
   flex-direction: column;
   gap: 24px;
+  overflow-y: auto;
 }
 
 .chart-container {
@@ -139,4 +144,84 @@ button:active {
 
 .spin {
   animation: spin 1s linear infinite;
+}
+
+/* --- MOBILE OPTIMIZATION --- */
+@media (max-width: 1024px) {
+  .dashboard-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+    height: auto;
+    min-height: 100vh;
+    padding: 16px;
+    padding-bottom: 80px;
+    /* Space for bottom nav */
+  }
+
+  .sidebar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    justify-content: space-around;
+    padding: 12px;
+    background: rgba(17, 25, 40, 0.95);
+    backdrop-filter: blur(20px);
+    border-top: 1px solid var(--glass-border);
+    border-radius: 0;
+    z-index: 100;
+    gap: 0;
+  }
+
+  /* Hide Logo in Bottom Nav, maybe show smaller */
+  .sidebar h2 {
+    display: none;
+  }
+
+  .sidebar button {
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.7rem;
+    padding: 8px !important;
+    background: transparent !important;
+  }
+
+  /* Adjust SVG icons in sidebar buttons */
+  .sidebar button svg {
+    margin-right: 0;
+    width: 24px;
+    height: 24px;
+  }
+
+  /* Make active tab indicator subtle bottom border instead of full background */
+  .sidebar button.active {
+    background: transparent !important;
+    color: var(--accent-color) !important;
+  }
+
+  .right-panel {
+    display: none;
+    /* Hide right panel stats on mobile to declutter, or move to a 'Stats' tab */
+  }
+
+  /* Show right panel content if we are in Dashboard tab? Or just stack it */
+  /* For now, let's stack it below main content */
+  .right-panel {
+    display: flex;
+    order: 3;
+    padding-bottom: 20px;
+  }
+
+  .main-content {
+    order: 1;
+    overflow: visible;
+  }
+
+  .chart-container {
+    min-height: 300px;
+    padding: 16px;
+  }
 }

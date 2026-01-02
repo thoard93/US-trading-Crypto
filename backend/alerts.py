@@ -106,8 +106,11 @@ class AlertSystem(commands.Cog):
         self.MEMECOINS_CHANNEL_ID = 1456439911896060028
         
         self.trending_dex_gems = [] # Temporarily tracked trending gems
-        
+        self.restricted_assets = set() # Session-based blacklist for "Restricted Region" assets
+        self.last_exit_times = {} # {symbol: timestamp} for wash trade prevention
+
         self.monitor_market.start()
+        self.dex_monitor.start() # Start new 30s loop
         self.discovery_loop.start()
         self.kraken_discovery_loop.start()
         
@@ -172,108 +175,92 @@ class AlertSystem(commands.Cog):
             for symbol in self.memes_watchlist:
                 await self._check_and_alert(symbol, channel_memes, "Meme")
 
-        # 3. Monitor DEX Scout (New Gems) + Auto-Trade
-        print(f"Scouting DEX tokens: {len(self.dex_watchlist)} watchlist + {len(self.trending_dex_gems)} trending")
+
+
+        # 3. Monitor Stocks
+        print(f"Checking stock markets: {self.stock_watchlist}")
+        if channel_stocks:
+            for symbol in self.stock_watchlist:
+                # Skip restricted assets
+                if symbol not in self.restricted_assets:
+                    await self._check_and_alert(symbol, channel_stocks, "Stock")
+                await asyncio.sleep(1)
+
+    @tasks.loop(seconds=30)
+    async def dex_monitor(self):
+        """Dedicated high-speed loop for DEX memecoins (30s)."""
+        if not self.bot.is_ready():
+            return
+
+        channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
+        
+        # Monitor DEX Scout (New Gems) + Auto-Trade
+        print(f"⚡ DEX Monitor: Scouting {len(self.dex_watchlist)} tokens...")
         if channel_memes:
             # Combined list of manual watchlist and trending gems
             all_dex = self.dex_watchlist + self.trending_dex_gems
             for item in all_dex:
-                # print(f"🔍 Checking DEX: {item.get('symbol', 'Unknown')}...")
-                pair_data = await self.dex_scout.get_pair_data(item['chain'], item['address'])
-                if pair_data:
-                    info = self.dex_scout.extract_token_info(pair_data)
-                    token_address = info.get('address', item['address'])
-                    
-                    # Log every token's status for visibility
-                    print(f"🦊 DEX: {info['symbol']} | Price: ${info['price_usd']:.6f} | 5m: {info['price_change_5m']:+.1f}% | Liq: ${info.get('liquidity_usd', 0):,.0f}")
-                    
-                    # Alert if price change > 2% in 5 minutes (lowered from 5% for more action)
-                    if info['price_change_5m'] >= 2.0:
-                        # Safety Audit
-                        audit = await self.safety.check_token(token_address, "solana" if info['chain'] == 'solana' else "1")
-                        safety_score = audit.get('safety_score', 0)
-                        liquidity = info.get('liquidity_usd', 0)
+                try:
+                    pair_data = await self.dex_scout.get_pair_data(item['chain'], item['address'])
+                    if pair_data:
+                        info = self.dex_scout.extract_token_info(pair_data)
+                        token_address = info.get('address', item['address'])
                         
-                        color = discord.Color.purple()
-                        embed = discord.Embed(
-                            title=f"🚀 DEX GEM PUMPING: {info['symbol']} ({info['chain'].upper()})", 
-                            color=color
-                        )
-                        embed.add_field(name="Price USD", value=f"${info['price_usd']:.8f}", inline=True)
-                        embed.add_field(name="5m Change", value=f"+{info['price_change_5m']}%", inline=True)
-                        embed.add_field(name="Liquidity", value=f"${liquidity:,.0f}", inline=True)
-                        embed.add_field(name="Safety Score", value=f"**{safety_score}/100**", inline=True)
-                        embed.add_field(name="Status", value=f"**{audit.get('safety_status', 'N/A')}**", inline=True)
-                        
-                        # AUTO-TRADE: Execute buy if conditions are met
-                        trade_executed = False
-                        if (self.dex_auto_trade and 
-                            self.dex_trader and 
-                            self.dex_trader.wallet_address and
-                            info['chain'] == 'solana'):
+                        # Alert if price change > 2% in 5 minutes
+                        if info['price_change_5m'] >= 2.0:
+                            # Safety Audit
+                            audit = await self.safety.check_token(token_address, "solana" if info['chain'] == 'solana' else "1")
+                            safety_score = audit.get('safety_score', 0)
+                            liquidity = info.get('liquidity_usd', 0)
                             
-                            # Check trading conditions
-                            dex_positions = len(self.dex_trader.positions)
-                            
-                            if safety_score >= self.dex_min_safety_score and liquidity >= self.dex_min_liquidity:
-                                if dex_positions < self.dex_max_positions:
-                                    if token_address not in self.dex_trader.positions:
-                                        # Execute the trade!
-                                        trade_result = self.dex_trader.buy_token(token_address)
-                                        if trade_result.get('success'):
-                                            trade_executed = True
-                                            embed.add_field(
-                                                name="🤖 AUTO-TRADE EXECUTED", 
-                                                value=f"Bought with 0.05 SOL\nTX: `{trade_result['signature'][:16]}...`", 
-                                                inline=False
-                                            )
-                                            embed.color = discord.Color.green()
-                                        else:
-                                            embed.add_field(
-                                                name="⚠️ Trade Failed", 
-                                                value=trade_result.get('error', 'Unknown error'),
-                                                inline=False
-                                            )
-                                    else:
-                                        embed.add_field(name="ℹ️ Status", value="Already holding this token", inline=False)
-                                else:
-                                    embed.add_field(name="ℹ️ Status", value=f"Max positions ({self.dex_max_positions}) reached", inline=False)
-                            else:
-                                reasons = []
-                                if safety_score < self.dex_min_safety_score:
-                                    reasons.append(f"Safety {safety_score} < {self.dex_min_safety_score}")
-                                if liquidity < self.dex_min_liquidity:
-                                    reasons.append(f"Liquidity ${liquidity:,.0f} < ${self.dex_min_liquidity:,}")
-                                embed.add_field(name="❌ Auto-Trade Skipped", value="\n".join(reasons), inline=False)
-                        
-                        embed.add_field(name="DEX Link", value=f"[View on DexScreener]({info['url']})", inline=False)
-                        await channel_memes.send(embed=embed)
-                    
-                    # Check for dump / potential exit
-                    elif info['price_change_5m'] <= -10.0:
-                        # If we're holding this token, consider selling
-                        if self.dex_trader and token_address in self.dex_trader.positions:
-                            sell_result = self.dex_trader.sell_token(token_address)
-                            color = discord.Color.orange()
+                            color = discord.Color.purple()
                             embed = discord.Embed(
-                                title=f"🚨 DEX AUTO-EXIT: {info['symbol']}", 
-                                description="Token dropped 10%+ - Auto-selling position",
+                                title=f"🚀 DEX GEM PUMPING: {info['symbol']} ({info['chain'].upper()})", 
                                 color=color
                             )
-                            if sell_result.get('success'):
-                                embed.add_field(name="Status", value="✅ Sold successfully", inline=False)
-                            else:
-                                embed.add_field(name="Status", value=f"❌ {sell_result.get('error')}", inline=False)
+                            embed.add_field(name="Price USD", value=f"${info['price_usd']:.8f}", inline=True)
+                            embed.add_field(name="5m Change", value=f"+{info['price_change_5m']}%", inline=True)
+                            embed.add_field(name="Liquidity", value=f"${liquidity:,.0f}", inline=True)
+                            embed.add_field(name="Safety Score", value=f"**{safety_score}/100**", inline=True)
+                            
+                            # AUTO-TRADE logic
+                            if (self.dex_auto_trade and 
+                                self.dex_trader and 
+                                self.dex_trader.wallet_address and
+                                info['chain'] == 'solana'):
+                                
+                                dex_positions = len(self.dex_trader.positions)
+                                
+                                if safety_score >= self.dex_min_safety_score and liquidity >= self.dex_min_liquidity:
+                                    if dex_positions < self.dex_max_positions:
+                                        if token_address not in self.dex_trader.positions:
+                                            trade_result = self.dex_trader.buy_token(token_address)
+                                            if trade_result.get('success'):
+                                                embed.add_field(
+                                                    name="🤖 AUTO-TRADE EXECUTED", 
+                                                    value=f"Bought with 0.05 SOL\nTX: `{trade_result['signature'][:16]}...`", 
+                                                    inline=False
+                                                )
+                                                embed.color = discord.Color.green()
+                                            else:
+                                                embed.add_field(name="⚠️ Trade Failed", value=trade_result.get('error', 'Unknown'), inline=False)
+                                        else:
+                                            # Already holding
+                                            pass
+                                
+                            embed.add_field(name="DEX Link", value=f"[View on DexScreener]({info['url']})", inline=False)
                             await channel_memes.send(embed=embed)
+                        
+                        # Check for dump / potential exit
+                        elif info['price_change_5m'] <= -10.0:
+                             if self.dex_trader and token_address in self.dex_trader.positions:
+                                self.dex_trader.sell_token(token_address)
+                                await channel_memes.send(f"🚨 Auto-Sold {info['symbol']} due to crash.")
+
+                except Exception as ex:
+                    print(f"⚠️ Error checking DEX token {item.get('address')}: {ex}")
                 
                 await asyncio.sleep(0.5)
-
-        # 4. Monitor Stocks
-        print(f"Checking stock markets: {self.stock_watchlist}")
-        if channel_stocks:
-            for symbol in self.stock_watchlist:
-                await self._check_and_alert(symbol, channel_stocks, "Stock")
-                await asyncio.sleep(1)
 
     async def _check_and_alert(self, symbol, channel, asset_type):
         """Helper to fetch data, check exits, and process alerts."""
@@ -312,9 +299,12 @@ class AlertSystem(commands.Cog):
                         if symbol in self.trader.active_positions:
                             del self.trader.active_positions[symbol]
                         
+                        # Record exit time for cooldown
+                        self.last_exit_times[symbol] = datetime.datetime.now()
+                        
                         # CRITICAL: Return here to prevent the bot from immediately re-buying
                         # if the trend analysis still says 'BUY'
-                        print(f"🛑 Position exited for {symbol}. Skipping further analysis this loop.")
+                        print(f"🛑 Position exited for {symbol}. Cooldown started. Skipping further analysis.")
                         return 
             
             await asyncio.sleep(0.1) # Tiny delay to allow state to settle
@@ -463,6 +453,13 @@ class AlertSystem(commands.Cog):
                     scalp_mode = (asset_type == "Meme" or symbol_price < 1.0)
 
                     if result['signal'] == 'BUY':
+                        # 0. Check Cooldown (Wash Trade Prevention)
+                        if symbol in self.last_exit_times:
+                            elapsed = (datetime.datetime.now() - self.last_exit_times[symbol]).total_seconds()
+                            if elapsed < 300: # 5 minutes cooldown
+                                print(f"⏳ Cooldown active for {symbol} ({int(300-elapsed)}s remaining). Skipping buy.")
+                                return
+
                         # 1. Check if we already have a position
                         if symbol in self.trader.active_positions:
                             print(f"ℹ️ Buy signal for {symbol} but already holding.")
@@ -495,6 +492,15 @@ class AlertSystem(commands.Cog):
                                 self.stock_positions[symbol] = trade_result
                         else:
                             trade_result = self.trader.execute_market_buy(symbol, amount_usdt=trade_amount)
+                            
+                            # Handle Restricted Errors
+                            if not trade_result.get('success'):
+                                err = trade_result.get('error', '')
+                                if "valid permissions" in err or "Restricted" in err:
+                                    print(f"🚫 {symbol} is restricted. Blacklisting for session.")
+                                    self.restricted_assets.add(symbol)
+                                    return
+
                             trade_title = "💰 SCALP: EXECUTED BUY" if scalp_mode else "💰 AUTO-TRADE: EXECUTED BUY"
                     else: # SELL signal
                         if asset_type == "Stock": trade_title = "📉 ALPACA: EXIT OPPORTUNITY"
