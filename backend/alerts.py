@@ -144,7 +144,7 @@ class AlertSystem(commands.Cog):
                 await self._check_and_alert(symbol, channel_memes, "Meme")
 
         # 3. Monitor DEX Scout (New Gems) + Auto-Trade
-        print(f"Scouting DEX tokens: {self.dex_watchlist} + {len(self.trending_dex_gems)} trending")
+        print(f"Scouting DEX tokens: {len(self.dex_watchlist)} watchlist + {len(self.trending_dex_gems)} trending")
         if channel_memes:
             # Combined list of manual watchlist and trending gems
             all_dex = self.dex_watchlist + self.trending_dex_gems
@@ -154,8 +154,11 @@ class AlertSystem(commands.Cog):
                     info = self.dex_scout.extract_token_info(pair_data)
                     token_address = info.get('address', item['address'])
                     
-                    # Alert if price change > 5% in 5 minutes (potential entry)
-                    if info['price_change_5m'] >= 5.0:
+                    # Log every token's status for visibility
+                    print(f"🦊 DEX: {info['symbol']} | Price: ${info['price_usd']:.6f} | 5m: {info['price_change_5m']:+.1f}% | Liq: ${info.get('liquidity_usd', 0):,.0f}")
+                    
+                    # Alert if price change > 2% in 5 minutes (lowered from 5% for more action)
+                    if info['price_change_5m'] >= 2.0:
                         # Safety Audit
                         audit = await self.safety.check_token(token_address, "solana" if info['chain'] == 'solana' else "1")
                         safety_score = audit.get('safety_score', 0)
