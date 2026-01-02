@@ -3,9 +3,9 @@ import os
 import logging
 
 class TradingExecutive:
-    def __init__(self):
-        self.api_key = os.getenv('KRAKEN_API_KEY')
-        self.secret_key = os.getenv('KRAKEN_SECRET_KEY')
+    def __init__(self, api_key=None, secret_key=None):
+        self.api_key = api_key or os.getenv('KRAKEN_API_KEY')
+        self.secret_key = secret_key or os.getenv('KRAKEN_SECRET_KEY')
         
         if self.api_key and self.secret_key:
             self.exchange = ccxt.kraken({
@@ -13,14 +13,14 @@ class TradingExecutive:
                 'secret': self.secret_key,
                 'enableRateLimit': True,
             })
-            print("Trading Executive initialized with Kraken API.")
+            print("Trading Executive initialized.")
         else:
             self.exchange = None
-            print("Warning: Kraken API keys not found. Auto-trading disabled.")
+            print("Warning: API keys not found. Auto-trading disabled for this instance.")
 
         # Safety Settings
         self.trade_amount_usdt = 10.0  
-        self.max_open_trades = 3      
+        self.max_open_trades = 5      
         self.active_positions = {}    # {symbol: {"entry_price": float, "amount": float}}
 
     def track_position(self, symbol, entry_price, amount):

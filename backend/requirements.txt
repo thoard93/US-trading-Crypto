@@ -7,3 +7,9 @@ ccxt
 scikit-learn
 matplotlib
 aiohttp
+fastapi
+uvicorn
+python-multipart
+sqlalchemy
+python-jose[cryptography]
+passlib[bcrypt]
