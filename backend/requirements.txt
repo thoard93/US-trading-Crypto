@@ -14,3 +14,5 @@ sqlalchemy
 python-jose[cryptography]
 passlib[bcrypt]
 psycopg2-binary
+solders
+base58
