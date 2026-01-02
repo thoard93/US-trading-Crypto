@@ -19,30 +19,42 @@ if not DISCORD_CLIENT_ID or not DISCORD_CLIENT_SECRET:
 def get_discord_auth_url():
     """Generate the Discord authorization URL."""
     import urllib.parse
+    redirect_uri = DISCORD_REDIRECT_URI.rstrip('/')
     params = {
         "client_id": DISCORD_CLIENT_ID,
-        "redirect_uri": DISCORD_REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": "identify email"
     }
     return f"{DISCORD_AUTH_URL}?{urllib.parse.urlencode(params)}"
 
 def get_discord_token(code):
-    """Exchange auth code for access token using standard form body."""
-    # Reverting to payload body as it's often more compatible with cloud proxy layers
+    """Exchange auth code for access token using official Basic Auth handler."""
+    # Ensure URI is exactly what Discord expects (no trailing slash mismatch)
+    redirect_uri = DISCORD_REDIRECT_URI.rstrip('/')
+    
     data = {
-        "client_id": DISCORD_CLIENT_ID,
-        "client_secret": DISCORD_CLIENT_SECRET,
         "grant_type": "authorization_code",
         "code": code,
-        "redirect_uri": DISCORD_REDIRECT_URI
+        "redirect_uri": redirect_uri
     }
+    
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     
-    print(f"📡 Requesting Discord Token with ID: {DISCORD_CLIENT_ID[:4]}... and URI: {DISCORD_REDIRECT_URI}")
-    response = requests.post(DISCORD_TOKEN_URL, data=data, headers=headers)
+    # Diagnostic logs
+    print(f"📡 Requesting Discord Token...")
+    print(f" - Client ID: {DISCORD_CLIENT_ID[:6]}...")
+    print(f" - Secret Length: {len(DISCORD_CLIENT_SECRET)}")
+    print(f" - Redirect URI: {redirect_uri}")
     
-    # Detailed logging for debugging invalid_client
+    # Official Basic Auth handler is the most reliable
+    response = requests.post(
+        DISCORD_TOKEN_URL, 
+        data=data, 
+        headers=headers,
+        auth=(DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET)
+    )
+    
     if response.status_code != 200:
         print(f"❌ Discord Token Error ({response.status_code}): {response.text}")
         
