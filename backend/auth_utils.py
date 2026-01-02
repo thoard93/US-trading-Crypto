@@ -4,9 +4,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID")
-DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET")
-DISCORD_REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI", "http://localhost:8000/auth/discord/callback")
+DISCORD_CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "").strip()
+DISCORD_CLIENT_SECRET = os.getenv("DISCORD_CLIENT_SECRET", "").strip()
+DISCORD_REDIRECT_URI = os.getenv("DISCORD_REDIRECT_URI", "http://localhost:8000/auth/discord/callback").strip()
 
 DISCORD_API_BASE = "https://discord.com/api"
 DISCORD_AUTH_URL = f"{DISCORD_API_BASE}/oauth2/authorize"
@@ -28,15 +28,23 @@ def get_discord_auth_url():
     return f"{DISCORD_AUTH_URL}?{urllib.parse.urlencode(params)}"
 
 def get_discord_token(code):
-    """Exchangeauth code for access token."""
+    """Exchange auth code for access token using Basic Auth."""
+    import base64
+    # Basic auth is more reliable for specialized environments like Render
+    auth_str = f"{DISCORD_CLIENT_ID}:{DISCORD_CLIENT_SECRET}"
+    encoded_auth = base64.b64encode(auth_str.encode()).decode()
+    
+    headers = {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": f"Basic {encoded_auth}"
+    }
     data = {
-        "client_id": DISCORD_CLIENT_ID,
-        "client_secret": DISCORD_CLIENT_SECRET,
         "grant_type": "authorization_code",
         "code": code,
         "redirect_uri": DISCORD_REDIRECT_URI
     }
-    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    
+    print(f"📡 Requesting Discord Token with ID: {DISCORD_CLIENT_ID[:4]}... and URI: {DISCORD_REDIRECT_URI}")
     response = requests.post(DISCORD_TOKEN_URL, data=data, headers=headers)
     return response.json()
 
