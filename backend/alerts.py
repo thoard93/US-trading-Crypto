@@ -39,30 +39,50 @@ class AlertSystem(commands.Cog):
         # 1. Monitor Crypto
         print(f"Checking crypto markets: {self.crypto_watchlist}")
         channel_crypto = self.bot.get_channel(self.CRYPTO_CHANNEL_ID)
+        
+        scan_results = []
         if channel_crypto:
             for symbol in self.crypto_watchlist:
                 data = self.crypto.fetch_ohlcv(symbol, timeframe='1h', limit=100)
                 if data is None:
                     print(f"❌ Failed to fetch crypto data for {symbol}")
+                    scan_results.append(f"❌ `{symbol}`: Data Error")
                     continue
 
                 # --- STOP-LOSS / TAKE-PROFIT CHECK ---
                 current_price = data.iloc[-1]['close']
+                
+                # Format price for readability
+                p_str = f"{current_price:.8f}" if current_price < 1.0 else f"{current_price:.2f}"
+                
                 exit_reason = self.trader.check_exit_conditions(symbol, current_price)
                 if exit_reason:
                     exit_res = self.trader.execute_market_sell(symbol)
                     if "error" not in exit_res:
                         embed = discord.Embed(
                             title=f"🚨 AUTO-EXIT: {exit_reason}",
-                            description=f"Closed position for **{symbol}** at ${current_price:.8f}",
+                            description=f"Closed position for **{symbol}** at ${p_str}",
                             color=discord.Color.orange()
                         )
                         await channel_crypto.send(embed=embed)
                         if symbol in self.trader.active_positions:
                             del self.trader.active_positions[symbol]
 
-                await self._process_alert(channel_crypto, symbol, data, "Crypto")
+                # Run analysis for alerts
+                result = await self._process_alert(channel_crypto, symbol, data, "Crypto")
+                scan_results.append(f"✅ `{symbol}`: ${p_str} (RSI: {result['rsi']})")
                 await asyncio.sleep(1)
+
+            # Send a summary if this was a manual !scan or every few hours
+            # Optional: Send a small heartbeat to show it's alive
+            summary_embed = discord.Embed(
+                title="🔍 5-Minute Market Scan Summary",
+                description="\n".join(scan_results),
+                color=discord.Color.light_grey()
+            )
+            summary_embed.set_footer(text="Scan complete. Signals only post if Buy/Sell/Trend detected.")
+            # Only send summary if no alerts were sent, to avoid spam, or just send on !scan
+            # For now, let's keep it in logs and only post if it's a manual !scan
 
         # 2. Monitor Stocks
         print(f"Checking stock markets: {self.stock_watchlist}")
@@ -147,11 +167,13 @@ class AlertSystem(commands.Cog):
                         trade_embed.add_field(name="Amount Used", value=f"${trade_amount}", inline=True)
                         trade_embed.add_field(name="Order ID", value=trade_result.get('id', 'N/A'), inline=True)
                         await channel.send(embed=trade_embed)
-                    else:
-                        print(f"❌ Auto-trade failed for {symbol}: {trade_result['error']}")
+                else:
+                    print(f"❌ Auto-trade failed for {symbol}: {trade_result['error']}")
             else:
                 sig = result.get('signal', 'UNKNOWN')
                 print(f"ℹ️ Analysis for {symbol}: {sig} - {result.get('reason', 'N/A')}")
+            
+            return result
 
     @commands.command()
     async def add_watchlist(self, ctx, symbol: str, asset_type: str = "crypto"):
@@ -171,8 +193,21 @@ class AlertSystem(commands.Cog):
     async def scan(self, ctx):
         """Manually trigger a market scan."""
         await ctx.send("⚡ Manually triggering market scan...")
-        await self.monitor_market()
-        await ctx.send("✅ Scan complete.")
+        
+        # Capture results for manual scan
+        channel_crypto = self.bot.get_channel(self.CRYPTO_CHANNEL_ID)
+        scan_results = []
+        for symbol in self.crypto_watchlist:
+            data = self.crypto.fetch_ohlcv(symbol, timeframe='1h', limit=100)
+            if data:
+                res = self.analyzer.analyze_trend(data)
+                p = data.iloc[-1]['close']
+                p_str = f"{p:.8f}" if p < 1.0 else f"{p:.2f}"
+                scan_results.append(f"✅ `{symbol}`: ${p_str} (RSI: {res['rsi']})")
+        
+        summary = discord.Embed(title="🔍 Manual Scan Results", description="\n".join(scan_results), color=discord.Color.blue())
+        await ctx.send(embed=summary)
+        await ctx.send("✅ Full background monitor cycle finishing...")
 
     @commands.command()
     async def balance(self, ctx):
