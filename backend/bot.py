@@ -69,6 +69,13 @@ async def check(ctx, address: str, chain: str = "ETH"):
 async def analyze(ctx, symbol: str):
     """Analyze a crypto pair (e.g., !analyze BTC/USDT)."""
     # Auto-format to uppercase and ensure /USDT if not provided
+    symbol = symbol.strip()
+    
+    # Check if this is a contract address (long string)
+    if len(symbol) > 30:
+        await ctx.send(f"⚠️ `{symbol}` looks like a contract address. For DEX tokens, please use **`!track {symbol}`** instead!")
+        return
+
     symbol = symbol.upper()
     if '/' not in symbol:
         symbol = f"{symbol}/USDT"
@@ -106,8 +113,9 @@ async def help(ctx):
     embed.add_field(name="`!ping`", value="Check bot latency.", inline=False)
     embed.add_field(name="`!analyze [symbol]`", value="Get a technical analysis report (e.g., `!analyze BTC`).", inline=False)
     embed.add_field(name="`!check [address] [chain]`", value="Scan a token for rugpull risks (Chains: `ETH`, `BSC`, `ARB`, `BASE`).", inline=False)
-    embed.add_field(name="`!set_alert_channel`", value="Set current channel for auto-alerts.", inline=False)
-    embed.add_field(name="`!add_watchlist [symbol]`", value="Add a coin to the background monitor.", inline=False)
+    embed.add_field(name="`!track [address] [chain]`", value="Monitor a DEX token by contract address (Default: `solana`).", inline=False)
+    embed.add_field(name="`!scan`", value="Trigger an immediate market scan summary.", inline=False)
+    embed.add_field(name="`!balance`", value="Check your Kraken USDT balance.", inline=False)
     embed.set_footer(text="Short-term trading assistant | GoPlus & CCXT")
     await ctx.send(embed=embed)
 

@@ -5,6 +5,7 @@ from collectors.crypto_collector import CryptoCollector
 from collectors.stock_collector import StockCollector
 from analysis.technical_engine import TechnicalAnalysis
 from trading_executive import TradingExecutive
+from collectors.dex_scout import DexScout
 
 class AlertSystem(commands.Cog):
     def __init__(self, bot):
@@ -13,12 +14,16 @@ class AlertSystem(commands.Cog):
         self.stocks = StockCollector()
         self.analyzer = TechnicalAnalysis()
         self.trader = TradingExecutive()
+        self.dex_scout = DexScout()
         
         # User defined watchlists
         # Expanded Full-Throttle Watchlist
         self.crypto_watchlist = [
             'BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 
             'PEPE/USDT', 'SHIB/USDT', 'DOGE/USDT', 'BONK/USDT', 'WIF/USDT'
+        ]
+        self.dex_watchlist = [
+            {"chain": "solana", "address": "HBoNJ5v8g71s2boRivrHnfSB5MVPLDHHyVjruPfhGkvL"} # Purple Pepe
         ]
         self.stock_watchlist = ['AAPL', 'TSLA', 'NVDA', 'AMD', 'MSFT', 'META', 'AMZN']
         
@@ -81,8 +86,31 @@ class AlertSystem(commands.Cog):
                 color=discord.Color.light_grey()
             )
             summary_embed.set_footer(text="Scan complete. Signals only post if Buy/Sell/Trend detected.")
-            # Only send summary if no alerts were sent, to avoid spam, or just send on !scan
-            # For now, let's keep it in logs and only post if it's a manual !scan
+            
+        # 2. Monitor DEX Scout (New Gems)
+        print(f"Scouting DEX tokens: {self.dex_watchlist}")
+        if channel_crypto:
+            for item in self.dex_watchlist:
+                pair_data = await self.dex_scout.get_pair_data(item['chain'], item['address'])
+                if pair_data:
+                    info = self.dex_scout.extract_token_info(pair_data)
+                    # Alert if price change > 5% in 5 minutes
+                    if abs(info['price_change_5m']) >= 5.0:
+                        # Safety Audit
+                        audit = await self.trader.safety.check_token(info['address'], "solana" if info['chain'] == 'solana' else "1")
+                        
+                        color = discord.Color.purple() if info['price_change_5m'] > 0 else discord.Color.dark_red()
+                        trend = "🚀 PUMPING" if info['price_change_5m'] > 0 else "📉 DUMPING"
+                        
+                        embed = discord.Embed(title=f"🟣 DEX GEM {trend}: {info['symbol']} ({info['chain'].upper()})", color=color)
+                        embed.add_field(name="Price USD", value=f"${info['price_usd']:.8f}", inline=True)
+                        embed.add_field(name="5m Change", value=f"{info['price_change_5m']}%", inline=True)
+                        embed.add_field(name="Liquidity", value=f"${info['liquidity_usd']:,.0f}", inline=True)
+                        embed.add_field(name="Safety Status", value=f"**{audit.get('safety_status', 'N/A')}**", inline=False)
+                        embed.add_field(name="DEX Link", value=f"[View on DexScreener]({info['url']})", inline=False)
+                        
+                        await channel_crypto.send(embed=embed)
+                await asyncio.sleep(1)
 
         # 2. Monitor Stocks
         print(f"Checking stock markets: {self.stock_watchlist}")
@@ -208,6 +236,32 @@ class AlertSystem(commands.Cog):
         summary = discord.Embed(title="🔍 Manual Scan Results", description="\n".join(scan_results), color=discord.Color.blue())
         await ctx.send(embed=summary)
         await ctx.send("✅ Full background monitor cycle finishing...")
+
+    @commands.command()
+    async def track(self, ctx, address: str, chain: str = "solana"):
+        """Track a DEX token by address. Usage: !track HBoNJ... solana"""
+        address = address.strip()
+        chain = chain.lower()
+        
+        # Check if already tracked
+        if any(item['address'] == address for item in self.dex_watchlist):
+            await ctx.send(f"⚠️ `{address}` is already being tracked.")
+            return
+
+        await ctx.send(f"🔍 Scouting DEX for `{address}` on {chain.upper()}...")
+        pair_data = await self.dex_scout.get_pair_data(chain, address)
+        
+        if pair_data:
+            info = self.dex_scout.extract_token_info(pair_data)
+            self.dex_watchlist.append({"chain": chain, "address": address})
+            
+            embed = discord.Embed(title=f"✅ Now Tracking: {info['symbol']}", color=discord.Color.green())
+            embed.add_field(name="Name", value=info['name'], inline=True)
+            embed.add_field(name="Price", value=f"${info['price_usd']:.8f}", inline=True)
+            embed.add_field(name="Chain", value=chain.upper(), inline=True)
+            await ctx.send(embed=embed)
+        else:
+            await ctx.send(f"❌ Could not find pair for `{address}` on {chain.upper()}. Make sure it's a valid PAIR address on DexScreener.")
 
     @commands.command()
     async def balance(self, ctx):
