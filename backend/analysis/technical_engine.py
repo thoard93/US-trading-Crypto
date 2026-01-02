@@ -16,28 +16,46 @@ class TechnicalAnalysis:
             df.ta.rsi(length=14, append=True)
         if len(df) >= 20:
             df.ta.ema(length=20, append=True)
+        if len(df) >= 50:
             df.ta.ema(length=50, append=True)
         
         last_row = df.iloc[-1]
         close = last_row['close']
         
-        # Fallback for low data
-        if len(df) < 50:
+        # Minimum 14 bars for RSI-only analysis
+        if len(df) < 14:
             return {
                 "price": round(close, 8),
-                "rsi": round(last_row['RSI_14'], 2) if 'RSI_14' in last_row else "N/A",
+                "rsi": "N/A",
                 "signal": "NEUTRAL",
-                "reason": f"Warming up engine ({len(df)}/50 bars collected)",
+                "reason": f"Warming up engine ({len(df)}/14 bars for RSI)",
                 "ema_status": "N/A"
             }
-
-        last_row = df.iloc[-1]
         
-        # Simple Short-term Logic
-        rsi = last_row['RSI_14']
-        ema_20 = last_row['EMA_20']
-        ema_50 = last_row['EMA_50']
-        close = last_row['close']
+        rsi = last_row.get('RSI_14', 50)  # Default to neutral if not computed
+        
+        # 14-20 bars: RSI-only analysis
+        if len(df) < 20:
+            signal = "NEUTRAL"
+            reason = "Collecting more data for trend analysis"
+            
+            if rsi < 30:
+                signal = "BUY"
+                reason = "🚀 Oversold (RSI < 30) - Potential low entry"
+            elif rsi > 70:
+                signal = "SELL"
+                reason = "⚠️ Overbought (RSI > 70) - Potential local top"
+            
+            return {
+                "price": round(close, 8),
+                "rsi": round(rsi, 2),
+                "signal": signal,
+                "reason": reason,
+                "ema_status": "N/A"
+            }
+        
+        ema_20 = last_row.get('EMA_20', close)
+        ema_50 = last_row.get('EMA_50', ema_20)  # Fallback to EMA_20 if no EMA_50
 
         signal = "NEUTRAL"
         reason = "No strong signal"
@@ -62,3 +80,4 @@ class TechnicalAnalysis:
             "reason": reason,
             "ema_status": "Above" if close > ema_20 else "Below"
         }
+

@@ -57,9 +57,14 @@ class TradingExecutive:
 
     def track_position(self, symbol, entry_price, amount):
         """Record an entry for stop-loss monitoring and persist to DB."""
+        # Validate inputs before tracking
+        if entry_price is None or amount is None:
+            print(f"⚠️ Cannot track {symbol}: entry_price={entry_price}, amount={amount}")
+            return
+            
         self.active_positions[symbol] = {
-            "entry_price": entry_price,
-            "amount": amount
+            "entry_price": float(entry_price),
+            "amount": float(amount)
         }
         
         from database import SessionLocal
