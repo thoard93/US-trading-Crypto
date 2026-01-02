@@ -113,20 +113,22 @@ class AlertSystem(commands.Cog):
         print(f"Checking stock markets: {self.stock_watchlist}")
         if channel_stocks:
             for symbol in self.stock_watchlist:
-                data = self.stocks.fetch_ohlcv(symbol, timeframe='1Hour', limit=100)
-                if data is not None:
-                    await self._process_alert(channel_stocks, symbol, data, "Stock")
+                await self._check_and_alert(symbol, channel_stocks, "Stock")
                 await asyncio.sleep(1)
 
     async def _check_and_alert(self, symbol, channel, asset_type):
         """Helper to fetch data, check exits, and process alerts."""
         try:
-            # Use 5m timeframe for scalping/memes, 1h for stocks or legacy majors
+            # Use 5m timeframe for scalping/memes, 1h for stocks
             tf = '5m' if asset_type in ["Meme", "Crypto"] else '1h'
-            data = self.crypto.fetch_ohlcv(symbol, timeframe=tf, limit=100)
+            
+            # Use different collectors based on asset type
+            if asset_type == "Stock":
+                data = self.stocks.fetch_ohlcv(symbol, timeframe='1Hour', limit=100)
+            else:
+                data = self.crypto.fetch_ohlcv(symbol, timeframe=tf, limit=100)
             
             if data is None or data.empty:
-                # Silently skip if ticker not found (handles regional restrictions)
                 return
 
             current_price = data.iloc[-1]['close']
@@ -136,10 +138,14 @@ class AlertSystem(commands.Cog):
             if symbol in self.trader.active_positions:
                 exit_reason = self.trader.check_exit_conditions(symbol, current_price)
                 if exit_reason:
-                    exit_res = self.trader.execute_market_sell(symbol)
+                    if asset_type == "Stock":
+                        exit_res = self.trader.execute_market_sell_stock(symbol)
+                    else:
+                        exit_res = self.trader.execute_market_sell(symbol)
+
                     if "error" not in exit_res:
                         embed = discord.Embed(
-                            title=f"🚨 AUTO-EXIT: {exit_reason}",
+                            title=f"🚨 AUTO-EXIT ({asset_type.upper()}): {exit_reason}",
                             description=f"Closed position for **{symbol}** at ${p_str}",
                             color=discord.Color.orange()
                         )
@@ -282,10 +288,10 @@ class AlertSystem(commands.Cog):
                 await channel.send(embed=embed)
                 
                 # --- SCALPING & AUTO-TRADING LOGIC ---
-                if asset_type in ["Crypto", "Meme"] and result['signal'] in ['BUY', 'SELL']:
+                if (asset_type in ["Crypto", "Meme"] or asset_type == "Stock") and result['signal'] in ['BUY', 'SELL']:
                     symbol_price = result['price']
                     trade_result = None
-                    MAX_POSITIONS = 5
+                    MAX_POSITIONS = 10
                     
                     # Kraken requires ~$10 minimum for most pairs
                     trade_amount = 10.0 
@@ -307,16 +313,25 @@ class AlertSystem(commands.Cog):
                             await channel.send(f"🛡️ **Scalp Safety Check:** Auditing `{symbol}` before entry...")
                             # Note: For Kraken-listed tokens, we check for high RSI/Volatility instead.
                         
-                        trade_result = self.trader.execute_market_buy(symbol, amount_usdt=trade_amount)
-                        trade_title = "💰 SCALP: EXECUTED BUY" if scalp_mode else "💰 AUTO-TRADE: EXECUTED BUY"
+                        if asset_type == "Stock":
+                            trade_result = self.trader.execute_market_buy_stock(symbol, qty=1)
+                            trade_title = "💰 ALPACA: EXECUTED BUY"
+                        else:
+                            trade_result = self.trader.execute_market_buy(symbol, amount_usdt=trade_amount)
+                            trade_title = "💰 SCALP: EXECUTED BUY" if scalp_mode else "💰 AUTO-TRADE: EXECUTED BUY"
                     else: # SELL signal
-                        if scalp_mode: trade_title = "📉 SCALP: EXIT OPPORTUNITY"
+                        if asset_type == "Stock": trade_title = "📉 ALPACA: EXIT OPPORTUNITY"
+                        elif scalp_mode: trade_title = "📉 SCALP: EXIT OPPORTUNITY"
                         else: trade_title = "📉 AUTO-TRADE: EXIT OPPORTUNITY"
                         
                         # ONLY execute sell if we actually own the coin
                         if symbol in self.trader.active_positions:
-                            trade_result = self.trader.execute_market_sell(symbol)
-                            trade_title = "📉 SCALP: EXECUTED SELL" if scalp_mode else "📉 AUTO-TRADE: EXECUTED SELL"
+                            if asset_type == "Stock":
+                                trade_result = self.trader.execute_market_sell_stock(symbol)
+                                trade_title = "📉 ALPACA: EXECUTED SELL"
+                            else:
+                                trade_result = self.trader.execute_market_sell(symbol)
+                                trade_title = "📉 SCALP: EXECUTED SELL" if scalp_mode else "📉 AUTO-TRADE: EXECUTED SELL"
                         else:
                             # Log it but don't try to trade
                             print(f"ℹ️ Sell signal for {symbol} but no active position to close.")

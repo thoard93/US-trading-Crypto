@@ -3,9 +3,11 @@ import os
 import logging
 
 class TradingExecutive:
-    def __init__(self, api_key=None, secret_key=None, user_id=1):
+    def __init__(self, api_key=None, secret_key=None, alpaca_key=None, alpaca_secret=None, user_id=1):
         self.api_key = api_key or os.getenv('KRAKEN_API_KEY')
         self.secret_key = secret_key or os.getenv('KRAKEN_SECRET_KEY')
+        self.alpaca_key = alpaca_key or os.getenv('ALPACA_API_KEY')
+        self.alpaca_secret = alpaca_secret or os.getenv('ALPACA_SECRET_KEY')
         self.user_id = user_id
         
         # Initialize CryptoCollector with specific keys
@@ -13,10 +15,18 @@ class TradingExecutive:
         self.crypto = CryptoCollector(api_key=self.api_key, api_secret=self.secret_key)
         self.exchange = self.crypto.exchange
         
+        # Initialize StockCollector with specific keys
+        from collectors.stock_collector import StockCollector
+        self.stock_collector = StockCollector(api_key=self.alpaca_key, secret_key=self.alpaca_secret)
+        self.stock_api = self.stock_collector.api
+        
         if self.exchange and self.exchange.apiKey:
-            print(f"Trading Executive initialized for user {self.user_id}.")
+            print(f"✅ Crypto Trading initialized for user {self.user_id}.")
+        
+        if self.stock_api:
+            print(f"✅ Stock Trading (Alpaca) initialized for user {self.user_id}.")
         else:
-            print(f"Warning: API keys not found for user {self.user_id}. Auto-trading disabled.")
+            print(f"⚠️ Stock Trading disabled for user {self.user_id} (No keys).")
 
         # Scalp-optimized Safety Settings
         self.trade_amount_usdt = 10.0  
@@ -176,40 +186,80 @@ class TradingExecutive:
             print(f"Error executing sell for {symbol}: {e}")
             return {"error": str(e)}
 
-    def sync_positions(self):
-        """Fetch current holdings from Kraken and adopt them if they meet a threshold."""
-        if not self.exchange: return
-        print("🔄 Loading live positions from Kraken...")
+    def execute_market_buy_stock(self, symbol, qty=1):
+        """Execute a market buy order for a stock."""
+        if not self.stock_api:
+            return {"error": "Alpaca API not configured"}
         try:
-            balance = self.exchange.fetch_balance()
-            # Standard CCXT balance iteration
-            total_bals = balance.get('total', {})
-            for asset, total_amount in total_bals.items():
-                if asset in ['USDT', 'USD', 'ZUSD', 'EUR', 'CAD']: continue
-                if total_amount > 0:
-                    # Construct USDT symbol
-                    symbol = f"{asset}/USDT"
-                    try:
-                        # Check market existence
-                        if symbol not in self.exchange.markets:
-                            self.exchange.load_markets()
-                        
-                        if symbol not in self.exchange.markets:
-                            # Try with 'X' prefix if needed (common in Kraken raw symbols)
-                            alt_symbol = f"X{asset}/USDT"
-                            if alt_symbol in self.exchange.markets:
-                                symbol = alt_symbol
-                            else:
-                                continue
-                            
-                        ticker = self.exchange.fetch_ticker(symbol)
-                        price = ticker['last']
-                        value = total_amount * price
-                        if value > 5.0: # Adopt if > $5
-                            self.track_position(symbol, price, total_amount)
-                            print(f"✅ Adopting position: {symbol} ({total_amount:.4f} @ ${price:.4f})")
-                    except Exception as inner_e:
-                        print(f"⚠️ Failed to sync {asset}: {inner_e}")
-                        continue
+            print(f"🚀 Executing ALPACA MARKET BUY for {symbol} (Qty: {qty})")
+            order = self.stock_api.submit_order(
+                symbol=symbol,
+                qty=qty,
+                side='buy',
+                type='market',
+                time_in_force='gtc'
+            )
+            return order
         except Exception as e:
-            print(f"❌ Position sync error: {e}")
+            print(f"Error executing stock buy for {symbol}: {e}")
+            return {"error": str(e)}
+
+    def execute_market_sell_stock(self, symbol):
+        """Execute a market sell order for the entire balance of a stock."""
+        if not self.stock_api:
+            return {"error": "Alpaca API not configured"}
+        try:
+            # Fetch current position to get quantity
+            pos = self.stock_api.get_position(symbol)
+            qty = pos.qty
+            print(f"📉 Executing ALPACA MARKET SELL for {symbol} (Qty: {qty})")
+            order = self.stock_api.submit_order(
+                symbol=symbol,
+                qty=qty,
+                side='sell',
+                type='market',
+                time_in_force='gtc'
+            )
+            return order
+        except Exception as e:
+            print(f"Error executing stock sell for {symbol}: {e}")
+            return {"error": str(e)}
+
+    def sync_positions(self):
+        """Fetch current holdings from Kraken and Alpaca."""
+        # --- 1. Kraken Sync ---
+        if self.exchange:
+            print("🔄 Syncing live holdings from Kraken...")
+            try:
+                balance = self.exchange.fetch_balance()
+                total_bals = balance.get('total', {})
+                for asset, total_amount in total_bals.items():
+                    if asset in ['USDT', 'USD', 'ZUSD', 'EUR', 'CAD']: continue
+                    if total_amount > 0:
+                        symbol = f"{asset}/USDT"
+                        try:
+                            if symbol not in self.exchange.markets: self.exchange.load_markets()
+                            if symbol not in self.exchange.markets:
+                                alt_symbol = f"X{asset}/USDT"
+                                if alt_symbol in self.exchange.markets: symbol = alt_symbol
+                                else: continue
+                            ticker = self.exchange.fetch_ticker(symbol)
+                            price = ticker['last']
+                            if total_amount * price > 5.0:
+                                self.track_position(symbol, price, total_amount)
+                                print(f"✅ Adopting Kraken: {symbol}")
+                        except: continue
+            except Exception as e: print(f"❌ Kraken sync error: {e}")
+
+        # --- 2. Alpaca Sync ---
+        if self.stock_api:
+            print("🔄 Syncing live holdings from Alpaca...")
+            try:
+                alp_positions = self.stock_api.list_positions()
+                for pos in alp_positions:
+                    symbol = pos.symbol
+                    price = float(pos.current_price)
+                    qty = float(pos.qty)
+                    self.track_position(symbol, price, qty)
+                    print(f"✅ Adopting Alpaca: {symbol}")
+            except Exception as e: print(f"❌ Alpaca sync error: {e}")

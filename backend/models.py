@@ -33,6 +33,7 @@ class Trade(Base):
     id = Column(Integer, primary_key=True, index=True)
     symbol = Column(String)
     side = Column(String)   # 'BUY', 'SELL'
+    asset_type = Column(String, default="CRYPTO") # 'CRYPTO' or 'STOCK'
     amount = Column(Float)
     price = Column(Float)
     cost = Column(Float)    # amount * price

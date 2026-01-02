@@ -94,6 +94,8 @@ function App() {
   const [authToken, setAuthToken] = useState(localStorage.getItem('AG_TOKEN'));
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
+  const [alpacaKey, setAlpacaKey] = useState('');
+  const [alpacaSecret, setAlpacaSecret] = useState('');
 
   const loginWithDiscord = async () => {
     setAuthError(null);
@@ -138,9 +140,29 @@ function App() {
         api_key: apiKey,
         api_secret: apiSecret
       });
-      alert("API Keys saved securely (AES-256 Encrypted)");
+      alert("Kraken Keys saved securely (AES-256 Encrypted)");
       setApiKey('');
       setApiSecret('');
+    } catch (err) {
+      alert("Save failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveAlpacaKeys = async () => {
+    if (!user) return alert("Please login first");
+    setLoading(true);
+    try {
+      await axios.post(`${apiBase}/settings/keys`, {
+        user_id: user.id,
+        exchange: 'alpaca',
+        api_key: alpacaKey,
+        api_secret: alpacaSecret
+      });
+      alert("Alpaca Keys saved securely (AES-256 Encrypted)");
+      setAlpacaKey('');
+      setAlpacaSecret('');
     } catch (err) {
       alert("Save failed.");
     } finally {
@@ -321,24 +343,27 @@ function App() {
           <div className="main-content">
             <section className="glass glow-shadow" style={{ padding: '32px' }}>
               <h3 style={{ marginBottom: '24px' }}>Real-time Market Watchlist</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
-                {marketData.length > 0 ? marketData.map((m, i) => (
-                  <div key={i} className="glass" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'pointer' }} onClick={() => { setActiveSymbol(m.symbol); setActiveTab('Dashboard'); }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>{m.symbol}</span>
-                      <span style={{ color: m.change >= 0 ? 'var(--success)' : 'var(--danger)', fontSize: '0.875rem' }}>
-                        {m.change >= 0 ? '+' : ''}{m.change.toFixed(2)}%
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '20px' }}>
+                {marketData.length > 0 ? marketData.map((coin, i) => (
+                  <div
+                    key={i}
+                    className={`glass glow-shadow ${activeSymbol === coin.symbol ? 'active-card' : ''}`}
+                    onClick={() => { setActiveSymbol(coin.symbol); setActiveTab('Dashboard'); }}
+                    style={{ padding: '20px', cursor: 'pointer', borderTop: coin.type === 'STOCK' ? '3px solid var(--accent-color)' : '3px solid #f59e0b' }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div>
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Price</p>
-                        <p style={{ fontWeight: 600 }}>${m.price < 1 ? m.price.toFixed(6) : m.price.toLocaleString()}</p>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.05em' }}>{coin.type || 'ASSET'}</p>
+                        <h3 style={{ margin: '4px 0' }}>{coin.symbol}</h3>
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Vol (24h)</p>
-                        <p style={{ fontWeight: 600, fontSize: '0.875rem' }}>${(m.volume / 1000).toFixed(1)}K</p>
-                      </div>
+                      {coin.type === 'STOCK' ? <Activity size={20} color="var(--accent-color)" /> : <TrendingUp size={20} color="#f59e0b" />}
+                    </div>
+                    <div style={{ marginTop: '16px' }}>
+                      <p style={{ fontSize: '1.5rem', fontWeight: 600 }}>${coin.price.toLocaleString(undefined, { minimumFractionDigits: coin.price < 1 ? 4 : 2 })}</p>
+                      <p style={{ color: coin.change >= 0 ? 'var(--success)' : 'var(--danger)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                        {coin.change >= 0 ? <ArrowUpRight size={16} /> : <ArrowDownRight size={16} />}
+                        {coin.change}%
+                      </p>
                     </div>
                   </div>
                 )) : (
@@ -388,23 +413,31 @@ function App() {
               <section className="glass glow-shadow" style={{ padding: '24px' }}>
                 <h3 style={{ marginBottom: '20px' }}>Kraken Holdings</h3>
                 <div className="portfolio-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {portfolio.assets.map((asset, i) => (
-                    <div key={i} className="glass" style={{ padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div className="glass" style={{ width: '32px', height: '32px', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'rgba(255,255,255,0.05)' }}>
-                          {asset.asset[0]}
-                        </div>
-                        <div>
-                          <p style={{ fontWeight: 600 }}>{asset.asset}</p>
-                          <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{asset.amount.toFixed(4)} units</p>
-                        </div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <p style={{ fontWeight: 600 }}>${asset.value_usdt.toFixed(2)}</p>
-                        <p style={{ fontSize: '0.75rem', color: 'var(--success)' }}>${asset.price.toFixed(4)}</p>
-                      </div>
-                    </div>
-                  ))}
+                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                        <th style={{ textAlign: 'left', padding: '8px 16px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>ASSET</th>
+                        <th style={{ textAlign: 'left', padding: '8px 16px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>AMOUNT</th>
+                        <th style={{ textAlign: 'left', padding: '8px 16px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>PRICE</th>
+                        <th style={{ textAlign: 'left', padding: '8px 16px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>VALUE (USDT)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {portfolio.assets.map((asset, i) => (
+                        <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <td style={{ padding: '16px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '0.7rem', background: asset.type === 'STOCK' ? 'rgba(0, 255, 204, 0.1)' : 'rgba(245, 158, 11, 0.1)', color: asset.type === 'STOCK' ? 'var(--accent-color)' : '#f59e0b', padding: '2px 6px', borderRadius: '4px' }}>{asset.type}</span>
+                              {asset.asset}
+                            </div>
+                          </td>
+                          <td style={{ padding: '16px' }}>{asset.amount.toFixed(4)}</td>
+                          <td style={{ padding: '16px' }}>${asset.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td style={{ padding: '16px', fontWeight: 600 }}>${asset.value_usdt.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </section>
             </div>
@@ -468,28 +501,55 @@ function App() {
                 </div>
 
                 {/* API Key Management */}
-                <div className="glass" style={{ padding: '20px', borderLeft: '4px solid #f59e0b' }}>
-                  <h4 style={{ color: 'var(--text-secondary)', marginBottom: '16px' }}>KRAKEN API KEYS (SECURE)</h4>
-                  <div style={{ display: 'grid', gap: '12px' }}>
-                    <input
-                      type="password"
-                      placeholder="Kraken API Key"
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      className="glass"
-                      style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-                    />
-                    <input
-                      type="password"
-                      placeholder="Kraken private Secret"
-                      value={apiSecret}
-                      onChange={(e) => setApiSecret(e.target.value)}
-                      className="glass"
-                      style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-                    />
-                    <button onClick={saveKrakenKeys} className="glass" style={{ padding: '12px', background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>
-                      Encrypt & Save Keys
-                    </button>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
+                  <div className="glass" style={{ padding: '20px', borderLeft: '4px solid #f59e0b' }}>
+                    <h4 style={{ color: 'var(--text-secondary)', marginBottom: '16px' }}>KRAKEN API KEYS (CRYPTO)</h4>
+                    <div style={{ display: 'grid', gap: '12px' }}>
+                      <input
+                        type="password"
+                        placeholder="Kraken API Key"
+                        value={apiKey}
+                        onChange={(e) => setApiKey(e.target.value)}
+                        className="glass"
+                        style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+                      />
+                      <input
+                        type="password"
+                        placeholder="Kraken private Secret"
+                        value={apiSecret}
+                        onChange={(e) => setApiSecret(e.target.value)}
+                        className="glass"
+                        style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+                      />
+                      <button onClick={saveKrakenKeys} className="glass" style={{ padding: '12px', background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>
+                        Save Kraken Keys
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="glass" style={{ padding: '20px', borderLeft: '4px solid var(--accent-color)' }}>
+                    <h4 style={{ color: 'var(--text-secondary)', marginBottom: '16px' }}>ALPACA API KEYS (US STOCKS)</h4>
+                    <div style={{ display: 'grid', gap: '12px' }}>
+                      <input
+                        type="password"
+                        placeholder="Alpaca API Key ID"
+                        value={alpacaKey}
+                        onChange={(e) => setAlpacaKey(e.target.value)}
+                        className="glass"
+                        style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+                      />
+                      <input
+                        type="password"
+                        placeholder="Alpaca Secret Key"
+                        value={alpacaSecret}
+                        onChange={(e) => setAlpacaSecret(e.target.value)}
+                        className="glass"
+                        style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+                      />
+                      <button onClick={saveAlpacaKeys} className="glass" style={{ padding: '12px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)' }}>
+                        Save Alpaca Keys
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -587,8 +647,12 @@ function App() {
         </div>
 
         {authError && (
-          <div style={{ padding: '12px 24px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '12px', border: '1px solid rgba(239, 68, 68, 0.2)', maxWidth: '400px' }}>
-            <AlertTriangle size={16} /> {authError}
+          <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px 24px', borderRadius: '12px', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <AlertTriangle size={20} />
+            <div>
+              <p style={{ fontWeight: 600, fontSize: '0.9rem' }}>Discord Error: {authError}</p>
+              <p style={{ fontSize: '0.7rem', opacity: 0.8 }}>Verify your Render environment variables and Discord Secret match.</p>
+            </div>
           </div>
         )}
 
