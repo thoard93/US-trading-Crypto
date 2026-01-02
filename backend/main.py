@@ -394,9 +394,10 @@ async def get_trades(user_id: int, db: Session = Depends(get_db)):
     trades = db.query(models.Trade).filter(models.Trade.user_id == user_id).order_by(models.Trade.timestamp.desc()).limit(20).all()
     
     formatted = [{
-        "type": t.type if hasattr(t, 'type') else "TRADE",
+        "type": t.side, # This is 'BUY' or 'SELL'
         "symbol": t.symbol,
         "price": round(t.price, 8),
+        "amount": t.amount,
         "time": t.timestamp.strftime("%Y-%m-%d %H:%M:%S")
     } for t in trades]
 

@@ -156,6 +156,7 @@ class AlertSystem(commands.Cog):
             # Combined list of manual watchlist and trending gems
             all_dex = self.dex_watchlist + self.trending_dex_gems
             for item in all_dex:
+                # print(f"🔍 Checking DEX: {item.get('symbol', 'Unknown')}...")
                 pair_data = await self.dex_scout.get_pair_data(item['chain'], item['address'])
                 if pair_data:
                     info = self.dex_scout.extract_token_info(pair_data)
