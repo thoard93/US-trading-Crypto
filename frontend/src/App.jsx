@@ -23,32 +23,29 @@ import {
   Cpu,
   Wifi,
   WifiOff,
-  ExternalLink
+  ExternalLink,
+  Edit3,
+  Save
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-// --- SMART API RESOLVER ---
-const resolveApiBase = () => {
+// --- SMART API RESOLVER + PERSISTENCE ---
+const getInitialApiBase = () => {
+  const saved = localStorage.getItem('ANTIGRAVITY_API_OVERRIDE');
+  if (saved) return saved;
+
   let base = import.meta.env.VITE_API_URL || '';
-
-  // If we're in a browser on Render
   if (typeof window !== 'undefined' && window.location.hostname.includes('onrender.com')) {
-    const currentHost = window.location.hostname; // e.g. trading-dashboard-vpwb.onrender.com
-
-    // Check if the current environment variable is an internal Render name (like trading-api-1pe7)
-    // or if we need to derive the public name from the dashboard's own URL.
+    const currentHost = window.location.hostname;
     if (!base || base.includes('-1pe7') || !base.includes('onrender.com')) {
       const suffix = currentHost.replace('trading-dashboard-', '');
       base = `https://trading-api-${suffix}`;
     }
   }
-
-  // Final sanitization
-  if (!base.startsWith('http')) base = `https://${base}`;
-  return base.replace(/\/$/, ''); // Remove trailing slash
+  if (!base.startsWith('http') && base) base = `https://${base}`;
+  return base.replace(/\/$/, '') || 'https://trading-api.onrender.com';
 };
 
-const API_BASE = resolveApiBase();
 const USER_ID = 1;
 
 class ErrorBoundary extends React.Component {
@@ -63,7 +60,7 @@ class ErrorBoundary extends React.Component {
       return (
         <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#ef4444', gap: '16px', background: '#05070a' }}>
           <AlertTriangle size={48} />
-          <h2>Dashboard Component Error</h2>
+          <h2>Dashboard Layout Error</h2>
           <button onClick={() => window.location.reload()} style={{ padding: '8px 24px', background: '#00ffcc', borderRadius: '8px', color: '#000' }}>Retry Layout</button>
         </div>
       );
@@ -74,6 +71,8 @@ class ErrorBoundary extends React.Component {
 
 function App() {
   const [activeTab, setActiveTab] = useState('Dashboard');
+  const [apiBase, setApiBase] = useState(getInitialApiBase());
+  const [manualUrl, setManualUrl] = useState(apiBase);
   const [chartData, setChartData] = useState([]);
   const [positions, setPositions] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -86,25 +85,33 @@ function App() {
   const [lastHeartbeat, setLastHeartbeat] = useState(null);
   const [connectionActive, setConnectionActive] = useState(false);
 
+  const saveApiOverride = () => {
+    let url = manualUrl.trim().replace(/\/$/, '');
+    if (!url.startsWith('http')) url = `https://${url}`;
+    localStorage.setItem('ANTIGRAVITY_API_OVERRIDE', url);
+    setApiBase(url);
+    setConnectionActive(false);
+    setApiError("Routing updated. Pinging...");
+    setTimeout(fetchData, 500);
+  };
+
   const fetchData = useCallback(async () => {
     try {
-      // 1. Check Status (Heartbeat) - Short timeout to fail fast
-      const statusRes = await axios.get(`${API_BASE}/status/${USER_ID}`, { timeout: 4000 });
+      // 1. Check Status (Heartbeat)
+      const statusRes = await axios.get(`${apiBase}/status/${USER_ID}`, { timeout: 5000 });
       if (statusRes.data) {
         setStatus(statusRes.data);
         setLastHeartbeat(new Date().toLocaleTimeString());
         setConnectionActive(true);
         setApiError(null);
-      } else {
-        throw new Error("Empty Response");
       }
 
-      // Parallel fetch for speed
+      // Parallel fetch
       const [posRes, logsRes, statsRes, chartRes] = await Promise.all([
-        axios.get(`${API_BASE}/positions/${USER_ID}`).catch(() => ({ data: [] })),
-        axios.get(`${API_BASE}/trades/${USER_ID}`).catch(() => ({ data: [] })),
-        axios.get(`${API_BASE}/stats/${USER_ID}`).catch(() => ({ data: {} })),
-        axios.get(`${API_BASE}/chart/${activeSymbol.replace('/', '%2F')}`).catch(() => ({ data: [] }))
+        axios.get(`${apiBase}/positions/${USER_ID}`).catch(() => ({ data: [] })),
+        axios.get(`${apiBase}/trades/${USER_ID}`).catch(() => ({ data: [] })),
+        axios.get(`${apiBase}/stats/${USER_ID}`).catch(() => ({ data: {} })),
+        axios.get(`${apiBase}/chart/${activeSymbol.replace('/', '%2F')}`).catch(() => ({ data: [] }))
       ]);
 
       if (Array.isArray(posRes.data)) setPositions(posRes.data);
@@ -113,11 +120,10 @@ function App() {
       if (Array.isArray(chartRes.data)) setChartData(chartRes.data);
 
     } catch (err) {
-      console.warn("Connection Status:", err.message);
       setConnectionActive(false);
-      setApiError("Backend route blocked. Cross-checking...");
+      setApiError("Bridge restricted. Verify URL in Settings.");
     }
-  }, [activeSymbol]);
+  }, [activeSymbol, apiBase]);
 
   useEffect(() => {
     fetchData();
@@ -129,9 +135,9 @@ function App() {
     setLoading(true);
     try {
       if (status.is_running) {
-        await axios.post(`${API_BASE}/users/stop/${USER_ID}`);
+        await axios.post(`${apiBase}/users/stop/${USER_ID}`);
       } else {
-        await axios.post(`${API_BASE}/users/start/${USER_ID}`);
+        await axios.post(`${apiBase}/users/start/${USER_ID}`);
       }
       setTimeout(fetchData, 1500);
     } catch (err) {
@@ -157,13 +163,14 @@ function App() {
           <div className="glass" style={{ padding: '24px', borderRadius: '50%', background: 'rgba(239, 68, 68, 0.05)' }}>
             <WifiOff size={48} color="var(--danger)" />
           </div>
-          <h2 style={{ fontSize: '1.5rem' }}>Connection Search</h2>
+          <h2 style={{ fontSize: '1.5rem' }}>Bridge Link Awaiting</h2>
           <p style={{ color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '400px' }}>
-            We've detected an internal Render route. I'm attempting to bridge your connection to the public gateway: <code>{API_BASE}</code>
+            We've predicted the bridge at <code>{apiBase}</code>, but it's not responding.
+            Please paste the exact <b>External URL</b> from your Render dashboard in Settings.
           </p>
           <div style={{ display: 'flex', gap: '12px' }}>
-            <button onClick={fetchData} className="glass" style={{ padding: '12px 32px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)' }}>Ping Bridge</button>
-            <button onClick={() => setActiveTab('Settings')} className="glass" style={{ padding: '12px 32px' }}>Route Details</button>
+            <button onClick={fetchData} className="glass" style={{ padding: '12px 32px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)' }}>Ping predicted route</button>
+            <button onClick={() => setActiveTab('Settings')} className="glass" style={{ padding: '12px 32px' }}>Fix URL manually</button>
           </div>
         </div>
       );
@@ -180,7 +187,7 @@ function App() {
                   <p style={{ color: 'var(--text-secondary)' }}>
                     {chartData.length > 0 && chartData[chartData.length - 1]?.price
                       ? `$${chartData[chartData.length - 1].price.toLocaleString()}`
-                      : 'Polling Live Market Data...'}
+                      : 'Live Market Data Hydrating...'}
                     <span style={{ color: 'var(--success)', marginLeft: '8px', fontSize: '0.8rem' }}>5M SCALPER</span>
                   </p>
                 </div>
@@ -235,15 +242,25 @@ function App() {
               <div style={{ display: 'grid', gap: '20px' }}>
                 <div className="glass" style={{ padding: '20px', borderLeft: `4px solid ${connectionActive ? 'var(--success)' : 'var(--danger)'}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <h4 style={{ color: 'var(--text-secondary)' }}>API BRIDGE GATEWAY</h4>
+                    <h4 style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>API GATEWAY OVERRIDE <Edit3 size={12} /></h4>
                     {connectionActive ? <Wifi size={16} color="var(--success)" /> : <WifiOff size={16} color="var(--danger)" />}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <code style={{ background: 'rgba(0,0,0,0.3)', padding: '4px 8px', borderRadius: '4px', fontSize: '0.9rem', flex: 1 }}>{API_BASE}</code>
-                    <a href={API_BASE} target="_blank" rel="noreferrer" className="glass" style={{ padding: '4px' }}><ExternalLink size={14} /></a>
+
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                    <input
+                      type="text"
+                      value={manualUrl}
+                      onChange={(e) => setManualUrl(e.target.value)}
+                      placeholder="Paste Render External URL here..."
+                      style={{ flex: 1, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '12px', color: 'var(--text-primary)', outline: 'none' }}
+                    />
+                    <button onClick={saveApiOverride} className="glass" style={{ padding: '12px 24px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Save size={16} /> Save
+                    </button>
                   </div>
-                  <p style={{ fontSize: '0.75rem', marginTop: '8px', color: 'var(--text-secondary)' }}>
-                    {connectionActive ? `🟢 Verified Live (Heartbeat: ${lastHeartbeat})` : '🔴 Link Blocked. We are attempting to find a public route.'}
+
+                  <p style={{ fontSize: '0.75rem', marginTop: '12px', color: 'var(--text-secondary)' }}>
+                    {connectionActive ? `🟢 Connected to: ${apiBase} (Heartbeat: ${lastHeartbeat})` : `🔴 Currently trying: ${apiBase}. If this fails, paste the URL from your Render 'trading-api' page.`}
                   </p>
                 </div>
 
@@ -253,7 +270,7 @@ function App() {
                     <div className="glass" style={{ padding: '8px', background: '#5865F2' }}><MessageSquare size={20} /></div>
                     <div>
                       <p style={{ fontWeight: 600 }}>Server ID: 1376908703227318393</p>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Status: Waiting for Secure API Bridge</p>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Status: Link Pending API Verification</p>
                     </div>
                   </div>
                 </div>
@@ -278,9 +295,9 @@ function App() {
             </div>
             <h2 style={{ fontSize: '1.5rem' }}>{activeTab} Module</h2>
             <p style={{ color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '400px' }}>
-              Your trading engines are safe. We are currently finalizing the render for the **{activeTab}** dashboard.
+              Your trading engine is processing signals. We are currently finalizing the render for the **{activeTab}** dashboard.
             </p>
-            <button onClick={() => setActiveTab('Dashboard')} className="glass" style={{ padding: '12px 32px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)' }}>Back to Overview</button>
+            <button onClick={() => setActiveTab('Dashboard')} className="glass" style={{ padding: '12px 32px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)' }}>Back to Data</button>
           </div>
         );
     }
