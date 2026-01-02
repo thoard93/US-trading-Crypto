@@ -13,6 +13,9 @@ DISCORD_AUTH_URL = f"{DISCORD_API_BASE}/oauth2/authorize"
 DISCORD_TOKEN_URL = f"{DISCORD_API_BASE}/oauth2/token"
 DISCORD_USER_URL = f"{DISCORD_API_BASE}/users/@me"
 
+if not DISCORD_CLIENT_ID or not DISCORD_CLIENT_SECRET:
+    print("⚠️ WARNING: Discord Client ID or Secret is missing from environment variables!")
+
 def get_discord_auth_url():
     """Generate the Discord authorization URL."""
     import urllib.parse

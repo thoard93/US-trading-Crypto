@@ -14,6 +14,12 @@ services:
         sync: false
       - key: KRAKEN_SECRET_KEY
         sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: DISCORD_REDIRECT_URI
+        sync: false
       - key: PYTHON_VERSION
         value: 3.12.0
 
