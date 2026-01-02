@@ -33,10 +33,12 @@ class AlertSystem(commands.Cog):
         
         self.monitor_market.start()
         self.discovery_loop.start()
+        self.kraken_discovery_loop.start()
 
     def cog_unload(self):
         self.monitor_market.cancel()
         self.discovery_loop.cancel()
+        self.kraken_discovery_loop.cancel()
 
     @tasks.loop(minutes=5)
     async def monitor_market(self):
@@ -158,6 +160,54 @@ class AlertSystem(commands.Cog):
 
         # Update trending gems (keep them for 3-4 cycles)
         self.trending_dex_gems = new_gems + self.trending_dex_gems[:10]
+
+    @tasks.loop(hours=1)
+    async def kraken_discovery_loop(self):
+        """Automatically find top volume cryptos on Kraken."""
+        if not self.bot.is_ready(): return
+        
+        print("🔍 Running Kraken Market Discovery...")
+        try:
+            # Fetch all tickers from Kraken
+            tickers = self.crypto.exchange.fetch_tickers()
+            usdt_tickers = []
+            
+            for symbol, ticker in tickers.items():
+                if '/USDT' in symbol and ticker.get('quoteVolume'):
+                    usdt_tickers.append({
+                        'symbol': symbol,
+                        'volume': float(ticker.get('quoteVolume', 0)),
+                        'price': float(ticker.get('last', 0))
+                    })
+            
+            # Sort by volume (Top 25)
+            sorted_tickers = sorted(usdt_tickers, key=lambda x: x['volume'], reverse=True)[:25]
+            
+            new_majors = []
+            new_memes = []
+            
+            for t in sorted_tickers:
+                s = t['symbol']
+                p = t['price']
+                
+                # Exclude sub-pennies/memes from majors
+                if p > 1.0 and s not in new_majors:
+                    new_majors.append(s)
+                elif p <= 1.0 and s not in new_memes:
+                    new_memes.append(s)
+            
+            # Static list + Top discovered ones
+            # We keep our core list and append new high volume ones
+            core_majors = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT']
+            core_memes = ['PEPE/USDT', 'SHIB/USDT', 'DOGE/USDT', 'BONK/USDT', 'WIF/USDT']
+            
+            self.majors_watchlist = sorted(list(set(core_majors + new_majors[:6])))
+            self.memes_watchlist = sorted(list(set(core_memes + new_memes[:10])))
+            
+            print(f"✅ Kraken Watchlist Updated. Majors: {len(self.majors_watchlist)}, Memes: {len(self.memes_watchlist)}")
+            
+        except Exception as e:
+            print(f"❌ Kraken Discovery error: {e}")
 
     async def _process_alert(self, channel, symbol, data, asset_type):
         if data is not None:
