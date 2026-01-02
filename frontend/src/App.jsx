@@ -97,6 +97,7 @@ function App() {
   const [alpacaKey, setAlpacaKey] = useState('');
   const [alpacaSecret, setAlpacaSecret] = useState('');
   const [alpacaEnv, setAlpacaEnv] = useState('paper'); // 'paper' or 'live'
+  const [solanaKey, setSolanaKey] = useState('');
 
   const loginWithDiscord = async () => {
     setAuthError(null);
@@ -166,6 +167,26 @@ function App() {
       alert(`Alpaca ${alpacaEnv.toUpperCase()} Keys saved securely.`);
       setAlpacaKey('');
       setAlpacaSecret('');
+    } catch (err) {
+      alert("Save failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveSolanaKeys = async () => {
+    if (!user) return alert("Please login first");
+    setLoading(true);
+    try {
+      await axios.post(`${apiBase}/settings/keys`, {
+        user_id: user.id,
+        exchange: 'solana',
+        api_key: solanaKey,
+        api_secret: 'N/A', // Not used for simple private key
+        extra_config: 'phantom'
+      });
+      alert(`Phantom Wallet Key saved securely.`);
+      setSolanaKey('');
     } catch (err) {
       alert("Save failed.");
     } finally {
@@ -457,7 +478,7 @@ function App() {
           </div>
         );
 
-      case 'Trade History':
+      case 'History':
         return (
           <div className="main-content">
             <section className="glass glow-shadow" style={{ padding: '32px' }}>
@@ -576,6 +597,37 @@ function App() {
                       </button>
                     </div>
                   </div>
+
+                  {/* Phantom Wallet Section */}
+                  <div className="glass" style={{ padding: '20px', borderLeft: '4px solid #9945FF' }}>
+                    <h4 style={{ color: 'var(--text-secondary)', marginBottom: '16px' }}>SOLANA WALLET (DEX AUTO-TRADE)</h4>
+                    <div style={{ display: 'grid', gap: '12px' }}>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Enter your Phantom Wallet Private Key to enable meme coin sniping.</p>
+                      <input
+                        type="password"
+                        placeholder="Solana Private Key (Base58)"
+                        value={solanaKey}
+                        onChange={(e) => setSolanaKey(e.target.value)}
+                        className="glass"
+                        style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+                      />
+                      <button onClick={saveSolanaKeys} className="glass" style={{ padding: '12px', background: 'rgba(153, 69, 255, 0.1)', color: '#9945FF' }}>
+                        Save Phantom Key
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Donation Section */}
+                <div className="glass" style={{ padding: '24px', textAlign: 'center', marginTop: '20px', border: '1px solid rgba(0, 255, 204, 0.2)' }}>
+                  <h3 style={{ marginBottom: '12px' }}>Support the Project 🚀</h3>
+                  <p style={{ color: 'var(--text-secondary)', maxWidth: '500px', margin: '0 auto 16px auto', fontSize: '0.9rem' }}>
+                    If this bot helps you make profit, consider donating to keep the development alive!
+                    Funds go directly to server costs and adding new features.
+                  </p>
+                  <a href="https://www.paypal.com/" target="_blank" rel="noreferrer" className="glass glow-shadow" style={{ display: 'inline-block', padding: '12px 32px', background: '#003087', color: '#fff', textDecoration: 'none', borderRadius: '8px', fontWeight: 600 }}>
+                    Donate via PayPal: thoard2021@gmail.com
+                  </a>
                 </div>
 
                 {/* API Override */}

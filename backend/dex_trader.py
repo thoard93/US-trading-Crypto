@@ -11,9 +11,9 @@ from solders.transaction import VersionedTransaction
 from solders.message import to_bytes_versioned
 
 class DexTrader:
-    def __init__(self):
-        # Load wallet from environment
-        private_key = os.getenv('SOLANA_PRIVATE_KEY')
+    def __init__(self, private_key=None):
+        # Load wallet from environment or argument
+        private_key = private_key or os.getenv('SOLANA_PRIVATE_KEY')
         self.rpc_url = os.getenv('SOLANA_RPC_URL', 'https://api.mainnet-beta.solana.com')
         
         if private_key:

@@ -19,6 +19,12 @@ except ImportError as e:
     print(f"⚠️ DEX Trading disabled: {e}")
     DEX_TRADING_ENABLED = False
 
+# Import encryption if available
+try:
+    from encryption_utils import decrypt_key
+except ImportError:
+    decrypt_key = lambda x: x # Fallback if no encryption
+
 class AlertSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -32,7 +38,23 @@ class AlertSystem(commands.Cog):
         
         # Initialize DEX trader for Solana memecoins
         if DEX_TRADING_ENABLED:
-            self.dex_trader = DexTrader()
+            # Try to load key from DB
+            sol_priv = None
+            try:
+                db = SessionLocal()
+                # Assuming user_id=1 for the bot main owner
+                key_entry = db.query(models.ApiKey).filter(
+                    models.ApiKey.user_id == 1, 
+                    models.ApiKey.exchange == 'solana'
+                ).first()
+                if key_entry:
+                    sol_priv = decrypt_key(key_entry.api_key)
+                    print("🔓 Loaded Phantom Key from database.")
+                db.close()
+            except Exception as e:
+                print(f"⚠️ Failed to load Solana key from DB: {e}")
+
+            self.dex_trader = DexTrader(private_key=sol_priv)
             if self.dex_trader.wallet_address:
                 print(f"🦊 DEX Auto-Trading ENABLED. Wallet: {self.dex_trader.wallet_address[:8]}...")
         else:
