@@ -60,8 +60,10 @@ def get_db():
 
 @app.on_event("startup")
 async def startup_event():
-    models.Base.metadata.create_all(bind=engine)
+    from database import init_db
+    init_db()  # This now runs migrations AND creates tables
     print("🚀 FastAPI Server Started.")
+
 
 @app.get("/")
 async def root():
