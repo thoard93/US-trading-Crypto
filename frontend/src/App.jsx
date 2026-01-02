@@ -87,6 +87,8 @@ function App() {
   const [lastHeartbeat, setLastHeartbeat] = useState(null);
   const [connectionActive, setConnectionActive] = useState(false);
   const [failCount, setFailCount] = useState(0);
+  const [verifying, setVerifying] = useState(false);
+  const [authError, setAuthError] = useState(null);
 
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('AG_USER') || 'null'));
   const [authToken, setAuthToken] = useState(localStorage.getItem('AG_TOKEN'));
@@ -94,29 +96,37 @@ function App() {
   const [apiSecret, setApiSecret] = useState('');
 
   const loginWithDiscord = async () => {
+    setAuthError(null);
     try {
       const res = await axios.get(`${apiBase}/auth/discord/url`);
       window.location.href = res.data.url;
     } catch (err) {
-      alert("Auth failed to initialize.");
+      setAuthError("Failed to connect to backend. Check if your API URL is correct.");
     }
   };
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
-    if (code) {
+    if (code && !user) {
+      setVerifying(true);
+      setAuthError(null);
       axios.get(`${apiBase}/auth/discord/callback?code=${code}`)
         .then(res => {
           localStorage.setItem('AG_TOKEN', res.data.token);
           localStorage.setItem('AG_USER', JSON.stringify(res.data.user));
           setAuthToken(res.data.token);
           setUser(res.data.user);
+          setVerifying(false);
           window.history.replaceState({}, document.title, "/");
         })
-        .catch(err => console.error("OAuth error:", err));
+        .catch(err => {
+          console.error("OAuth error:", err);
+          setAuthError(err.response?.data?.detail || "Authentication Failed. Please try again.");
+          setVerifying(false);
+        });
     }
-  }, [apiBase]);
+  }, [apiBase, user]);
 
   const saveKrakenKeys = async () => {
     if (!user) return alert("Please login first");
@@ -567,29 +577,42 @@ function App() {
     return (
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#05070a', color: '#fff', gap: '32px', textAlign: 'center' }}>
         <div style={{ padding: '32px', borderRadius: '50%', background: 'rgba(0, 255, 204, 0.05)', boxShadow: '0 0 50px rgba(0, 255, 204, 0.1)' }}>
-          <Zap size={64} color="var(--accent-color)" />
+          {verifying ? <RefreshCw size={64} color="var(--accent-color)" className="spin" /> : <Zap size={64} color="var(--accent-color)" />}
         </div>
         <div>
           <h1 style={{ fontSize: '3rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '8px' }}>ANTIGRAVITY</h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem', maxWidth: '400px' }}>
-            Professional-grade crypto scalping for individual traders.
-            Secure yours now.
+            {verifying ? 'Verifying your credentials...' : 'Professional-grade crypto scalping for individual traders.'}
           </p>
         </div>
-        <button onClick={loginWithDiscord} className="glass glow-shadow" style={{
-          padding: '16px 40px',
-          background: '#5865f2',
-          color: '#fff',
-          fontSize: '1.1rem',
-          fontWeight: 600,
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          borderRadius: '16px',
-          border: 'none',
-          cursor: 'pointer'
-        }}>
-          <MessageSquare size={24} /> Login with Discord
+
+        {authError && (
+          <div style={{ padding: '12px 24px', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '12px', border: '1px solid rgba(239, 68, 68, 0.2)', maxWidth: '400px' }}>
+            <AlertTriangle size={16} /> {authError}
+          </div>
+        )}
+
+        <button
+          onClick={loginWithDiscord}
+          disabled={verifying}
+          className="glass glow-shadow"
+          style={{
+            padding: '16px 40px',
+            background: verifying ? '#333' : '#5865f2',
+            color: '#fff',
+            fontSize: '1.1rem',
+            fontWeight: 600,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            borderRadius: '16px',
+            border: 'none',
+            cursor: verifying ? 'default' : 'pointer',
+            opacity: verifying ? 0.7 : 1
+          }}
+        >
+          {verifying ? <RefreshCw size={24} className="spin" /> : <MessageSquare size={24} />}
+          {verifying ? 'Processing...' : 'Login with Discord'}
         </button>
         <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.3)' }}>Protected by AES-256 Multi-tenant Encryption</p>
       </div>
