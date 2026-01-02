@@ -167,13 +167,15 @@ class AlertSystem(commands.Cog):
         print(f"Checking major crypto: {self.majors_watchlist}")
         if channel_crypto:
             for symbol in self.majors_watchlist:
-                await self._check_and_alert(symbol, channel_crypto, "Crypto")
+                if symbol not in self.restricted_assets:
+                    await self._check_and_alert(symbol, channel_crypto, "Crypto")
 
         # 2. Monitor Memes (on Kraken)
         print(f"Checking memecoins: {self.memes_watchlist}")
         if channel_memes:
             for symbol in self.memes_watchlist:
-                await self._check_and_alert(symbol, channel_memes, "Meme")
+                if symbol not in self.restricted_assets:
+                    await self._check_and_alert(symbol, channel_memes, "Meme")
 
 
 
@@ -195,7 +197,7 @@ class AlertSystem(commands.Cog):
         channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
         
         # Monitor DEX Scout (New Gems) + Auto-Trade
-        print(f"⚡ DEX Monitor: Scouting {len(self.dex_watchlist)} tokens...")
+        # print(f"⚡ DEX Monitor: Scouting {len(self.dex_watchlist)} tokens...")
         if channel_memes:
             # Combined list of manual watchlist and trending gems
             all_dex = self.dex_watchlist + self.trending_dex_gems
@@ -298,6 +300,9 @@ class AlertSystem(commands.Cog):
                         await channel.send(embed=embed)
                         if symbol in self.trader.active_positions:
                             del self.trader.active_positions[symbol]
+                            # Clean up stock specific tracking
+                            if symbol in self.stock_positions:
+                                del self.stock_positions[symbol]
                         
                         # Record exit time for cooldown
                         self.last_exit_times[symbol] = datetime.datetime.now()
@@ -306,6 +311,16 @@ class AlertSystem(commands.Cog):
                         # if the trend analysis still says 'BUY'
                         print(f"🛑 Position exited for {symbol}. Cooldown started. Skipping further analysis.")
                         return 
+                    else:
+                        # Handle specific sell errors (e.g., Ghost positions)
+                        err_msg = str(exit_res.get('error', '')).lower()
+                        if "insufficient qty" in err_msg or "not found" in err_msg:
+                            print(f"⚠️ Ghost position detected for {symbol}. Clearing local state.")
+                            if symbol in self.trader.active_positions:
+                                del self.trader.active_positions[symbol]
+                            if symbol in self.stock_positions:
+                                del self.stock_positions[symbol]
+                            return
             
             await asyncio.sleep(0.1) # Tiny delay to allow state to settle
             await self._process_alert(channel, symbol, data, asset_type)
@@ -520,6 +535,17 @@ class AlertSystem(commands.Cog):
                             else:
                                 trade_result = self.trader.execute_market_sell(symbol)
                                 trade_title = "📉 SCALP: EXECUTED SELL" if scalp_mode else "📉 AUTO-TRADE: EXECUTED SELL"
+                            
+                            # Handle Ghost Positions (Sell failed due to no balance)
+                            if trade_result and trade_result.get('error'):
+                                err_msg = str(trade_result.get('error', '')).lower()
+                                if "insufficient qty" in err_msg or "not found" in err_msg:
+                                    print(f"⚠️ Ghost position detected (Sell Failed) for {symbol}. Clearing local state.")
+                                    if symbol in self.trader.active_positions:
+                                        del self.trader.active_positions[symbol]
+                                    if symbol in self.stock_positions:
+                                        del self.stock_positions[symbol]
+
                         else:
                             trade_result = None # No position to sell
 
