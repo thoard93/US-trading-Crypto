@@ -18,7 +18,7 @@ class TradingExecutive:
             self.exchange = None
             print("Warning: API keys not found. Auto-trading disabled for this instance.")
 
-        # Safety Settings
+        # Scalp-optimized Safety Settings
         self.trade_amount_usdt = 10.0  
         self.max_open_trades = 5      
         self.active_positions = {}    # {symbol: {"entry_price": float, "amount": float}}
@@ -38,12 +38,12 @@ class TradingExecutive:
         pos = self.active_positions[symbol]
         entry = pos["entry_price"]
         
-        # Stop-Loss: -5%
-        if current_price <= entry * 0.95:
+        # Aggressive Scalp Stop-Loss: -2% (Reduced from 5%)
+        if current_price <= entry * 0.98:
             return "STOP_LOSS"
         
-        # Take-Profit: +10% 
-        if current_price >= entry * 1.10:
+        # Aggressive Scalp Take-Profit: +3% (Reduced from 10% for faster cycles)
+        if current_price >= entry * 1.03:
             return "TAKE_PROFIT"
             
         return None

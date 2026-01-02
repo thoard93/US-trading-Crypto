@@ -26,9 +26,11 @@ function App() {
   const [chartData, setChartData] = useState([]);
   const [positions, setPositions] = useState([]);
   const [logs, setLogs] = useState([]);
-  const [stats, setStats] = useState({ total_profit: '$0.00', active_bots_count: 0, active_bot_names: 'Loading...' });
+  const [stats, setStats] = useState({ total_profit: '$0.00', active_bots_count: 0, active_bot_names: 'Connecting...' });
   const [status, setStatus] = useState({ is_running: false });
   const [loading, setLoading] = useState(false);
+  const [activeSymbol, setActiveSymbol] = useState('BTC/USDT');
+  const [searchInput, setSearchInput] = useState('');
 
   const fetchData = useCallback(async () => {
     try {
@@ -48,17 +50,17 @@ function App() {
       const statsRes = await axios.get(`${API_BASE}/stats/${USER_ID}`);
       setStats(statsRes.data);
 
-      // 5. Chart Data (Default BTC/USDT)
-      const chartRes = await axios.get(`${API_BASE}/chart/BTC/USDT`);
+      // 5. Chart Data
+      const chartRes = await axios.get(`${API_BASE}/chart/${activeSymbol.replace('/', '%2F')}`);
       setChartData(chartRes.data);
     } catch (err) {
       console.error("API Error:", err);
     }
-  }, []);
+  }, [activeSymbol]);
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 10000); // Poll every 10s
+    const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
   }, [fetchData]);
 
@@ -72,9 +74,18 @@ function App() {
       }
       await fetchData();
     } catch (err) {
-      alert("Failed to toggle bot. Check console or backend logs.");
+      alert("Bot control error. Please check if backend is live.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSearch = (e) => {
+    if (e.key === 'Enter' && searchInput) {
+      let sym = searchInput.toUpperCase();
+      if (!sym.includes('/')) sym = `${sym}/USDT`;
+      setActiveSymbol(sym);
+      setSearchInput('');
     }
   };
 
@@ -86,7 +97,7 @@ function App() {
           <div className="glass" style={{ width: '40px', height: '40px', background: 'var(--accent-color)', borderRadius: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
             <Zap size={24} color="#05070a" fill="#05070a" />
           </div>
-          <h2 style={{ fontSize: '1.25rem' }}>ANTIGRAVITY</h2>
+          <h2 style={{ fontSize: '1.25rem' }}>ANTIGRAVITY <span style={{ fontSize: '0.6rem', color: 'var(--accent-color)', verticalAlign: 'top' }}>V2.0 LIVE</span></h2>
         </div>
 
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -126,8 +137,11 @@ function App() {
             <Search size={20} color="var(--text-secondary)" />
             <input
               type="text"
-              placeholder="Search markets..."
-              style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', outline: 'none', fontSize: '1rem' }}
+              placeholder="Search e.g. BTC/USDT and press Enter"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onKeyDown={handleSearch}
+              style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', outline: 'none', fontSize: '1rem', width: '300px' }}
             />
           </div>
           <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
@@ -139,10 +153,10 @@ function App() {
         <section className="glass glow-shadow chart-container">
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
             <div>
-              <h1 style={{ fontSize: '2rem' }}>BTC / USDT</h1>
+              <h1 style={{ fontSize: '2rem' }}>{activeSymbol}</h1>
               <p style={{ color: 'var(--text-secondary)' }}>
-                {chartData.length > 0 ? `$${chartData[chartData.length - 1].price.toLocaleString()}` : '$0.00'}
-                <span style={{ color: 'var(--success)', marginLeft: '8px' }}>LIVE</span>
+                {chartData.length > 0 ? `$${chartData[chartData.length - 1].price.toLocaleString()}` : 'Loading...'}
+                <span style={{ color: 'var(--success)', marginLeft: '8px', fontSize: '0.8rem' }}>LIVE 5M</span>
               </p>
             </div>
             <div className="glass" style={{ display: 'flex', padding: '4px' }}>
@@ -175,8 +189,8 @@ function App() {
         </section>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-          <StatCard label="Total Profit" value={stats.total_profit} sub="+0% total" color="var(--success)" />
-          <StatCard label="Active Strategy" value={stats.active_bot_names} sub={`${stats.active_bots_count} bot(s) online`} color="var(--accent-color)" />
+          <StatCard label="Total Profit" value={stats.total_profit} sub="Combined performance" color="var(--success)" />
+          <StatCard label="Active Strategy" value={stats.active_bot_names} sub={`${stats.active_bots_count} engine(s) monitoring`} color="var(--accent-color)" />
         </div>
       </main>
 
@@ -191,7 +205,7 @@ function App() {
             {positions.length > 0 ? (
               positions.map((pos, i) => <PositionItem key={i} {...pos} />)
             ) : (
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>No active trades.</p>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>No active trades detected.</p>
             )}
           </div>
         </section>
@@ -205,7 +219,7 @@ function App() {
             {logs.length > 0 ? (
               logs.map((log, i) => <LogItem key={i} {...log} />)
             ) : (
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Empty log.</p>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>History is empty.</p>
             )}
           </div>
         </section>
@@ -244,7 +258,7 @@ function StatCard({ label, value, sub, color }) {
 }
 
 function PositionItem({ symbol, entry, current, profit }) {
-  const isProfit = profit.startsWith('+');
+  const isProfit = parseFloat(profit) >= 0;
   return (
     <div className="glass" style={{ padding: '16px', background: 'rgba(255,255,255,0.02)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>

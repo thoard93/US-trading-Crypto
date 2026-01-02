@@ -29,10 +29,11 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
+        # Note: We use the full URL to ensure browser connectivity
         fromService:
           name: trading-api
           type: web
-          property: host
+          property: url
 
 databases:
   # 3. Database: PostgreSQL
