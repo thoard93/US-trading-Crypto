@@ -6,6 +6,7 @@ from collectors.stock_collector import StockCollector
 from analysis.technical_engine import TechnicalAnalysis
 from trading_executive import TradingExecutive
 from collectors.dex_scout import DexScout
+from analysis.safety_checker import SafetyChecker
 
 class AlertSystem(commands.Cog):
     def __init__(self, bot):
@@ -15,6 +16,7 @@ class AlertSystem(commands.Cog):
         self.analyzer = TechnicalAnalysis()
         self.trader = TradingExecutive()
         self.dex_scout = DexScout()
+        self.safety = SafetyChecker()
         
         # User defined watchlists
         self.majors_watchlist = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT']
@@ -73,7 +75,7 @@ class AlertSystem(commands.Cog):
                     # Alert if price change > 5% in 5 minutes
                     if abs(info['price_change_5m']) >= 5.0:
                         # Safety Audit
-                        audit = await self.trader.safety.check_token(info['address'], "solana" if info['chain'] == 'solana' else "1")
+                        audit = await self.safety.check_token(info['address'], "solana" if info['chain'] == 'solana' else "1")
                         
                         color = discord.Color.purple() if info['price_change_5m'] > 0 else discord.Color.dark_red()
                         trend = "🚀 PUMPING" if info['price_change_5m'] > 0 else "📉 DUMPING"
@@ -146,7 +148,7 @@ class AlertSystem(commands.Cog):
                     continue
                     
                 # Basic Safety Audit
-                audit = await self.trader.safety.check_token(addr, "solana" if chain == 'solana' else "1")
+                audit = await self.safety.check_token(addr, "solana" if chain == 'solana' else "1")
                 if audit.get('safety_status') == 'SAFE':
                     new_gems.append({"chain": chain, "address": addr})
                     embed = discord.Embed(
