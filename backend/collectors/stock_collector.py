@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+from datetime import datetime, timedelta
 from alpaca_trade_api.rest import REST, TimeFrame
 from dotenv import load_dotenv
 
@@ -37,14 +38,42 @@ class StockCollector:
             }
             tf = tf_map.get(timeframe, TimeFrame.Hour)
             
-            # We use bars for historical/current OHLCV
-            bars = self.api.get_bars(symbol, tf, limit=min(limit, 500)).df
+            # Calculate start date based on timeframe and limit
+            # For hourly bars, go back ~2 weeks to ensure we get enough bars
+            if timeframe == '1Hour':
+                start = datetime.now() - timedelta(days=14)
+            elif timeframe == '1Day':
+                start = datetime.now() - timedelta(days=limit + 10)
+            else:
+                start = datetime.now() - timedelta(hours=limit * 2)
+            
+            # Format for Alpaca API
+            start_str = start.strftime('%Y-%m-%d')
+            
+            # Fetch historical bars with explicit start date
+            bars = self.api.get_bars(
+                symbol, 
+                tf, 
+                start=start_str,
+                limit=min(limit, 500)
+            ).df
+            
             if bars.empty:
+                print(f"⚠️ No bars returned for {symbol}")
                 return None
             
             # Standardize column names for the Technical Engine
             bars = bars.reset_index()
-            bars = bars.rename(columns={'timestamp': 'timestamp', 'open': 'open', 'high': 'high', 'low': 'low', 'close': 'close', 'volume': 'volume'})
+            bars = bars.rename(columns={
+                'timestamp': 'timestamp', 
+                'open': 'open', 
+                'high': 'high', 
+                'low': 'low', 
+                'close': 'close', 
+                'volume': 'volume'
+            })
+            
+            print(f"📊 Fetched {len(bars)} bars for {symbol}")
             return bars
         except Exception as e:
             print(f"Error fetching stock data for {symbol}: {e}")
@@ -60,3 +89,4 @@ class StockCollector:
         except Exception as e:
             print(f"Error fetching stock price for {symbol}: {e}")
             return None
+
