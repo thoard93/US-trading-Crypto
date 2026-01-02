@@ -15,6 +15,10 @@ from database import SessionLocal, engine
 import models
 from engine import TradingEngine
 from collectors.crypto_collector import CryptoCollector
+from cryptography.fernet import Fernet
+from encryption_utils import encrypt_key, decrypt_key
+from auth_utils import get_discord_auth_url, get_discord_token, get_discord_user
+from jose import jwt
 
 # Simple manual TTL cache to avoid hitting Kraken too hard and causing timeouts
 class SimpleCache:
@@ -63,12 +67,77 @@ async def startup_event():
 async def root():
     return {"status": "online"}
 
+# --- AUTH ROUTES ---
+@app.get("/auth/discord/url")
+async def discord_url():
+    return {"url": get_discord_auth_url()}
+
+@app.get("/auth/discord/callback")
+async def discord_callback(code: str, db: Session = Depends(get_db)):
+    token_data = get_discord_token(code)
+    if "access_token" not in token_data:
+        raise HTTPException(status_code=400, detail="Invalid code")
+    
+    user_info = get_discord_user(token_data["access_token"])
+    discord_id = str(user_info["id"])
+    
+    user = db.query(models.User).filter(models.User.discord_id == discord_id).first()
+    if not user:
+        user = models.User(
+            username=user_info["username"],
+            discord_id=discord_id,
+            avatar=f"https://cdn.discordapp.com/avatars/{discord_id}/{user_info['avatar']}.png"
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    
+    # Generate JWT
+    payload = {"user_id": user.id, "exp": time.time() + 86400}
+    token = jwt.encode(payload, os.getenv("SECRET_KEY", "fallback_secret"), algorithm="HS256")
+    return {"token": token, "user": {"id": user.id, "username": user.username, "avatar": user.avatar}}
+
+# --- API KEY MANAGEMENT ---
+@app.post("/settings/keys")
+async def save_api_keys(user_id: int, exchange: str, api_key: str, api_secret: str, db: Session = Depends(get_db)):
+    # Encrypt keys before saving
+    encrypted_key = encrypt_key(api_key)
+    encrypted_secret = encrypt_key(api_secret)
+    
+    existing = db.query(models.ApiKey).filter(models.ApiKey.user_id == user_id, models.ApiKey.exchange == exchange).first()
+    if existing:
+        existing.api_key = encrypted_key
+        existing.api_secret = encrypted_secret
+    else:
+        new_key = models.ApiKey(
+            exchange=exchange,
+            api_key=encrypted_key,
+            api_secret=encrypted_secret,
+            user_id=user_id
+        )
+        db.add(new_key)
+    
+    db.commit()
+    return {"message": "API keys saved and encrypted"}
+
 @app.post("/users/start/{user_id}")
-async def start_bot(user_id: int):
+async def start_bot(user_id: int, db: Session = Depends(get_db)):
     if user_id in active_engines and active_engines[user_id].is_running:
         return {"message": "Bot already running"}
     
-    engine_instance = TradingEngine(user_id)
+    # Fetch encrypted keys from DB
+    api_entry = db.query(models.ApiKey).filter(models.ApiKey.user_id == user_id, models.ApiKey.exchange == 'kraken').first()
+    
+    api_key = None
+    api_secret = None
+    if api_entry:
+        api_key = decrypt_key(api_entry.api_key)
+        api_secret = decrypt_key(api_entry.api_secret)
+        print(f"🔑 Using encrypted keys from DB for user {user_id}")
+    else:
+        print(f"⚠️ No API keys in DB for user {user_id}, falling back to .env")
+
+    engine_instance = TradingEngine(user_id, api_key=api_key, api_secret=api_secret)
     engine_instance.start()
     active_engines[user_id] = engine_instance
     return {"message": f"Bot started for user {user_id}"}
@@ -77,6 +146,7 @@ async def start_bot(user_id: int):
 async def stop_bot(user_id: int):
     if user_id in active_engines:
         active_engines[user_id].stop()
+        del active_engines[user_id] # Clean up
         return {"message": f"Bot stopped for user {user_id}"}
     return {"message": "Bot not running"}
 

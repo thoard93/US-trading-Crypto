@@ -8,16 +8,15 @@ class TradingExecutive:
         self.secret_key = secret_key or os.getenv('KRAKEN_SECRET_KEY')
         self.user_id = user_id
         
-        if self.api_key and self.secret_key:
-            self.exchange = ccxt.kraken({
-                'apiKey': self.api_key,
-                'secret': self.secret_key,
-                'enableRateLimit': True,
-            })
+        # Initialize CryptoCollector with specific keys
+        from collectors.crypto_collector import CryptoCollector
+        self.crypto = CryptoCollector(api_key=self.api_key, api_secret=self.secret_key)
+        self.exchange = self.crypto.exchange
+        
+        if self.exchange and self.exchange.apiKey:
             print(f"Trading Executive initialized for user {self.user_id}.")
         else:
-            self.exchange = None
-            print("Warning: API keys not found. Auto-trading disabled for this instance.")
+            print(f"Warning: API keys not found for user {self.user_id}. Auto-trading disabled.")
 
         # Scalp-optimized Safety Settings
         self.trade_amount_usdt = 10.0  

@@ -12,9 +12,11 @@ class TradingEngine:
     """A standalone trading bot instance for a specific user."""
     def __init__(self, user_id: int, api_key: str = None, api_secret: str = None):
         self.user_id = user_id
-        self.crypto = CryptoCollector()
-        self.analyzer = TechnicalAnalysis()
+        # If keys are provided, they are likely already decrypted.
+        # If not, TradingExecutive will check env as fallback.
         self.trader = TradingExecutive(api_key, api_secret, user_id=user_id)
+        self.crypto = self.trader.crypto # Share the same ccxt instance
+        self.analyzer = TechnicalAnalysis()
         self.safety = SafetyChecker()
         
         self.watchlist = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'PEPE/USDT']

@@ -91,14 +91,61 @@ function App() {
   const [connectionActive, setConnectionActive] = useState(false);
   const [failCount, setFailCount] = useState(0);
 
-  const saveApiOverride = () => {
-    let url = manualUrl.trim().replace(/\/$/, '');
-    if (!url.startsWith('http')) url = `https://${url}`;
-    localStorage.setItem('ANTIGRAVITY_API_OVERRIDE', url);
-    setApiBase(url);
-    setConnectionActive(false);
-    setApiError("Routing updated. Pinging...");
-    setTimeout(fetchData, 500);
+  const [user, setUser] = useState(JSON.parse(localStorage.getItem('AG_USER') || 'null'));
+  const [authToken, setAuthToken] = useState(localStorage.getItem('AG_TOKEN'));
+  const [apiKey, setApiKey] = useState('');
+  const [apiSecret, setApiSecret] = useState('');
+
+  const loginWithDiscord = async () => {
+    try {
+      const res = await axios.get(`${apiBase}/auth/discord/url`);
+      window.location.href = res.data.url;
+    } catch (err) {
+      alert("Auth failed to initialize.");
+    }
+  };
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    if (code) {
+      axios.get(`${apiBase}/auth/discord/callback?code=${code}`)
+        .then(res => {
+          localStorage.setItem('AG_TOKEN', res.data.token);
+          localStorage.setItem('AG_USER', JSON.stringify(res.data.user));
+          setAuthToken(res.data.token);
+          setUser(res.data.user);
+          window.history.replaceState({}, document.title, "/");
+        })
+        .catch(err => console.error("OAuth error:", err));
+    }
+  }, [apiBase]);
+
+  const saveKrakenKeys = async () => {
+    if (!user) return alert("Please login first");
+    setLoading(true);
+    try {
+      await axios.post(`${apiBase}/settings/keys`, {
+        user_id: user.id,
+        exchange: 'kraken',
+        api_key: apiKey,
+        api_secret: apiSecret
+      });
+      alert("API Keys saved securely (AES-256 Encrypted)");
+      setApiKey('');
+      setApiSecret('');
+    } catch (err) {
+      alert("Save failed.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('AG_TOKEN');
+    localStorage.removeItem('AG_USER');
+    setAuthToken(null);
+    setUser(null);
   };
 
   const fetchData = useCallback(async () => {
@@ -392,6 +439,52 @@ function App() {
             <section className="glass glow-shadow" style={{ padding: '32px' }}>
               <h2 style={{ marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px' }}><Settings size={24} /> Platform Configuration</h2>
               <div style={{ display: 'grid', gap: '20px' }}>
+
+                {/* User Profile */}
+                <div className="glass" style={{ padding: '20px', borderLeft: '4px solid var(--accent-color)' }}>
+                  <h4 style={{ color: 'var(--text-secondary)', marginBottom: '16px' }}>USER PROFILE</h4>
+                  {user ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                      <img src={user.avatar} alt="Avatar" style={{ width: '48px', height: '48px', borderRadius: '50%' }} />
+                      <div>
+                        <p style={{ fontWeight: 600 }}>{user.username}</p>
+                        <button onClick={logout} style={{ color: 'var(--danger)', fontSize: '0.8rem', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Logout</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={loginWithDiscord} className="glass" style={{ padding: '12px 24px', background: '#5865F2', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      Login with Discord
+                    </button>
+                  )}
+                </div>
+
+                {/* API Key Management */}
+                <div className="glass" style={{ padding: '20px', borderLeft: '4px solid #f59e0b' }}>
+                  <h4 style={{ color: 'var(--text-secondary)', marginBottom: '16px' }}>KRAKEN API KEYS (SECURE)</h4>
+                  <div style={{ display: 'grid', gap: '12px' }}>
+                    <input
+                      type="password"
+                      placeholder="Kraken API Key"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      className="glass"
+                      style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+                    />
+                    <input
+                      type="password"
+                      placeholder="Kraken private Secret"
+                      value={apiSecret}
+                      onChange={(e) => setApiSecret(e.target.value)}
+                      className="glass"
+                      style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+                    />
+                    <button onClick={saveKrakenKeys} className="glass" style={{ padding: '12px', background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>
+                      Encrypt & Save Keys
+                    </button>
+                  </div>
+                </div>
+
+                {/* API Override */}
                 <div className="glass" style={{ padding: '20px', borderLeft: `4px solid ${connectionActive ? 'var(--success)' : 'var(--danger)'}` }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                     <h4 style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>API GATEWAY OVERRIDE <Edit3 size={12} /></h4>
@@ -405,22 +498,16 @@ function App() {
                       placeholder="Paste Render External URL here..."
                       style={{ flex: 1, background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '12px', color: 'var(--text-primary)', outline: 'none' }}
                     />
-                    <button onClick={saveApiOverride} className="glass" style={{ padding: '12px 24px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Save size={16} /> Save
+                    <button onClick={() => {
+                      let url = manualUrl.trim().replace(/\/$/, '');
+                      if (!url.startsWith('http')) url = `https://${url}`;
+                      localStorage.setItem('ANTIGRAVITY_API_OVERRIDE', url);
+                      setApiBase(url);
+                      setConnectionActive(false);
+                      setTimeout(fetchData, 500);
+                    }} className="glass" style={{ padding: '12px 24px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Save size={16} /> Save Route
                     </button>
-                  </div>
-                  <p style={{ fontSize: '0.75rem', marginTop: '12px', color: 'var(--text-secondary)' }}>
-                    {connectionActive ? `🟢 Connected to: ${apiBase} (Heartbeat: ${lastHeartbeat})` : `🔴 Routing failure. Ensure the above URL matches your Render 'trading-api' homepage exactly.`}
-                  </p>
-                </div>
-                <div className="glass" style={{ padding: '20px', borderLeft: '4px solid #5865F2' }}>
-                  <h4 style={{ color: 'var(--text-secondary)', marginBottom: '12px' }}>DISCORD COMMUNITY INTEGRATION</h4>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <div className="glass" style={{ padding: '8px', background: '#5865F2' }}><MessageSquare size={20} /></div>
-                    <div>
-                      <p style={{ fontWeight: 600 }}>Server ID: 1376908703227318393</p>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Status: Linked & Scalping Engine Ready</p>
-                    </div>
                   </div>
                 </div>
               </div>
