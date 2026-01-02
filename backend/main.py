@@ -416,50 +416,70 @@ async def get_trades(user_id: int, db: Session = Depends(get_db)):
 
 @app.get("/chart/{symbol:path}")
 async def get_chart_data(symbol: str, timeframe: str = '5m'):
-    if "%2F" in symbol:
-        symbol = symbol.replace("%2f", "/").replace("%2F", "/")
+    # Robust symbol decoding
+    decoded_symbol = symbol.replace("%2f", "/").replace("%2F", "/")
+    print(f"📈 Chart Request: {decoded_symbol} ({timeframe})")
     
-    # Try to find a collector
-    # In a real multi-user system, we'd need the user_id here too
-    # For now, we'll try the first active engine or the global crypto collector
-    engine = None
-    if active_engines:
-        engine = list(active_engines.values())[0]
-        
+    # Try to find an engine for this user (defaulting to user 1 for now)
+    user_id = 1
+    engine = active_engines.get(user_id)
+    
     data = None
-    if '/' in symbol:
+    if '/' in decoded_symbol:
+        # Crypto
         coll = engine.crypto if engine else crypto_collector
-        data = coll.fetch_ohlcv(symbol, timeframe=timeframe, limit=50)
+        try:
+            data = coll.fetch_ohlcv(decoded_symbol, timeframe=timeframe, limit=100)
+        except Exception as e:
+            print(f"❌ Crypto chart error for {decoded_symbol}: {e}")
     else:
         # Stocks
-        # Map timeframe
         tf_map = {'1m': '1Min', '5m': '5Min', '15m': '15Min', '1h': '1Hour', '1d': '1Day'}
         tf = tf_map.get(timeframe, '1Hour')
         
         from collectors.stock_collector import StockCollector
-        s_coll = engine.stock_collector if engine else StockCollector()
-        data = s_coll.fetch_ohlcv(symbol, timeframe=tf, limit=50)
+        s_coll = engine.stock_collector if (engine and hasattr(engine, 'stock_collector')) else StockCollector()
+        try:
+            data = s_coll.fetch_ohlcv(decoded_symbol, timeframe=tf, limit=100)
+        except Exception as e:
+            print(f"❌ Stock chart error for {decoded_symbol}: {e}")
 
     if data is None or data.empty:
+        print(f"⚠️ No chart data found for {decoded_symbol}")
         raise HTTPException(status_code=404, detail="Symbol not found or no data")
     
     chart_data = []
-    for index, row in data.iterrows():
+    for _, row in data.iterrows():
         time_format = "%H:%M" if timeframe in ['1m', '5m', '15m'] else "%d %H:%M"
         if timeframe == '1d': time_format = "%m/%d"
-        chart_data.append({"time": row['timestamp'].strftime(time_format), "price": row['close']})
+        chart_data.append({
+            "time": row['timestamp'].strftime(time_format), 
+            "price": float(row['close']),
+            "raw_time": row['timestamp'].isoformat()
+        })
     return chart_data
 
 @app.get("/stats/{user_id}")
 async def get_stats(user_id: int, db: Session = Depends(get_db)):
     trades = db.query(models.Trade).filter(models.Trade.user_id == user_id).all()
+    # Cost is already amount * price. Sum positive offsets for sells.
     total_profit = sum([float(t.cost) for t in trades if t.side == 'SELL']) - sum([float(t.cost) for t in trades if t.side == 'BUY']) if trades else 0
     
     is_running = user_id in active_engines and active_engines[user_id].is_running
+    engine = active_engines.get(user_id)
+    running_names = []
+    if is_running and engine:
+        if hasattr(engine, 'crypto'): running_names.append("Kraken")
+        if hasattr(engine, 'stock_collector'): running_names.append("Alpaca")
+    
+    status_label = "US Automated Scalper" if is_running else "None"
+    if running_names:
+        status_label = ", ".join(running_names)
+
     return {
         "total_profit": f"${round(total_profit, 2)}",
         "active_bots_count": 1 if is_running else 0,
-        "active_bot_names": "US Automated Scalper" if is_running else "None"
+        "active_bot_names": status_label
     }
 
 if __name__ == "__main__":

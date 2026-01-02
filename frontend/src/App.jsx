@@ -192,13 +192,14 @@ function App() {
         setApiError(null);
       }
 
+      const timestamp = new Date().getTime();
       const [posRes, portfolioRes, logsRes, statsRes, chartRes, marketRes] = await Promise.all([
-        axios.get(`${apiBase}/positions/${user.id}`).catch(() => ({ data: [] })),
-        axios.get(`${apiBase}/portfolio/${user.id}`).catch(() => ({ data: { usdt_balance: 0, assets: [] } })),
-        axios.get(`${apiBase}/trades/${user.id}`).catch(() => ({ data: [] })),
-        axios.get(`${apiBase}/stats/${user.id}`).catch(() => ({ data: {} })),
-        axios.get(`${apiBase}/chart/${activeSymbol.replace('/', '%2F')}?timeframe=${chartTimeframe}`).catch(() => ({ data: [] })),
-        axios.get(`${apiBase}/market_data/${user.id}`).catch(() => ({ data: [] }))
+        axios.get(`${apiBase}/positions/${user.id}?t=${timestamp}`).catch(() => ({ data: [] })),
+        axios.get(`${apiBase}/portfolio/${user.id}?t=${timestamp}`).catch(() => ({ data: { usdt_balance: 0, assets: [] } })),
+        axios.get(`${apiBase}/trades/${user.id}?t=${timestamp}`).catch(() => ({ data: [] })),
+        axios.get(`${apiBase}/stats/${user.id}?t=${timestamp}`).catch(() => ({ data: {} })),
+        axios.get(`${apiBase}/chart/${activeSymbol.replace('/', '%2F')}?timeframe=${chartTimeframe}&t=${timestamp}`).catch(() => ({ data: [] })),
+        axios.get(`${apiBase}/market_data/${user.id}?t=${timestamp}`).catch(() => ({ data: [] }))
       ]);
 
       if (Array.isArray(posRes.data)) setPositions(posRes.data);
@@ -211,7 +212,7 @@ function App() {
     } catch (err) {
       setFailCount(prev => {
         const newCount = prev + 1;
-        if (newCount >= 2) {
+        if (newCount >= 5) { // Increased from 2 for better stability on Render
           setConnectionActive(false);
           setApiError("Bridge restricted. Verify URL in Settings.");
         }
@@ -246,7 +247,12 @@ function App() {
   const handleSearch = (e) => {
     if (e.key === 'Enter' && searchInput) {
       let sym = searchInput.toUpperCase();
-      if (!sym.includes('/')) sym = `${sym}/USDT`;
+      if (!sym.includes('/')) {
+        // Broadly: 1-5 chars often means stock, but some crypto have 5 chars
+        // Safer: if it's explicitly in our known markets or has /USDT
+        if (sym.length > 5) sym = `${sym}/USDT`;
+      }
+      setChartData([]); // Clear previous
       setActiveSymbol(sym);
       setSearchInput('');
     }
@@ -351,7 +357,11 @@ function App() {
                   <div
                     key={i}
                     className={`glass glow-shadow ${activeSymbol === coin.symbol ? 'active-card' : ''}`}
-                    onClick={() => { setActiveSymbol(coin.symbol); setActiveTab('Dashboard'); }}
+                    onClick={() => {
+                      setChartData([]); // Clear previous
+                      setActiveSymbol(coin.symbol);
+                      setActiveTab('Dashboard');
+                    }}
                     style={{ padding: '20px', cursor: 'pointer', borderTop: coin.type === 'STOCK' ? '3px solid var(--accent-color)' : '3px solid #f59e0b' }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -773,7 +783,11 @@ function App() {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {connectionActive && Array.isArray(positions) && positions.length > 0 ? (
-                positions.map((pos, i) => <PositionItem key={i} {...pos} />)
+                positions.map((pos, i) => (
+                  <div key={i} onClick={() => { setChartData([]); setActiveSymbol(pos.symbol); setActiveTab('Dashboard'); }} style={{ cursor: 'pointer' }}>
+                    <PositionItem {...pos} />
+                  </div>
+                ))
               ) : (
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{connectionActive ? 'No open trades found.' : 'Bridge syncing...'}</p>
               )}

@@ -1,12 +1,15 @@
 import discord
 from discord.ext import tasks, commands
 import asyncio
+import datetime
 from collectors.crypto_collector import CryptoCollector
 from collectors.stock_collector import StockCollector
 from analysis.technical_engine import TechnicalAnalysis
 from trading_executive import TradingExecutive
 from collectors.dex_scout import DexScout
 from analysis.safety_checker import SafetyChecker
+from database import SessionLocal
+import models
 
 # Import DEX trader for automated Solana trading
 try:
@@ -482,11 +485,33 @@ class AlertSystem(commands.Cog):
                             trade_result = None # No position to sell
 
                     if trade_result and "error" not in trade_result:
-                        # Record position for SL/TP tracking (only for BUYs, or if a SELL actually executed)
-                        # For sells, the position is removed by execute_market_sell internally
+                        # Record position for SL/TP tracking (only for BUYs)
                         if result['signal'] == 'BUY':
                             self.trader.track_position(symbol, symbol_price, trade_result.get('amount', 0))
                         
+                        # --- RECORD TRADE TO DATABASE ---
+                        db = SessionLocal()
+                        try:
+                            # Use amount from trade_result if possible, else fallback to trade_amount / price
+                            amt = trade_result.get('amount') or (trade_amount / symbol_price)
+                            new_trade = models.Trade(
+                                symbol=symbol,
+                                side=result['signal'],
+                                asset_type=asset_type.upper(),
+                                amount=float(amt),
+                                price=float(symbol_price),
+                                cost=float(amt * symbol_price),
+                                user_id=self.trader.user_id,
+                                timestamp=datetime.datetime.utcnow()
+                            )
+                            db.add(new_trade)
+                            db.commit()
+                            print(f"📝 Recorded {result['signal']} trade for {symbol} to database.")
+                        except Exception as db_err:
+                            print(f"❌ Error recording trade to DB: {db_err}")
+                        finally:
+                            db.close()
+
                         trade_embed = discord.Embed(
                             title=trade_title,
                             description=f"Automated order for **{symbol}** successful.",
