@@ -36,7 +36,7 @@ class StockCollector:
             tf = tf_map.get(timeframe, TimeFrame.Hour)
             
             # We use bars for historical/current OHLCV
-            bars = self.api.get_bars(symbol, tf, limit=limit).df
+            bars = self.api.get_bars(symbol, tf, limit=min(limit, 500)).df
             if bars.empty:
                 return None
             

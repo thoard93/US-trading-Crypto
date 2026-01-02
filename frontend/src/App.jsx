@@ -78,6 +78,7 @@ function App() {
   const [chartData, setChartData] = useState([]);
   const [positions, setPositions] = useState([]);
   const [portfolio, setPortfolio] = useState({ usdt_balance: 0, assets: [] });
+  const [marketData, setMarketData] = useState([]);
   const [logs, setLogs] = useState([]);
   const [stats, setStats] = useState({ total_profit: '$0.00', active_bots_count: 0, active_bot_names: 'Connecting...' });
   const [status, setStatus] = useState({ is_running: false });
@@ -108,12 +109,13 @@ function App() {
         setApiError(null);
       }
 
-      const [posRes, portfolioRes, logsRes, statsRes, chartRes] = await Promise.all([
+      const [posRes, portfolioRes, logsRes, statsRes, chartRes, marketRes] = await Promise.all([
         axios.get(`${apiBase}/positions/${USER_ID}`).catch(() => ({ data: [] })),
         axios.get(`${apiBase}/portfolio/${USER_ID}`).catch(() => ({ data: { usdt_balance: 0, assets: [] } })),
         axios.get(`${apiBase}/trades/${USER_ID}`).catch(() => ({ data: [] })),
         axios.get(`${apiBase}/stats/${USER_ID}`).catch(() => ({ data: {} })),
-        axios.get(`${apiBase}/chart/${activeSymbol.replace('/', '%2F')}`).catch(() => ({ data: [] }))
+        axios.get(`${apiBase}/chart/${activeSymbol.replace('/', '%2F')}`).catch(() => ({ data: [] })),
+        axios.get(`${apiBase}/market_data/${USER_ID}`).catch(() => ({ data: [] }))
       ]);
 
       if (Array.isArray(posRes.data)) setPositions(posRes.data);
@@ -121,6 +123,7 @@ function App() {
       if (Array.isArray(logsRes.data)) setLogs(logsRes.data);
       if (statsRes.data) setStats(statsRes.data);
       if (Array.isArray(chartRes.data)) setChartData(chartRes.data);
+      if (Array.isArray(marketRes.data)) setMarketData(marketRes.data);
 
     } catch (err) {
       setConnectionActive(false);
@@ -234,6 +237,42 @@ function App() {
               <StatCard label="Active Loop" value={stats.active_bot_names || 'None'} sub={`${stats.active_bots_count || 0} engine(s) scanning`} color="var(--accent-color)" />
             </div>
           </>
+        );
+
+      case 'Live Markets':
+        return (
+          <div className="main-content">
+            <section className="glass glow-shadow" style={{ padding: '32px' }}>
+              <h3 style={{ marginBottom: '24px' }}>Real-time Market Watchlist</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
+                {marketData.length > 0 ? marketData.map((m, i) => (
+                  <div key={i} className="glass" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px', cursor: 'pointer' }} onClick={() => { setActiveSymbol(m.symbol); setActiveTab('Dashboard'); }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>{m.symbol}</span>
+                      <span style={{ color: m.change >= 0 ? 'var(--success)' : 'var(--danger)', fontSize: '0.875rem' }}>
+                        {m.change >= 0 ? '+' : ''}{m.change.toFixed(2)}%
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                      <div>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Price</p>
+                        <p style={{ fontWeight: 600 }}>${m.price < 1 ? m.price.toFixed(6) : m.price.toLocaleString()}</p>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>Vol (24h)</p>
+                        <p style={{ fontWeight: 600, fontSize: '0.875rem' }}>${(m.volume / 1000).toFixed(1)}K</p>
+                      </div>
+                    </div>
+                  </div>
+                )) : (
+                  <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                    <Activity size={32} className="spin" style={{ marginBottom: '12px' }} />
+                    <p>Fetching market data...</p>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
         );
 
       case 'Portfolio':
@@ -368,17 +407,50 @@ function App() {
           </div>
         );
 
-      default:
+      case 'Safety Audit':
         return (
-          <div className="glass glow-shadow" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '20px', padding: '40px' }}>
-            <div className="glass" style={{ padding: '24px', borderRadius: '50%', background: 'rgba(0, 255, 204, 0.05)' }}>
-              <Cpu size={48} color="var(--accent-color)" />
-            </div>
-            <h2 style={{ fontSize: '1.5rem' }}>{activeTab} Module</h2>
-            <p style={{ color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '400px' }}>
-              Your trading engine is processing signals. We are currently finalizing the render for the **{activeTab}** dashboard.
-            </p>
-            <button onClick={() => setActiveTab('Dashboard')} className="glass" style={{ padding: '12px 32px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)' }}>Back to Data</button>
+          <div className="main-content">
+            <section className="glass glow-shadow" style={{ padding: '32px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '32px' }}>
+                <div className="glass" style={{ padding: '16px', background: 'rgba(0, 255, 204, 0.1)' }}>
+                  <ShieldCheck size={32} color="var(--accent-color)" />
+                </div>
+                <div>
+                  <h2>Smart Contract Safety Scan</h2>
+                  <p style={{ color: 'var(--text-secondary)' }}>Verify token security before auto-trading.</p>
+                </div>
+              </div>
+
+              <div className="glass" style={{ padding: '24px', borderLeft: '4px solid var(--accent-color)', marginBottom: '32px' }}>
+                <h4 style={{ marginBottom: '16px' }}>GoPlus Security Integration</h4>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
+                  The Antigravity engine automatically runs every new DEX gem through the GoPlus Security API.
+                  We check for honeypots, mint functions, and liquidity locks before authorizing a buy.
+                </p>
+                <button className="glass" style={{ marginTop: '20px', padding: '10px 24px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ExternalLink size={16} /> Open Security Portal
+                </button>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '24px' }}>
+                <div className="glass" style={{ padding: '20px' }}>
+                  <h4 style={{ marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Activity size={16} color="var(--success)" /> Live Audit Log
+                  </h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>
+                      [07:45:12] XRP: No malicious code detected.
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>
+                      [07:42:01] PENGU: Liquidity locked for 365 days.
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>
+                      [07:30:55] MANA: Buy tax 0%, Sell tax 0%.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
         );
     }

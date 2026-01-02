@@ -3,9 +3,10 @@ import os
 import logging
 
 class TradingExecutive:
-    def __init__(self, api_key=None, secret_key=None):
+    def __init__(self, api_key=None, secret_key=None, user_id=1):
         self.api_key = api_key or os.getenv('KRAKEN_API_KEY')
         self.secret_key = secret_key or os.getenv('KRAKEN_SECRET_KEY')
+        self.user_id = user_id
         
         if self.api_key and self.secret_key:
             self.exchange = ccxt.kraken({
@@ -13,7 +14,7 @@ class TradingExecutive:
                 'secret': self.secret_key,
                 'enableRateLimit': True,
             })
-            print("Trading Executive initialized.")
+            print(f"Trading Executive initialized for user {self.user_id}.")
         else:
             self.exchange = None
             print("Warning: API keys not found. Auto-trading disabled for this instance.")
@@ -22,13 +23,59 @@ class TradingExecutive:
         self.trade_amount_usdt = 10.0  
         self.max_open_trades = 5      
         self.active_positions = {}    # {symbol: {"entry_price": float, "amount": float}}
+        
+        # Load existing positions from DB
+        self.load_positions_from_db()
+
+    def load_positions_from_db(self):
+        """Restore active positions from the database."""
+        from database import SessionLocal
+        import models
+        db = SessionLocal()
+        try:
+            db_positions = db.query(models.Position).filter(models.Position.user_id == self.user_id).all()
+            for pos in db_positions:
+                self.active_positions[pos.symbol] = {
+                    "entry_price": pos.entry_price,
+                    "amount": pos.amount
+                }
+            print(f"🧠 Recovered {len(db_positions)} positions from database memory.")
+        except Exception as e:
+            print(f"❌ Failed to load positions from DB: {e}")
+        finally:
+            db.close()
 
     def track_position(self, symbol, entry_price, amount):
-        """Record an entry for stop-loss monitoring."""
+        """Record an entry for stop-loss monitoring and persist to DB."""
         self.active_positions[symbol] = {
             "entry_price": entry_price,
             "amount": amount
         }
+        
+        from database import SessionLocal
+        import models
+        db = SessionLocal()
+        try:
+            # Check if exists to avoid duplicates
+            existing = db.query(models.Position).filter(
+                models.Position.user_id == self.user_id,
+                models.Position.symbol == symbol
+            ).first()
+            
+            if not existing:
+                db_pos = models.Position(
+                    symbol=symbol,
+                    entry_price=float(entry_price),
+                    amount=float(amount),
+                    user_id=self.user_id
+                )
+                db.add(db_pos)
+                db.commit()
+                print(f"💾 Persisted {symbol} position to DB.")
+        except Exception as e:
+            print(f"❌ Error persisting position: {e}")
+        finally:
+            db.close()
 
     def check_exit_conditions(self, symbol, current_price):
         """Check if we should exit a trade based on SL/TP."""
@@ -105,9 +152,26 @@ class TradingExecutive:
                 side='sell',
                 amount=amount_to_sell
             )
-            # Remove from active positions after successful sell
+            # Remove from local active positions
             if symbol in self.active_positions:
                 del self.active_positions[symbol]
+                
+            # Remove from database
+            from database import SessionLocal
+            import models
+            db = SessionLocal()
+            try:
+                db.query(models.Position).filter(
+                    models.Position.user_id == self.user_id,
+                    models.Position.symbol == symbol
+                ).delete()
+                db.commit()
+                print(f"🗑️ Removed {symbol} position from DB memory.")
+            except Exception as e:
+                print(f"❌ Error deleting position from DB: {e}")
+            finally:
+                db.close()
+                
             return order
         except Exception as e:
             print(f"Error executing sell for {symbol}: {e}")

@@ -8,15 +8,28 @@ class TechnicalAnalysis:
         Performs technical analysis on a dataframe of OHLCV data.
         Returns a dictionary with indicators and a basic signal.
         """
-        if df is None or len(df) < 50:
-            print(f"Insufficient data for analysis: {len(df) if df is not None else 0} rows")
+        if df is None or len(df) < 5:
             return {"error": "Insufficient data"}
-
-        # Calculate Indicators
-        df.ta.rsi(length=14, append=True)
-        df.ta.ema(length=20, append=True)
-        df.ta.ema(length=50, append=True)
-        df.ta.macd(append=True)
+        
+        # Calculate Indicators (Need at least 14 for RSI, but we can compute what we have)
+        if len(df) >= 14:
+            df.ta.rsi(length=14, append=True)
+        if len(df) >= 20:
+            df.ta.ema(length=20, append=True)
+            df.ta.ema(length=50, append=True)
+        
+        last_row = df.iloc[-1]
+        close = last_row['close']
+        
+        # Fallback for low data
+        if len(df) < 50:
+            return {
+                "price": round(close, 8),
+                "rsi": round(last_row['RSI_14'], 2) if 'RSI_14' in last_row else "N/A",
+                "signal": "NEUTRAL",
+                "reason": f"Warming up engine ({len(df)}/50 bars collected)",
+                "ema_status": "N/A"
+            }
 
         last_row = df.iloc[-1]
         

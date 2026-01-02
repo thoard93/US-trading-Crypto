@@ -14,7 +14,7 @@ class TradingEngine:
         self.user_id = user_id
         self.crypto = CryptoCollector()
         self.analyzer = TechnicalAnalysis()
-        self.trader = TradingExecutive(api_key, api_secret)
+        self.trader = TradingExecutive(api_key, api_secret, user_id=user_id)
         self.safety = SafetyChecker()
         
         self.watchlist = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'PEPE/USDT']

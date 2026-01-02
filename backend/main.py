@@ -69,6 +69,25 @@ async def get_bot_status(user_id: int):
         "watchlist": active_engines[user_id].watchlist if is_running else ["BTC/USDT", "ETH/USDT", "SOL/USDT"]
     }
 
+@app.get("/market_data/{user_id}")
+async def get_market_data(user_id: int):
+    """Fetch current prices and 24h change for the entire watchlist."""
+    is_running = user_id in active_engines and active_engines[user_id].is_running
+    watchlist = active_engines[user_id].watchlist if is_running else ["BTC/USDT", "ETH/USDT", "SOL/USDT", "XRP/USDT"]
+    
+    market_data = []
+    for symbol in watchlist:
+        try:
+            ticker = crypto_collector.exchange.fetch_ticker(symbol)
+            market_data.append({
+                "symbol": symbol,
+                "price": ticker['last'],
+                "change": ticker.get('percentage', 0),
+                "volume": ticker.get('quoteVolume', 0)
+            })
+        except: continue
+    return market_data
+
 @app.get("/portfolio/{user_id}")
 async def get_portfolio(user_id: int):
     """Fetch real-time account balances from Kraken."""

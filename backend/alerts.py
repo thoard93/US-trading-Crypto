@@ -14,7 +14,7 @@ class AlertSystem(commands.Cog):
         self.crypto = CryptoCollector()
         self.stocks = StockCollector()
         self.analyzer = TechnicalAnalysis()
-        self.trader = TradingExecutive()
+        self.trader = TradingExecutive(user_id=1)
         self.dex_scout = DexScout()
         self.safety = SafetyChecker()
         
