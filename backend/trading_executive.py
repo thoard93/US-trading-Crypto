@@ -105,7 +105,40 @@ class TradingExecutive:
                 side='sell',
                 amount=amount_to_sell
             )
+            # Remove from active positions after successful sell
+            if symbol in self.active_positions:
+                del self.active_positions[symbol]
             return order
         except Exception as e:
             print(f"Error executing sell for {symbol}: {e}")
             return {"error": str(e)}
+
+    def sync_positions(self):
+        """Fetch current holdings from Kraken and adopt them if they meet a threshold."""
+        if not self.exchange: return
+        print("🔄 Loading live positions from Kraken...")
+        try:
+            balance = self.exchange.fetch_balance()
+            for asset, data in balance.items():
+                if asset in ['USDT', 'USD', 'ZUSD', 'EUR', 'CAD']: continue
+                free = data.get('free', 0)
+                if free > 0:
+                    # Construct USDT symbol
+                    symbol = f"{asset}/USDT"
+                    try:
+                        # Check market existence
+                        if symbol not in self.exchange.markets:
+                            self.exchange.load_markets()
+                        if symbol not in self.exchange.markets:
+                            continue
+                            
+                        ticker = self.exchange.fetch_ticker(symbol)
+                        price = ticker['last']
+                        value = free * price
+                        if value > 5.0: # Adopt if > $5
+                            self.track_position(symbol, price, free)
+                            print(f"✅ Adopting position: {symbol} ({free:.4f} @ ${price:.4f})")
+                    except:
+                        continue
+        except Exception as e:
+            print(f"❌ Position sync error: {e}")

@@ -36,6 +36,16 @@ class AlertSystem(commands.Cog):
         self.monitor_market.start()
         self.discovery_loop.start()
         self.kraken_discovery_loop.start()
+        
+        # Async startup tasks
+        asyncio.create_task(self._startup_sync())
+
+    async def _startup_sync(self):
+        """Wait for bot to be ready and sync existing positions."""
+        if not self.bot.is_ready():
+            await self.bot.wait_until_ready()
+        print("📥 Bot ready. Synchronizing live positions from Kraken...")
+        self.trader.sync_positions()
 
     def cog_unload(self):
         self.monitor_market.cancel()
