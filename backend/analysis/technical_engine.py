@@ -115,11 +115,11 @@ class TechnicalAnalysis:
                     reason = f"📉 Sniper Entry: 40%+ Pullback ({close:.4f} < {pullback_target:.4f})"
                     confidence = 85
 
-        # PRIORITY 3: Scalping (RSI 2 + EMA 9)
         if aggressive_mode and confidence < 80:
-            if rsi_fast < 10 and close > ema_fast: 
+            # BUY: Dip in Uptrend (Price > EMA 50) + Oversold RSI(2)
+            if rsi_fast < 15 and close > ema_50: 
                 signal = "BUY"
-                reason = "⚡ Scalp: RSI(2) < 10 & Price > EMA9"
+                reason = "⚡ Scalp: Trend Pullback (Price > EMA50 & RSI(2) < 15)"
                 confidence = 75
             elif rsi_fast > 90 and close < ema_fast:
                 signal = "SELL"

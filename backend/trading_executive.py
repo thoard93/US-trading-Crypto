@@ -64,7 +64,8 @@ class TradingExecutive:
             
         self.active_positions[symbol] = {
             "entry_price": float(entry_price),
-            "amount": float(amount)
+            "amount": float(amount),
+            "highest_price": float(entry_price) # Start tracking High Water Mark
         }
         
         from database import SessionLocal
@@ -93,19 +94,40 @@ class TradingExecutive:
             db.close()
 
     def check_exit_conditions(self, symbol, current_price):
-        """Check if we should exit a trade based on SL/TP."""
+        """Check if we should exit a trade based on SL/TP/Trailing Stop."""
         if symbol not in self.active_positions:
             return None
 
         pos = self.active_positions[symbol]
         entry = pos["entry_price"]
         
-        # Aggressive Scalp Stop-Loss: -2% (Reduced from 5%)
+        # Initialize high water mark if missing (legacy positions)
+        if "highest_price" not in pos:
+            pos["highest_price"] = max(entry, current_price)
+        
+        # Update High Water Mark
+        if current_price > pos["highest_price"]:
+            pos["highest_price"] = current_price
+            
+        # --- TRAILING STOP LOGIC ---
+        # Trigger: If price reaches +1.5% profit
+        # Trail: 1.0% distance (locks in +0.5% minimum)
+        trailing_trigger_price = entry * 1.015
+        
+        if pos["highest_price"] >= trailing_trigger_price:
+            # Trailing Stop is ACTIVE
+            stop_price = pos["highest_price"] * 0.990 # 1.0% below peak
+            
+            if current_price <= stop_price:
+                return f"TRAILING_STOP (Locked +{(stop_price/entry - 1)*100:.1f}%)"
+                
+        # --- STANDARD SAFETY NETS ---
+        # Hard Stop-Loss: -2% (Safety Net)
         if current_price <= entry * 0.98:
             return "STOP_LOSS"
         
-        # Aggressive Scalp Take-Profit: +3% (Reduced from 10% for faster cycles)
-        if current_price >= entry * 1.03:
+        # Hard Take-Profit: +5% (Moonbag capture)
+        if current_price >= entry * 1.05:
             return "TAKE_PROFIT"
             
         return None
