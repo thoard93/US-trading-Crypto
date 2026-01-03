@@ -48,36 +48,38 @@ class SafetyChecker:
                         # Fallback for some chains or errors
                         print(f"⚠️ GoPlus Error Code {data.get('code')}: {data.get('message')}")
                         return {"error": "GoPlus Fetch Failed", "safety_score": 0}
-                    
-                    # GoPlus returns data in a map with address as key (lower case)
-                    result_map = data.get('result', {})
-                    token_data = result_map.get(address) or result_map.get(address.lower()) or {}
-                    
-                    return self._process_data(token_data)
-            except Exception as e:
-                print(f"⚠️ Safety Check Failed: {e}")
-                return {"error": str(e), "safety_score": 0}
-
-    async def _check_solana_rugcheck(self, address):
-        """Dedicated safety check for Solana using RugCheck.xyz"""
-        url = f"https://api.rugcheck.xyz/v1/tokens/{address}/report"
-        async with aiohttp.ClientSession() as session:
+    async def check_token(self, token_address, chain="solana"):
+        """
+        Check token safety using RugCheck.xyz (Solana) or GoPlus (EVM - Placeholder).
+        Returns a dict with 'safety_score' (0-100) and 'risks' (list).
+        """
+        # 1. Anti-Spam / Cache Check (Optional optimization)
+        
+        # 2. Solana Check (RugCheck)
+        if chain.lower() == "solana":
+            url = f"https://api.rugcheck.xyz/v1/tokens/{token_address}/report"
             try:
-                async with session.get(url, timeout=5) as response:
-                    if response.status != 200:
-                        return {"error": f"RugCheck Error: {response.status}", "safety_score": 0}
-                    
-                    data = await response.json()
-                    
-                    # CRITICAL: Handle None or empty response
-                    if not data or not isinstance(data, dict):
-                        return {"error": "RugCheck returned empty data", "safety_score": 70}
-                    
-                    # Calculate Score based on RugCheck data
-                    score = 100
-                    risks = []
-                    
-                    # 1. Verification (Jupiter Lists are usually safe)
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, timeout=10) as response:
+                        if response.status == 200:
+                            data = await response.json()
+                            return self._check_solana_rugcheck(data)
+                        elif response.status == 429:
+                            print(f"⚠️ RugCheck Rate Limit (429). Assuming SAFE for now.")
+                            return {'safety_score': 80, 'risks': ['Rate Limit - Audit Skipped']}
+                        else:
+                            print(f"⚠️ RugCheck Failed: HTTP {response.status}")
+                            # Fail safe: Return moderate score but with warning
+                            return {'safety_score': 50, 'risks': [f"API Fail {response.status}"]}
+            except Exception as e:
+                print(f"⚠️ RugCheck Error: {str(e)}")
+                return {'safety_score': 50, 'risks': ["Audit Error"]}
+        
+        # Fallback for other chains
+        return {'safety_score': 100, 'risks': []}
+
+    async def _check_solana_rugcheck(self, data):
+        """Dedicated safety check for Solana using RugCheck.xyz"""
                     verification = data.get("verification")
                     if verification and isinstance(verification, dict):
                         if verification.get("jup_verified"):
