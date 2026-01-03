@@ -37,6 +37,7 @@ class AlertSystem(commands.Cog):
         self.safety = SafetyChecker()
         
         # Initialize DEX trader for Solana memecoins
+        if DEX_TRADING_ENABLED:
             # Load keys for ALL users
             self.dex_traders = []
             try:
