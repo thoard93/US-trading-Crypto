@@ -516,10 +516,27 @@ class AlertSystem(commands.Cog):
                                 print(f"⏳ Cooldown active for {symbol} ({int(90-elapsed)}s remaining). Skipping buy.")
                                 return
 
-                        # 1. Check if we already have a position
+                        # 1. Check if we already have a position (local cache)
                         if symbol in self.trader.active_positions:
                             print(f"ℹ️ Buy signal for {symbol} but already holding.")
                             return
+                        
+                        # 1b. LIVE CHECK: Verify with exchange we don't already hold this (prevents BNB double-buy)
+                        if asset_type in ["Crypto", "Meme"]:
+                            try:
+                                base_asset = symbol.split('/')[0]  # BNB/USDT -> BNB
+                                balance = self.crypto.exchange.fetch_balance()
+                                held_amount = balance.get('total', {}).get(base_asset, 0)
+                                if held_amount > 0:
+                                    # Check if worth > $5
+                                    ticker = self.crypto.exchange.fetch_ticker(symbol)
+                                    if held_amount * ticker['last'] > 5:
+                                        # We already hold this, add to tracking and skip buy
+                                        self.trader.track_position(symbol, ticker['last'], held_amount)
+                                        print(f"ℹ️ Live check: Already holding {held_amount:.4f} {base_asset}. Skipping buy.")
+                                        return
+                            except Exception as e:
+                                print(f"⚠️ Live balance check failed: {e}")
 
                         # 2. Check position cap
                         if len(self.trader.active_positions) >= MAX_POSITIONS:
