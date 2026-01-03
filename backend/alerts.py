@@ -228,11 +228,63 @@ class AlertSystem(commands.Cog):
                     await self._check_and_alert(symbol, channel_stocks, "Stock")
                 await asyncio.sleep(1)
 
+    async def sync_all_dex_positions(self):
+        """Syncs on-chain positions for all traders and adopts them."""
+        if not hasattr(self, 'dex_traders') or not self.dex_traders: return
+
+        print("🔄 Syncing DEX positions from blockchain...")
+        
+        for trader in self.dex_traders:
+            try:
+                # 1. Get raw on-chain tokens
+                wallet_tokens = trader.get_all_tokens()
+                if not wallet_tokens: continue
+
+                user_label = getattr(trader, 'user_id', 'Main')
+                
+                for mint, amount in wallet_tokens.items():
+                    if mint in trader.positions: continue
+                    
+                    try:
+                        # Map input for DexScout
+                        pair_data = await self.dex_scout.get_pair_data('solana', mint)
+                        if pair_data:
+                            info = self.dex_scout.extract_token_info(pair_data)
+                            price = info.get('price_usd')
+                            symbol = info.get('symbol', 'UNKNOWN')
+                            
+                            if price:
+                                # ADOPT POSITION (Reset baseline)
+                                trader.positions[mint] = {
+                                    'entry_price_usd': price,
+                                    'amount': amount,
+                                    'symbol': symbol
+                                }
+                                # Add to tracking list if not there
+                                found = False
+                                for t in self.trending_dex_gems:
+                                    if t['address'] == mint: found = True
+                                if not found:
+                                     self.trending_dex_gems.append({
+                                         'chain': 'solana', 'address': mint, 'symbol': symbol
+                                     })
+                                
+                                print(f"✅ Adopted {symbol} for User {user_label} @ ${price:.6f}")
+                    except Exception as e:
+                        print(f"⚠️ Failed to adopt token {mint}: {e}")
+            except Exception as e:
+                print(f"❌ Error syncing user {user_label}: {e}")
+
     @tasks.loop(seconds=15)  # DAY TRADER MODE: Was 30s, now 15s (sniper speed)
     async def dex_monitor(self):
         """Dedicated high-speed loop for DEX memecoins (30s)."""
         if not self.bot.is_ready():
             return
+            
+        # Sync on first run
+        if not hasattr(self, 'dex_positions_synced'):
+             await self.sync_all_dex_positions()
+             self.dex_positions_synced = True
 
         channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
         
@@ -327,7 +379,7 @@ class AlertSystem(commands.Cog):
                                     
                                     if entry_price:
                                         pnl = ((info['price_usd'] - entry_price) / entry_price) * 100
-                                        if pnl >= 20.0: # TP: +20% (Tighter to secure wins)
+                                        if pnl >= 15.0: # TP: +15% (Aggressive Recycling)
                                             should_sell = True
                                             reason = f"🎯 Take Profit (+{pnl:.1f}%)"
                                         elif pnl <= -10.0: # SL: -10% (Tighter to prevent bags)

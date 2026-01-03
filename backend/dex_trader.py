@@ -117,6 +117,41 @@ class DexTrader:
         except Exception as e:
             print(f"Error getting Jupiter quote: {e}")
             return None
+
+    def get_all_tokens(self):
+        """Fetch all SPL tokens held by the wallet."""
+        if not self.keypair: return {}
+        try:
+            headers = {"Content-Type": "application/json"}
+            payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTokenAccountsByOwner",
+                "params": [
+                    str(self.wallet_address),
+                    {"programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"},
+                    {"encoding": "jsonParsed"}
+                ]
+            }
+            resp = requests.post(self.rpc_url, json=payload, headers=headers, timeout=10)
+            data = resp.json()
+            
+            holdings = {}
+            if 'result' in data and 'value' in data['result']:
+                for item in data['result']['value']:
+                    info = item['account']['data']['parsed']['info']
+                    mint = info['mint']
+                    amount = float(info['tokenAmount']['uiAmount'])
+                    
+                    # Filter out tiny amounts and SOL wrappers if strictly meme trading
+                    if amount > 0 and mint != self.SOL_MINT:
+                        holdings[mint] = amount
+            
+            print(f"💰 Found {len(holdings)} existing tokens in wallet.")
+            return holdings
+        except Exception as e:
+            print(f"❌ Error fetching wallet holdings: {e}")
+            return {}
     
     def execute_swap(self, input_mint, output_mint, amount_lamports, override_slippage=None):
         """Execute a swap via Jupiter."""
