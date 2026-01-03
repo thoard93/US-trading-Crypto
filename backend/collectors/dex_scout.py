@@ -1,6 +1,7 @@
 import aiohttp
 import asyncio
 import logging
+import time
 
 class DexScout:
     def __init__(self):
@@ -91,6 +92,7 @@ class DexScout:
 
     async def get_trending_solana_pairs(self, min_liquidity=2000, limit=15):
         """Fetch trending Solana pairs from DexScreener."""
+        # Using the standard Solana list which is a good proxy for 'Trending' on Sol
         url = "https://api.dexscreener.com/latest/dex/pairs/solana"
         try:
             async with aiohttp.ClientSession() as session:
@@ -98,12 +100,31 @@ class DexScout:
                     if response.status == 200:
                         data = await response.json()
                         pairs = data.get('pairs', [])
-                        # Filter by liquidity and sort by 5m volume
-                        filtered = [
-                            p for p in pairs
-                            if float(p.get('liquidity', {}).get('usd', 0)) >= min_liquidity
-                            and p.get('dexId') == 'raydium' # "Final Stretch" Strategy: Only migrated tokens
-                        ]
+                        
+                        filtered = []
+                        current_ms = time.time() * 1000
+                        
+                        for p in pairs:
+                            # 1. Base Liquidity Check
+                            if float(p.get('liquidity', {}).get('usd', 0)) < min_liquidity:
+                                continue
+                                
+                            created_at = p.get('pairCreatedAt', current_ms)
+                            age_min = (current_ms - created_at) / 60000
+                            dex_id = p.get('dexId', '').lower()
+                            
+                            # Strategy 1: "Final Stretch" (Fresh & Hot)
+                            # Age < 30 mins. Catching the initial pump or Pump.fun gems.
+                            is_final_stretch = age_min <= 30
+                            
+                            # Strategy 2: "Migrated / Stabilized" (Safe Play)
+                            # Age > 60 mins AND on Raydium (Verified migration usually).
+                            # "Wait for pullback of 40-60% from migration high" applies here.
+                            is_migrated = (dex_id == 'raydium' and age_min >= 60)
+                            
+                            if is_final_stretch or is_migrated:
+                                filtered.append(p)
+
                         # Sort by 5m price change to find pumping gems
                         filtered.sort(
                             key=lambda x: float(x.get('priceChange', {}).get('m5', 0)),

@@ -109,6 +109,20 @@ class TechnicalAnalysis:
 
         signal = "NEUTRAL"
         reason = "No strong signal"
+        
+        # PRIORITY 0: Sniper Pullback (Research Strategy)
+        # "Wait for pullback of 40-60% from migration high"
+        if aggressive_mode:
+            max_high = df['high'].max()
+            pullback_target = max_high * 0.60 # 40% drop = 60% of High
+            
+            # If price is DEEP in the dip but showing some support (e.g., above EMA50 or RSI oversold)
+            if close <= pullback_target:
+                 # Check if we are not crashing to zero (RSI > 20 to avoid dead coins?)
+                 # Video says "Target consistent small gains".
+                 # We'll treat this as a strong setup.
+                 signal = "BUY"
+                 reason = f"📉 Sniper Entry: 40%+ Pullback from High ({max_high})"
 
         # PRIORITY 1: RSI Extremes
         if rsi < RSI_OVERSOLD:
