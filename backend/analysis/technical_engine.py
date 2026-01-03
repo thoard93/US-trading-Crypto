@@ -45,8 +45,23 @@ class TechnicalAnalysis:
         
         # 14-20 bars: Basic RSI check
         if len(df) < 20:
-
-        
+            signal = "NEUTRAL"
+            reason = "Collecting more data for trend analysis"
+            
+            if rsi < RSI_OVERSOLD:
+                signal = "BUY"
+                reason = f"🚀 Oversold (RSI < {RSI_OVERSOLD}) - Potential low entry"
+            elif rsi > RSI_OVERBOUGHT:
+                signal = "SELL"
+                reason = f"⚠️ Overbought (RSI > {RSI_OVERBOUGHT}) - Potential local top"
+            
+            return {
+                "price": round(close, 8),
+                "rsi": round(rsi, 2),
+                "signal": signal,
+                "reason": reason,
+                "ema_status": "N/A"
+            }
         ema_20 = last_row.get('EMA_20', close)
         prev_ema_20 = prev_row.get('EMA_20', prev_close)
         ema_50 = last_row.get('EMA_50', ema_20)  # Fallback to EMA_20 if no EMA_50
