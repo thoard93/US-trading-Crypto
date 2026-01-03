@@ -203,8 +203,11 @@ class DexTrader:
             result = send_response.json()
             
             if 'error' in result:
-                print(f"❌ Swap Failed: {result['error']['message']}")
-                return {"error": result['error']['message']}
+                msg = result['error']['message']
+                if '0x1' in str(msg) or 'Instruction 6' in str(msg):
+                    msg += " (Likely Insufficient SOL for Rent/Fees)"
+                print(f"❌ Swap Failed: {msg}")
+                return {"error": msg}
             
             tx_signature = result.get('result')
             print(f"✅ Swap executed! TX: {tx_signature}")
@@ -232,8 +235,13 @@ class DexTrader:
         
         if balance < required:
             if balance > 0.02: # Minimum threshold to attempt a smaller buy
-                print(f"⚠️ Low balance ({balance:.4f} SOL). Reducing buy size from {sol_amount} to {balance-0.005:.4f} SOL")
-                sol_amount = balance - 0.005 # Use available balance minus fees
+                # Increase buffer to 0.015 to cover Rent (~0.002) + Priority Fees
+                safe_amount = balance - 0.015 
+                if safe_amount < 0.001:
+                    return {"error": f"Insufficient SOL for fees. Balance: {balance:.4f}"}
+                    
+                print(f"⚠️ Low balance ({balance:.4f} SOL). Reducing buy size from {sol_amount} to {safe_amount:.4f} SOL")
+                sol_amount = safe_amount
             else:
                 return {"error": f"Insufficient SOL. Balance: {balance:.4f}"}
         
