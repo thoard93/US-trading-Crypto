@@ -156,9 +156,15 @@ class DexTrader:
             # The transaction from Jupiter already has placeholder signatures
             # We need to sign the MESSAGE (not the whole tx) and replace the first signature
             
-            # Get the serialized message bytes (this is what we sign)
+            # Get the message bytes for signing
+            # Note: MessageV0 in older Solders uses bytes(), not .serialize()
             message = unsigned_tx.message
-            message_bytes = message.serialize()
+            try:
+                # Try .serialize() first (newer Solders)
+                message_bytes = message.serialize()
+            except AttributeError:
+                # Fall back to bytes() (older Solders)
+                message_bytes = bytes(message)
             
             # Sign the serialized message
             signature = self.keypair.sign_message(message_bytes)
