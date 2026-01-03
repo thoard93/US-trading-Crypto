@@ -49,7 +49,7 @@ class DexTrader:
         self.USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
         
         # Trading config
-        self.slippage_bps = 500  # 5% slippage for volatile memecoins (was 1%)
+        self.slippage_bps = 1500  # 15% slippage for extreme volatility (was 5%)
         self.max_trade_sol = 0.05  # Max 0.05 SOL per trade (~$6)
         
         # Active positions
