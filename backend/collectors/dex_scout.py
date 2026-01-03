@@ -88,3 +88,40 @@ class DexScout:
         except Exception as e:
             self.logger.error(f"Error fetching token profiles: {e}")
             return []
+
+    async def get_trending_solana_pairs(self, min_liquidity=2000, limit=15):
+        """Fetch trending Solana pairs from DexScreener."""
+        url = "https://api.dexscreener.com/latest/dex/pairs/solana"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        pairs = data.get('pairs', [])
+                        # Filter by liquidity and sort by 5m volume
+                        filtered = [
+                            p for p in pairs
+                            if float(p.get('liquidity', {}).get('usd', 0)) >= min_liquidity
+                        ]
+                        # Sort by 5m price change to find pumping gems
+                        filtered.sort(
+                            key=lambda x: float(x.get('priceChange', {}).get('m5', 0)),
+                            reverse=True
+                        )
+                        return filtered[:limit]
+                    return []
+        except Exception as e:
+            self.logger.error(f"Error fetching trending Solana: {e}")
+            return []
+
+    async def get_new_solana_pairs(self, max_age_hours=6, limit=10):
+        """Fetch newly created Solana pairs (just launched gems)."""
+        # DexScreener doesn't have a direct "new pairs" API, but token profiles are often new
+        # We'll use boosted tokens as a proxy for activity
+        boosted = await self.get_latest_boosted_tokens()
+        if not boosted:
+            return []
+        
+        # Filter for Solana only
+        sol_pairs = [b for b in boosted if b.get('chainId') == 'solana']
+        return sol_pairs[:limit]

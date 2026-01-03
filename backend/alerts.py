@@ -142,7 +142,7 @@ class AlertSystem(commands.Cog):
         self.discovery_loop.cancel()
         self.kraken_discovery_loop.cancel()
 
-    @tasks.loop(minutes=5)
+    @tasks.loop(minutes=2)  # DAY TRADER MODE: Was 5 min, now 2 min
     async def monitor_market(self):
         if not self.bot.is_ready():
             await self.bot.wait_until_ready()
@@ -188,7 +188,7 @@ class AlertSystem(commands.Cog):
                     await self._check_and_alert(symbol, channel_stocks, "Stock")
                 await asyncio.sleep(1)
 
-    @tasks.loop(seconds=30)
+    @tasks.loop(seconds=15)  # DAY TRADER MODE: Was 30s, now 15s (sniper speed)
     async def dex_monitor(self):
         """Dedicated high-speed loop for DEX memecoins (30s)."""
         if not self.bot.is_ready():
@@ -208,8 +208,8 @@ class AlertSystem(commands.Cog):
                         info = self.dex_scout.extract_token_info(pair_data)
                         token_address = info.get('address', item['address'])
                         
-                        # Alert if price change > 2% in 5 minutes
-                        if info['price_change_5m'] >= 2.0:
+                        # Alert if price change > 1% in 5 minutes (SNIPER MODE)
+                        if info['price_change_5m'] >= 1.0:
                             # Safety Audit
                             audit = await self.safety.check_token(token_address, "solana" if info['chain'] == 'solana' else "1")
                             safety_score = audit.get('safety_score', 0)
@@ -330,42 +330,70 @@ class AlertSystem(commands.Cog):
                 print(f"⚠️ Error checking {symbol}: {e}")
         await asyncio.sleep(0.3)
 
-    @tasks.loop(minutes=10)
+    @tasks.loop(minutes=2)  # SNIPER MODE: Was 10 min, now 2 min
     async def discovery_loop(self):
-        """Find new trending DEX gems automatically."""
+        """Find new trending DEX gems automatically - SNIPER MODE."""
         if not self.bot.is_ready(): return
         
-        print("🔍 Running DEX Gem Discovery...")
-        profiles = await self.dex_scout.get_latest_token_profiles()
+        print("🔍 Running DEX Gem Discovery... (SNIPER MODE)")
         channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
         
         new_gems = []
-        if profiles and channel_memes:
-            # Profiles is a list of dicts with 'chainId', 'tokenAddress', 'url', etc.
-            # Take top 5 latest profiles
-            for p in profiles[:5]:
-                addr = p.get('tokenAddress')
-                chain = p.get('chainId')
-                
-                # Check if already tracking
-                if any(item['address'] == addr for item in self.dex_watchlist + self.trending_dex_gems):
+        
+        # 1. Fetch TRENDING Solana pairs (top pumpers)
+        try:
+            trending = await self.dex_scout.get_trending_solana_pairs(min_liquidity=self.dex_min_liquidity, limit=10)
+            for pair in trending:
+                addr = pair.get('baseToken', {}).get('address')
+                if not addr:
                     continue
                     
-                # Basic Safety Audit
-                audit = await self.safety.check_token(addr, "solana" if chain == 'solana' else "1")
-                if audit.get('safety_status') == 'SAFE':
-                    new_gems.append({"chain": chain, "address": addr})
-                    embed = discord.Embed(
-                        title=f"✨ NEW TRENDING GEM: {p.get('url').split('/')[-1]}",
-                        description=f"AI discovered a new safe profile on **{chain.upper()}**!",
-                        color=discord.Color.teal()
-                    )
-                    embed.add_field(name="Address", value=f"`{addr}`", inline=False)
-                    embed.add_field(name="Action", value="Adding to 5m tracking list for 30 minutes.", inline=False)
-                    await channel_memes.send(embed=embed)
+                # Skip if already tracking
+                if any(item['address'] == addr for item in self.dex_watchlist + self.trending_dex_gems):
+                    continue
+                
+                # Check if pumping enough (1% in 5 min)
+                change_5m = float(pair.get('priceChange', {}).get('m5', 0))
+                if change_5m >= 1.0:
+                    # Quick safety check
+                    audit = await self.safety.check_token(addr, "solana")
+                    safety_score = audit.get('safety_score', 0)
+                    
+                    if safety_score >= self.dex_min_safety_score:
+                        new_gems.append({"chain": "solana", "address": addr})
+                        
+                        if channel_memes:
+                            embed = discord.Embed(
+                                title=f"🎯 SNIPER TARGET: {pair.get('baseToken', {}).get('symbol')}",
+                                description=f"**+{change_5m:.1f}%** in 5min | Safety: {safety_score}/100",
+                                color=discord.Color.gold()
+                            )
+                            embed.add_field(name="Price", value=f"${float(pair.get('priceUsd', 0)):.8f}", inline=True)
+                            embed.add_field(name="Liquidity", value=f"${float(pair.get('liquidity', {}).get('usd', 0)):,.0f}", inline=True)
+                            await channel_memes.send(embed=embed)
+        except Exception as e:
+            print(f"⚠️ Trending scan error: {e}")
+        
+        # 2. Fetch token profiles (original method)
+        try:
+            profiles = await self.dex_scout.get_latest_token_profiles()
+            if profiles:
+                for p in profiles[:5]:
+                    addr = p.get('tokenAddress')
+                    chain = p.get('chainId')
+                    
+                    if any(item['address'] == addr for item in self.dex_watchlist + self.trending_dex_gems + new_gems):
+                        continue
+                        
+                    audit = await self.safety.check_token(addr, "solana" if chain == 'solana' else "1")
+                    if audit.get('safety_score', 0) >= self.dex_min_safety_score:
+                        new_gems.append({"chain": chain, "address": addr})
+        except Exception as e:
+            print(f"⚠️ Profile scan error: {e}")
 
-        # Update trending gems (keep them for 3-4 cycles)
-        self.trending_dex_gems = new_gems + self.trending_dex_gems[:10]
+        # Update trending gems (keep them for multiple cycles)
+        self.trending_dex_gems = new_gems + self.trending_dex_gems[:15]
+        print(f"📊 Tracking {len(self.trending_dex_gems)} trending gems")
 
     @tasks.loop(hours=1)
     async def kraken_discovery_loop(self):
@@ -471,8 +499,8 @@ class AlertSystem(commands.Cog):
                         # 0. Check Cooldown (Wash Trade Prevention)
                         if symbol in self.last_exit_times:
                             elapsed = (datetime.datetime.now() - self.last_exit_times[symbol]).total_seconds()
-                            if elapsed < 300: # 5 minutes cooldown
-                                print(f"⏳ Cooldown active for {symbol} ({int(300-elapsed)}s remaining). Skipping buy.")
+                            if elapsed < 90: # DAY TRADER MODE: 90 second cooldown (was 5 min)
+                                print(f"⏳ Cooldown active for {symbol} ({int(90-elapsed)}s remaining). Skipping buy.")
                                 return
 
                         # 1. Check if we already have a position

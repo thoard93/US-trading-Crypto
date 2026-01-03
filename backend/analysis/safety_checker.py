@@ -69,34 +69,33 @@ class SafetyChecker:
                     
                     data = await response.json()
                     
+                    # CRITICAL: Handle None or empty response
+                    if not data or not isinstance(data, dict):
+                        return {"error": "RugCheck returned empty data", "safety_score": 70}
+                    
                     # Calculate Score based on RugCheck data
                     score = 100
                     risks = []
                     
                     # 1. Verification (Jupiter Lists are usually safe)
-                    is_verified = False
-                    if "verification" in data:
-                        if data["verification"].get("jup_verified"):
-                            is_verified = True
+                    verification = data.get("verification")
+                    if verification and isinstance(verification, dict):
+                        if verification.get("jup_verified"):
                             # If strictly verified, hard set high score
                             return {
-                                "token_name": data["verification"].get("name", "Unknown"),
-                                "token_symbol": data["verification"].get("symbol", "Unknown"),
+                                "token_name": verification.get("name", "Unknown"),
+                                "token_symbol": verification.get("symbol", "Unknown"),
                                 "is_honeypot": False,
                                 "risks": ["Jupiter Strict List (SAFE)"],
                                 "safety_score": 95,
                                 "safety_status": "SAFE"
                             }
                     
-                    # 2. Authorities (Mint/Freeze)
-                    token_meta = data.get("tokenMeta", {})
-                    # Some responses put it in 'token' or root keys depending on version, check safe defaults
-                    # RugCheck 'risks' array is the best source of truth
-                    
-                    found_risks = data.get("risks", []) 
+                    # 2. RugCheck 'risks' array is the best source of truth
+                    found_risks = data.get("risks") or []
                     # risks is a list of objects {name: "...", level: "..."}
                     
-                    for r in found_risks:
+                    for r in (found_risks if isinstance(found_risks, list) else []):
                         level = r.get("level", "warn")
                         name = r.get("name", "")
                         

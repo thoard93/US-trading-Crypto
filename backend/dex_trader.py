@@ -149,13 +149,24 @@ class DexTrader:
             
             # 3. Deserialize, sign, and send transaction
             tx_bytes = base64.b64decode(swap_tx_base64)
-            tx = VersionedTransaction.from_bytes(tx_bytes)
             
-            # Sign the transaction
-            tx.sign([self.keypair])
+            # OLD API (broken): tx.sign([self.keypair])
+            # NEW API: VersionedTransaction doesn't have .sign() method
+            # We need to sign the message and create a new transaction with signatures
+            
+            # Parse the unsigned transaction
+            unsigned_tx = VersionedTransaction.from_bytes(tx_bytes)
+            
+            # Sign the message with our keypair
+            message_bytes = bytes(unsigned_tx.message)
+            signature = self.keypair.sign_message(message_bytes)
+            
+            # Create signed transaction with our signature
+            # The transaction expects signatures in order of accounts
+            signed_tx = VersionedTransaction.populate(unsigned_tx.message, [signature])
             
             # 4. Send transaction
-            signed_tx_bytes = bytes(tx)
+            signed_tx_bytes = bytes(signed_tx)
             signed_tx_base64 = base64.b64encode(signed_tx_bytes).decode('utf-8')
             
             send_response = requests.post(self.rpc_url, json={
