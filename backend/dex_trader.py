@@ -93,7 +93,8 @@ class DexTrader:
             result = response.json()
             accounts = result.get('result', {}).get('value', [])
             if accounts:
-                return float(accounts[0]['account']['data']['parsed']['info']['tokenAmount']['uiAmount'] or 0)
+                # Return RAW integer amount (handled correctly regardless of decimals)
+                return int(accounts[0]['account']['data']['parsed']['info']['tokenAmount']['amount'] or 0)
             return 0
         except Exception as e:
             print(f"Error getting token balance: {e}")
@@ -174,6 +175,15 @@ class DexTrader:
                 "dynamicComputeUnitLimit": True,
                 "prioritizationFeeLamports": "auto"
             }
+            
+            # Low Balance Fee Protection (Ensure we can SELL even if poor)
+            try:
+                 bal = self.get_sol_balance()
+                 if bal < 0.005: 
+                     # Cap fee to 50000 lamports (0.00005 SOL) to prevent failure
+                     swap_body["prioritizationFeeLamports"] = 50000
+                     print(f"⚠️ Critical Sol ({bal:.5f}). Capped Priority Fee.")
+            except: pass
             
             swap_response = requests.post(swap_url, json=swap_body)
             if swap_response.status_code != 200:
@@ -265,19 +275,20 @@ class DexTrader:
         
         # Safety check & Dynamic Sizing
         balance = self.get_sol_balance()
-        required = sol_amount + 0.01
+        balance = self.get_sol_balance()
+        required = sol_amount + 0.04 # Buffer increased
         
         if balance < required:
-            if balance > 0.02: # Minimum threshold to attempt a smaller buy
-                # Increase buffer to 0.015 to cover Rent (~0.002) + Priority Fees
-                safe_amount = balance - 0.015 
-                if safe_amount < 0.001:
-                    return {"error": f"Insufficient SOL for fees. Balance: {balance:.4f}"}
+            if balance > 0.05: # Stricter Safety Floor (Leave 0.04 SOL)
+                # Increase buffer to leave at least 0.04 for fees/sells
+                safe_amount = balance - 0.04 
+                if safe_amount < 0.01:
+                    return {"error": f"Insufficient SOL for safe trade. Balance: {balance:.4f}"}
                     
                 print(f"⚠️ Low balance ({balance:.4f} SOL). Reducing buy size from {sol_amount} to {safe_amount:.4f} SOL")
                 sol_amount = safe_amount
             else:
-                return {"error": f"Insufficient SOL. Balance: {balance:.4f}"}
+                return {"error": f"Insufficient SOL guardrail. Balance: {balance:.4f} < 0.05"}
         
         amount_lamports = int(sol_amount * 1e9)
         
@@ -306,8 +317,11 @@ class DexTrader:
         if token_balance <= 0:
             return {"error": "No tokens to sell"}
         
-        # Calculate amount to sell
-        sell_amount = int(token_balance * (percentage / 100) * 1e6)  # Assuming 6 decimals
+        # Calculate amount to sell (Using RAW Integer - Decimals safe)
+        if percentage == 100:
+             sell_amount = token_balance
+        else:
+             sell_amount = int(token_balance * (percentage / 100))
         
         result = self.execute_swap(token_mint, self.SOL_MINT, sell_amount)
         
