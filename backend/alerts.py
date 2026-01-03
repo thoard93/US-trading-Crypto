@@ -108,6 +108,7 @@ class AlertSystem(commands.Cog):
         self.trending_dex_gems = [] # Temporarily tracked trending gems
         self.restricted_assets = set() # Session-based blacklist for "Restricted Region" assets
         self.last_exit_times = {} # {symbol: timestamp} for wash trade prevention
+        self.last_alert_times = {} # {symbol: timestamp} to prevent discord spam
 
         self.monitor_market.start()
         self.dex_monitor.start() # Start new 30s loop
@@ -238,6 +239,8 @@ class AlertSystem(commands.Cog):
                             embed.add_field(name="Liquidity", value=f"${liquidity:,.0f}", inline=True)
                             embed.add_field(name="Safety Score", value=f"**{safety_score}/100**", inline=True)
                             
+                            trade_happened = False
+                            
                             # AUTO-TRADE logic
                             if (self.dex_auto_trade and 
                                 self.dex_trader and 
@@ -251,6 +254,7 @@ class AlertSystem(commands.Cog):
                                         if token_address not in self.dex_trader.positions:
                                             trade_result = self.dex_trader.buy_token(token_address)
                                             if trade_result.get('success'):
+                                                trade_happened = True
                                                 embed.add_field(
                                                     name="🤖 AUTO-TRADE EXECUTED", 
                                                     value=f"Bought with 0.05 SOL\nTX: `{trade_result['signature'][:16]}...`", 
@@ -262,9 +266,21 @@ class AlertSystem(commands.Cog):
                                         else:
                                             # Already holding
                                             pass
+                            
+                            # Smart Alerting: Only send if trade happened OR cooldown passed (10 mins)
+                            should_send = False
+                            now = datetime.datetime.now().timestamp()
+                            last_sent = self.last_alert_times.get(token_address, 0)
+                            
+                            if trade_happened:
+                                should_send = True
+                            elif (now - last_sent) > 600: # 10 mins
+                                should_send = True
                                 
-                            embed.add_field(name="DEX Link", value=f"[View on DexScreener]({info['url']})", inline=False)
-                            await channel_memes.send(embed=embed)
+                            if should_send:
+                                embed.add_field(name="DEX Link", value=f"[View on DexScreener]({info['url']})", inline=False)
+                                await channel_memes.send(embed=embed)
+                                self.last_alert_times[token_address] = now
                         
                         # Check for dump / potential exit
                         elif info['price_change_5m'] <= -10.0:
