@@ -89,7 +89,7 @@ class AlertSystem(commands.Cog):
         # DEX Auto-trading configuration
         self.dex_auto_trade = True  # Toggle for DEX auto-trading
         self.dex_min_safety_score = 50  # Lowered from 70 to 50 for MAXIMUM ACTION
-        self.dex_min_liquidity = 2000  # Lowered from $5k to $2k for fresh gems
+        self.dex_min_liquidity = 5000  # Raised to $5k (Quality Control)
         self.dex_max_positions = 10  # Increased from 5 to 10 (User Request)
         
         # STOCK Auto-trading configuration
@@ -387,19 +387,19 @@ class AlertSystem(commands.Cog):
                                         if not hasattr(self, 'pnl_tick'): self.pnl_tick = 0
                                         self.pnl_tick += 1
                                         if self.pnl_tick % 40 == 0: 
-                                            print(f"👀 Status {info['symbol']} (User {user_label}): {pnl:+.2f}% (TP: +15 | SL: -10)")
+                                            print(f"👀 Status {info['symbol']} (User {user_label}): {pnl:+.2f}% (TP: +25 | SL: -25)")
 
-                                        if pnl >= 15.0: # TP: +15% (Aggressive Recycling)
+                                        if pnl >= 25.0: # TP: +25% (Capture pumps)
                                             should_sell = True
                                             reason = f"🎯 Take Profit (+{pnl:.1f}%)"
-                                        elif pnl <= -10.0: # SL: -10% (Tighter to prevent bags)
+                                        elif pnl <= -25.0: # SL: -25% (Room to breathe)
                                             should_sell = True
                                             reason = f"🛑 Stop Loss ({pnl:.1f}%)"
                                     
                                     # Fallback dump check
-                                    if not should_sell and info['price_change_5m'] <= -15.0:
+                                    if not should_sell and info['price_change_5m'] <= -30.0:
                                         should_sell = True
-                                        reason = f"🚨 Crash Detected (-15% in 5m)"
+                                        reason = f"🚨 Crash Detected (-30% in 5m)"
                                         
                                     if should_sell:
                                         trader.sell_token(token_address)
