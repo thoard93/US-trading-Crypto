@@ -254,6 +254,8 @@ class AlertSystem(commands.Cog):
                                         if token_address not in self.dex_trader.positions:
                                             trade_result = self.dex_trader.buy_token(token_address)
                                             if trade_result.get('success'):
+                                                # New: Record entry price for PnL tracking
+                                                self.dex_trader.positions[token_address]['entry_price_usd'] = info['price_usd']
                                                 trade_happened = True
                                                 embed.add_field(
                                                     name="🤖 AUTO-TRADE EXECUTED", 
@@ -282,11 +284,30 @@ class AlertSystem(commands.Cog):
                                 await channel_memes.send(embed=embed)
                                 self.last_alert_times[token_address] = now
                         
-                        # Check for dump / potential exit
-                        elif info['price_change_5m'] <= -10.0:
-                             if self.dex_trader and token_address in self.dex_trader.positions:
+                        # EXIT LOGIC (Take Profit / Stop Loss)
+                        elif self.dex_trader and token_address in self.dex_trader.positions:
+                            pos = self.dex_trader.positions[token_address]
+                            entry_price = pos.get('entry_price_usd')
+                            should_sell = False
+                            reason = ""
+                            
+                            if entry_price:
+                                pnl = ((info['price_usd'] - entry_price) / entry_price) * 100
+                                if pnl >= 20.0: # TP: +20% (Tighter to secure wins)
+                                    should_sell = True
+                                    reason = f"🎯 Take Profit (+{pnl:.1f}%)"
+                                elif pnl <= -10.0: # SL: -10% (Tighter to prevent bags)
+                                    should_sell = True
+                                    reason = f"🛑 Stop Loss ({pnl:.1f}%)"
+                            
+                            # Fallback dump check
+                            if not should_sell and info['price_change_5m'] <= -15.0:
+                                should_sell = True
+                                reason = f"🚨 Crash Detected (-15% in 5m)"
+                                
+                            if should_sell:
                                 self.dex_trader.sell_token(token_address)
-                                await channel_memes.send(f"🚨 Auto-Sold {info['symbol']} due to crash.")
+                                await channel_memes.send(f"{reason}: Sold {info['symbol']}")
 
                 except Exception as ex:
                     print(f"⚠️ Error checking DEX token {item.get('address')}: {ex}")

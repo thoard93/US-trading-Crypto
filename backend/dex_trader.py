@@ -198,11 +198,12 @@ class DexTrader:
                     signed_tx_base64,
                     {"encoding": "base64", "skipPreflight": False, "preflightCommitment": "confirmed"}
                 ]
-            })
+            }, timeout=15)
             
             result = send_response.json()
             
             if 'error' in result:
+                print(f"❌ Swap Failed: {result['error']['message']}")
                 return {"error": result['error']['message']}
             
             tx_signature = result.get('result')
@@ -225,10 +226,16 @@ class DexTrader:
         if sol_amount is None:
             sol_amount = self.max_trade_sol
         
-        # Safety check
+        # Safety check & Dynamic Sizing
         balance = self.get_sol_balance()
-        if balance < sol_amount + 0.01:  # Keep 0.01 SOL for fees
-            return {"error": f"Insufficient SOL. Balance: {balance:.4f}"}
+        required = sol_amount + 0.01
+        
+        if balance < required:
+            if balance > 0.02: # Minimum threshold to attempt a smaller buy
+                print(f"⚠️ Low balance ({balance:.4f} SOL). Reducing buy size from {sol_amount} to {balance-0.005:.4f} SOL")
+                sol_amount = balance - 0.005 # Use available balance minus fees
+            else:
+                return {"error": f"Insufficient SOL. Balance: {balance:.4f}"}
         
         amount_lamports = int(sol_amount * 1e9)
         
