@@ -37,27 +37,52 @@ class AlertSystem(commands.Cog):
         self.safety = SafetyChecker()
         
         # Initialize DEX trader for Solana memecoins
-        if DEX_TRADING_ENABLED:
-            # Try to load key from DB
-            sol_priv = None
+            # Load keys for ALL users
+            self.dex_traders = []
             try:
                 db = SessionLocal()
-                # Assuming user_id=1 for the bot main owner
-                key_entry = db.query(models.ApiKey).filter(
-                    models.ApiKey.user_id == 1, 
-                    models.ApiKey.exchange == 'solana'
-                ).first()
-                if key_entry:
-                    sol_priv = decrypt_key(key_entry.api_key)
-                    print("🔓 Loaded Phantom Key from database.")
+                # Fetch ALL Solana keys
+                keys = db.query(models.ApiKey).filter(models.ApiKey.exchange == 'solana').all()
+                
+                # Set to track uniqueness
+                added_wallets = set()
+                
+                for k in keys:
+                    try:
+                        priv = decrypt_key(k.api_key)
+                        dt = DexTrader(private_key=priv)
+                        if dt.wallet_address and dt.wallet_address not in added_wallets:
+                            # Attach user_id for logging
+                            dt.user_id = k.user_id 
+                            self.dex_traders.append(dt)
+                            added_wallets.add(dt.wallet_address)
+                            print(f"🔓 Loaded Wallet via DB: {dt.wallet_address[:8]}... (User {k.user_id})")
+                    except Exception as e:
+                        print(f"⚠️ Failed to load key for User {k.user_id}: {e}")
+                
+                # Fallback: ENV key
+                import os
+                env_key = os.getenv('SOLANA_PRIVATE_KEY')
+                if env_key:
+                    try:
+                        dt = DexTrader(private_key=env_key)
+                        if dt.wallet_address and dt.wallet_address not in added_wallets:
+                            dt.user_id = "ENV"
+                            self.dex_traders.append(dt)
+                            print(f"🔓 Loaded Wallet via ENV: {dt.wallet_address[:8]}...")
+                    except: pass
+                
                 db.close()
             except Exception as e:
-                print(f"⚠️ Failed to load Solana key from DB: {e}")
+                print(f"⚠️ Failed to load Solana keys: {e}")
 
-            self.dex_trader = DexTrader(private_key=sol_priv)
-            if self.dex_trader.wallet_address:
-                print(f"🦊 DEX Auto-Trading ENABLED. Wallet: {self.dex_trader.wallet_address[:8]}...")
+            # Legacy pointer (use first trader as primary reference)
+            self.dex_trader = self.dex_traders[0] if self.dex_traders else None
+            
+            if self.dex_traders:
+                print(f"🦊 DEX Auto-Trading ENABLED for {len(self.dex_traders)} wallets.")
         else:
+            self.dex_traders = []
             self.dex_trader = None
         
         # DEX Auto-trading configuration
@@ -241,30 +266,35 @@ class AlertSystem(commands.Cog):
                             
                             trade_happened = False
                             
-                            # AUTO-TRADE logic
+                            # AUTO-TRADE logic (Multi-User)
                             if (self.dex_auto_trade and 
-                                self.dex_trader and 
-                                self.dex_trader.wallet_address and
+                                self.dex_traders and 
                                 info['chain'] == 'solana'):
                                 
-                                dex_positions = len(self.dex_trader.positions)
-                                
                                 if safety_score >= self.dex_min_safety_score and liquidity >= self.dex_min_liquidity:
-                                    if dex_positions < self.dex_max_positions:
-                                        if token_address not in self.dex_trader.positions:
-                                            trade_result = self.dex_trader.buy_token(token_address)
-                                            if trade_result.get('success'):
-                                                # New: Record entry price for PnL tracking
-                                                self.dex_trader.positions[token_address]['entry_price_usd'] = info['price_usd']
-                                                trade_happened = True
-                                                embed.add_field(
-                                                    name="🤖 AUTO-TRADE EXECUTED", 
-                                                    value=f"Bought with 0.05 SOL\nTX: `{trade_result['signature'][:16]}...`", 
-                                                    inline=False
-                                                )
-                                                embed.color = discord.Color.green()
-                                            else:
-                                                embed.add_field(name="⚠️ Trade Failed", value=trade_result.get('error', 'Unknown'), inline=False)
+                                    
+                                    # Execute for EACH trader
+                                    for trader in self.dex_traders:
+                                        dex_positions = len(trader.positions)
+                                        
+                                        if dex_positions < self.dex_max_positions:
+                                            if token_address not in trader.positions:
+                                                trade_result = trader.buy_token(token_address)
+                                                
+                                                user_label = getattr(trader, 'user_id', 'Main')
+                                                
+                                                if trade_result.get('success'):
+                                                    # New: Record entry price for PnL tracking
+                                                    trader.positions[token_address]['entry_price_usd'] = info['price_usd']
+                                                    trade_happened = True
+                                                    embed.add_field(
+                                                        name=f"🤖 BOUGHT (User {user_label})", 
+                                                        value=f"TX: `{trade_result['signature'][:15]}...`", 
+                                                        inline=False
+                                                    )
+                                                    embed.color = discord.Color.green()
+                                                else:
+                                                    embed.add_field(name=f"⚠️ Failed (User {user_label})", value=trade_result.get('error', 'Unknown'), inline=False)
                                         else:
                                             # Already holding
                                             pass
@@ -284,30 +314,33 @@ class AlertSystem(commands.Cog):
                                 await channel_memes.send(embed=embed)
                                 self.last_alert_times[token_address] = now
                         
-                        # EXIT LOGIC (Take Profit / Stop Loss)
-                        elif self.dex_trader and token_address in self.dex_trader.positions:
-                            pos = self.dex_trader.positions[token_address]
-                            entry_price = pos.get('entry_price_usd')
-                            should_sell = False
-                            reason = ""
-                            
-                            if entry_price:
-                                pnl = ((info['price_usd'] - entry_price) / entry_price) * 100
-                                if pnl >= 20.0: # TP: +20% (Tighter to secure wins)
-                                    should_sell = True
-                                    reason = f"🎯 Take Profit (+{pnl:.1f}%)"
-                                elif pnl <= -10.0: # SL: -10% (Tighter to prevent bags)
-                                    should_sell = True
-                                    reason = f"🛑 Stop Loss ({pnl:.1f}%)"
-                            
-                            # Fallback dump check
-                            if not should_sell and info['price_change_5m'] <= -15.0:
-                                should_sell = True
-                                reason = f"🚨 Crash Detected (-15% in 5m)"
-                                
-                            if should_sell:
-                                self.dex_trader.sell_token(token_address)
-                                await channel_memes.send(f"{reason}: Sold {info['symbol']}")
+                        # EXIT LOGIC (Multi-User - ALWAYS CHECK)
+                        if self.dex_traders and info['chain'] == 'solana':
+                            for trader in self.dex_traders:
+                                if token_address in trader.positions:
+                                    pos = trader.positions[token_address]
+                                    entry_price = pos.get('entry_price_usd')
+                                    should_sell = False
+                                    reason = ""
+                                    user_label = getattr(trader, 'user_id', 'Main')
+                                    
+                                    if entry_price:
+                                        pnl = ((info['price_usd'] - entry_price) / entry_price) * 100
+                                        if pnl >= 20.0: # TP: +20% (Tighter to secure wins)
+                                            should_sell = True
+                                            reason = f"🎯 Take Profit (+{pnl:.1f}%)"
+                                        elif pnl <= -10.0: # SL: -10% (Tighter to prevent bags)
+                                            should_sell = True
+                                            reason = f"🛑 Stop Loss ({pnl:.1f}%)"
+                                    
+                                    # Fallback dump check
+                                    if not should_sell and info['price_change_5m'] <= -15.0:
+                                        should_sell = True
+                                        reason = f"🚨 Crash Detected (-15% in 5m)"
+                                        
+                                    if should_sell:
+                                        trader.sell_token(token_address)
+                                        await channel_memes.send(f"{reason}: USER {user_label} Sold {info['symbol']}")
 
                 except Exception as ex:
                     print(f"⚠️ Error checking DEX token {item.get('address')}: {ex}")
