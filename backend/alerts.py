@@ -384,6 +384,7 @@ class AlertSystem(commands.Cog):
                                         pnl = ((info['price_usd'] - entry_price) / entry_price) * 100
                                         
                                         # Status Pulse (Approx every ~5 mins if loop is 15s)
+                                        # Status Pulse (Approx every ~5 mins)
                                         if not hasattr(self, 'pnl_tick'): self.pnl_tick = 0
                                         self.pnl_tick += 1
                                         if self.pnl_tick % 40 == 0: 
@@ -397,9 +398,8 @@ class AlertSystem(commands.Cog):
                                             reason = f"🛑 Stop Loss ({pnl:.1f}%)"
                                         
                                         # PSYCHOLOGICAL RESISTANCE EXITS (Research Phase 9)
-                                        # Front-run 100k, 500k, 1M MC walls
                                         mc = info.get('market_cap', 0)
-                                        if not should_sell and pnl > 5.0: # Only if in profit
+                                        if not should_sell and pnl > 5.0: 
                                             if 95000 <= mc <= 105000:
                                                 should_sell = True
                                                 reason = f"🧠 Psych Exit: 100k MC Wall ({pnl:.1f}%)"
@@ -409,6 +409,22 @@ class AlertSystem(commands.Cog):
                                             elif 950000 <= mc <= 1050000:
                                                 should_sell = True
                                                 reason = f"🧠 Psych Exit: 1M MC Wall ({pnl:.1f}%)"
+
+                                        # --- GARBAGE COLLECTION (Bag Holding Fix) ---
+                                        # 1. Liquidity Death Check
+                                        current_liq = info.get('liquidity_usd', 0)
+                                        if current_liq < 3000:
+                                            should_sell = True
+                                            reason = f"☠️ Liquidity Death (${current_liq:,.0f} < $3k)"
+                                        
+                                        # 2. Safety Degradation Check (Audit occasionally)
+                                        # Only check every ~5 mins (synced with status pulse) to save API credits
+                                        if not should_sell and self.pnl_tick % 20 == 0:
+                                            latest_audit = await self.safety.check_token(token_address, "solana")
+                                            current_score = latest_audit.get('safety_score', 100)
+                                            if current_score < 40:
+                                                should_sell = True
+                                                reason = f"🛡️ Safety Critical: Score Dropped to {current_score}"
                                     
                                     # Fallback dump check
                                     if not should_sell and info['price_change_5m'] <= -30.0:
@@ -416,8 +432,11 @@ class AlertSystem(commands.Cog):
                                         reason = f"🚨 Crash Detected (-30% in 5m)"
                                         
                                     if should_sell:
-                                        trader.sell_token(token_address)
-                                        await channel_memes.send(f"{reason}: USER {user_label} Sold {info['symbol']}")
+                                        res = trader.sell_token(token_address)
+                                        if res.get('success'):
+                                            await channel_memes.send(f"{reason}: USER {user_label} Sold {info['symbol']}")
+                                        else:
+                                            print(f"⚠️ Sell failed for {info['symbol']}: {res.get('error')}")
 
                 except Exception as ex:
                     print(f"⚠️ Error checking DEX token {item.get('address')}: {ex}")
