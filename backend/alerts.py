@@ -367,7 +367,9 @@ class AlertSystem(commands.Cog):
                 
                 # Check if pumping enough (1% in 5 min)
                 change_5m = float(pair.get('priceChange', {}).get('m5', 0))
-                if change_5m >= 1.0:
+                liquidity = float(pair.get('liquidity', {}).get('usd', 0))
+                
+                if change_5m >= 1.0 and liquidity >= self.dex_min_liquidity:
                     # Quick safety check
                     audit = await self.safety.check_token(addr, "solana")
                     safety_score = audit.get('safety_score', 0)
@@ -382,7 +384,26 @@ class AlertSystem(commands.Cog):
                                 color=discord.Color.gold()
                             )
                             embed.add_field(name="Price", value=f"${float(pair.get('priceUsd', 0)):.8f}", inline=True)
-                            embed.add_field(name="Liquidity", value=f"${float(pair.get('liquidity', {}).get('usd', 0)):,.0f}", inline=True)
+                            embed.add_field(name="Liquidity", value=f"${liquidity:,.0f}", inline=True)
+                            
+                            # IMMEDIATE SNIPE when discovery finds a good gem
+                            if (self.dex_auto_trade and 
+                                self.dex_trader and 
+                                self.dex_trader.wallet_address and
+                                addr not in self.dex_trader.positions and
+                                len(self.dex_trader.positions) < self.dex_max_positions):
+                                
+                                trade_result = self.dex_trader.buy_token(addr)
+                                if trade_result.get('success'):
+                                    embed.add_field(
+                                        name="🤖 SNIPED!", 
+                                        value=f"TX: `{trade_result['signature'][:16]}...`", 
+                                        inline=False
+                                    )
+                                    embed.color = discord.Color.green()
+                                else:
+                                    embed.add_field(name="⚠️ Snipe Failed", value=trade_result.get('error', 'Unknown')[:100], inline=False)
+                            
                             await channel_memes.send(embed=embed)
         except Exception as e:
             print(f"⚠️ Trending scan error: {e}")
