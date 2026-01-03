@@ -16,3 +16,4 @@ passlib[bcrypt]
 psycopg2-binary
 solders
 base58
+pynacl

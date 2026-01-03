@@ -8,7 +8,8 @@ import base58
 import requests
 from solders.keypair import Keypair
 from solders.transaction import VersionedTransaction
-from solders.message import to_bytes_versioned
+from solders.signature import Signature
+from nacl.signing import SigningKey
 
 class DexTrader:
     def __init__(self, private_key=None):
@@ -153,24 +154,24 @@ class DexTrader:
             # Parse the transaction from Jupiter
             unsigned_tx = VersionedTransaction.from_bytes(tx_bytes)
             
-            # The transaction from Jupiter already has placeholder signatures
-            # We need to sign the MESSAGE (not the whole tx) and replace the first signature
-            
-            # Get the message bytes for signing
-            # Note: MessageV0 in older Solders uses bytes(), not .serialize()
+            # Get the message bytes - try multiple methods
             message = unsigned_tx.message
             try:
-                # Try .serialize() first (newer Solders)
-                message_bytes = message.serialize()
-            except AttributeError:
-                # Fall back to bytes() (older Solders)
                 message_bytes = bytes(message)
+            except:
+                message_bytes = message.serialize() if hasattr(message, 'serialize') else bytes(message)
             
-            # Sign the serialized message
-            signature = self.keypair.sign_message(message_bytes)
+            # Sign using nacl directly (bypasses Solders API issues)
+            # Extract private key bytes (first 32 bytes of the 64-byte secret key)
+            secret_key_bytes = bytes(self.keypair)
+            signing_key = SigningKey(secret_key_bytes[:32])
+            signed_message = signing_key.sign(message_bytes)
+            signature_bytes = signed_message.signature  # 64 bytes
             
-            # Create a new transaction with our signature
-            # The first signature slot is always for the fee payer (our wallet)
+            # Create Solders Signature object
+            signature = Signature.from_bytes(signature_bytes)
+            
+            # Reconstruct transaction with our signature
             signed_tx = VersionedTransaction.populate(message, [signature])
             
             # 4. Send transaction
