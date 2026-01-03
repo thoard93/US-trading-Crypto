@@ -382,6 +382,13 @@ class AlertSystem(commands.Cog):
                                     
                                     if entry_price:
                                         pnl = ((info['price_usd'] - entry_price) / entry_price) * 100
+                                        
+                                        # Status Pulse (Approx every ~5 mins if loop is 15s)
+                                        if not hasattr(self, 'pnl_tick'): self.pnl_tick = 0
+                                        self.pnl_tick += 1
+                                        if self.pnl_tick % 40 == 0: 
+                                            print(f"👀 Status {info['symbol']} (User {user_label}): {pnl:+.2f}% (TP: +15 | SL: -10)")
+
                                         if pnl >= 15.0: # TP: +15% (Aggressive Recycling)
                                             should_sell = True
                                             reason = f"🎯 Take Profit (+{pnl:.1f}%)"

@@ -291,7 +291,8 @@ class DexTrader:
         
         amount_lamports = int(sol_amount * 1e9)
         
-        print(f"🔄 BUYING {token_mint} | SOL: {sol_amount:.4f}")
+        user_id = getattr(self, 'user_id', 'Unknown')
+        print(f"🔄 BUYING (User {user_id}) {token_mint} | SOL: {sol_amount:.4f}")
 
         # First attempt (Default Slippage)
         result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports)
