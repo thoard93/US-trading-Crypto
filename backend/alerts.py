@@ -395,6 +395,20 @@ class AlertSystem(commands.Cog):
                                         elif pnl <= -25.0: # SL: -25% (Room to breathe)
                                             should_sell = True
                                             reason = f"🛑 Stop Loss ({pnl:.1f}%)"
+                                        
+                                        # PSYCHOLOGICAL RESISTANCE EXITS (Research Phase 9)
+                                        # Front-run 100k, 500k, 1M MC walls
+                                        mc = info.get('market_cap', 0)
+                                        if not should_sell and pnl > 5.0: # Only if in profit
+                                            if 95000 <= mc <= 105000:
+                                                should_sell = True
+                                                reason = f"🧠 Psych Exit: 100k MC Wall ({pnl:.1f}%)"
+                                            elif 480000 <= mc <= 520000:
+                                                should_sell = True
+                                                reason = f"🧠 Psych Exit: 500k MC Wall ({pnl:.1f}%)"
+                                            elif 950000 <= mc <= 1050000:
+                                                should_sell = True
+                                                reason = f"🧠 Psych Exit: 1M MC Wall ({pnl:.1f}%)"
                                     
                                     # Fallback dump check
                                     if not should_sell and info['price_change_5m'] <= -30.0:

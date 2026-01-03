@@ -60,6 +60,7 @@ class DexScout:
             "price_change_1h": float(pair_data.get('priceChange', {}).get('h1', 0)),
             "volume_24h": float(pair_data.get('volume', {}).get('h24', 0)),
             "liquidity_usd": float(pair_data.get('liquidity', {}).get('usd', 0)),
+            "market_cap": float(pair_data.get('fdv', 0)), # Use FDV as Market Cap proxy
             "url": pair_data.get('url'),
             "chain": pair_data.get('chainId')
         }
