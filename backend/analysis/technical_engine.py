@@ -6,46 +6,84 @@ class TechnicalAnalysis:
     def analyze_trend(df, aggressive_mode=True):
         """
         Performs technical analysis on a dataframe of OHLCV data.
-        aggressive_mode=True enables scalping thresholds (RSI 35/65 instead of 30/70)
+        aggressive_mode=True enables scalping thresholds (RSI 10/90 instead of 30/70)
         Returns a dictionary with indicators and a basic signal.
         """
         if df is None or len(df) < 5:
             return {"error": "Insufficient data"}
         
-        # Scalping Mode: RSI(2) + EMA(9) for hyper-fast signals
+        # 0. Ensure DatetimeIndex for VWAP compatibility
+        # If index is currently RangeIndex (0,1,2...), set it to timestamp column
+        if 'timestamp' in df.columns and not isinstance(df.index, pd.DatetimeIndex):
+            try:
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df.set_index('timestamp', inplace=True)
+            except Exception as e:
+                # If timestamp conversion fails, we proceed without VWAP
+                pass
+
+        # 1. Define Base Variables
+        # Note: We re-fetch last_row LATER after adding indicators
+        current_close = float(df.iloc[-1]['close'])
+        
+        # 2. Define Thresholds
+        RSI_OVERSOLD = 35 if aggressive_mode else 30
+        RSI_OVERBOUGHT = 65 if aggressive_mode else 70
+
+        # 3. Scalping Mode: RSI(2) + EMA(9) for hyper-fast signals
         if aggressive_mode:
             if len(df) >= 2: df.ta.rsi(length=2, append=True)
             if len(df) >= 9: df.ta.ema(length=9, append=True)
+            
+            # Re-fetch row with new indicators
+            last_row = df.iloc[-1]
             rsi_val = last_row.get('RSI_2', 50)
-            ema_fast = last_row.get('EMA_9', close)
+            ema_fast = last_row.get('EMA_9', current_close)
             
             # Scalping Thresholds (Extremely sensitive)
-            if rsi_val < 10 and close > ema_fast: # Reversal Up
+            if rsi_val < 10 and current_close > ema_fast: # Reversal Up
                  return {
-                    "price": round(close, 8),
+                    "price": round(current_close, 8),
                     "rsi": round(rsi_val, 2),
                     "signal": "BUY",
                     "reason": f"⚡ SCALP BUY: RSI(2) < 10 & Price > EMA(9)",
                     "ema_status": "Above EMA9"
                  }
-            if rsi_val > 90 and close < ema_fast: # Reversal Down
+            if rsi_val > 90 and current_close < ema_fast: # Reversal Down
                  return {
-                    "price": round(close, 8),
+                    "price": round(current_close, 8),
                     "rsi": round(rsi_val, 2),
                     "signal": "SELL",
                     "reason": f"⚡ SCALP SELL: RSI(2) > 90 & Price < EMA(9)",
                     "ema_status": "Below EMA9"
                  }
 
-        # Standard Mode: VWAP + RSI(14)
+        # 4. Standard Mode: VWAP + RSI(14) calculation
         if len(df) >= 14:
-            df.ta.vwap(append=True) # Volume Weighted Average Price
-            
-        vwap = last_row.get('VWAP_D', 0) # Daily VWAP
+            df.ta.rsi(length=14, append=True)
+            try:
+                # VWAP requires DatetimeIndex (handled in step 0)
+                df.ta.vwap(append=True) 
+            except:
+                pass # Skip VWAP if index issues persist
+
+        if len(df) >= 20:
+            df.ta.ema(length=20, append=True)
+        if len(df) >= 50:
+            df.ta.ema(length=50, append=True)
+
+        # Re-fetch last_row after ALL indicators added
+        last_row = df.iloc[-1]
+        prev_row = df.iloc[-2] if len(df) >= 2 else last_row
         
-        # 14-20 bars: Basic RSI check
+        close = float(last_row['close'])
+        prev_close = float(prev_row['close'])
+        
+        rsi = last_row.get('RSI_14', 50)
+        vwap = last_row.get('VWAP_D', 0) 
+        
+        # 5. Low Data Handling (< 20 bars)
         if len(df) < 20:
-             # Syntax Verified
             signal = "NEUTRAL"
             reason = "Collecting more data for trend analysis"
             
@@ -63,9 +101,11 @@ class TechnicalAnalysis:
                 "reason": reason,
                 "ema_status": "N/A"
             }
+
+        # 6. Full Analysis (> 20 bars)
         ema_20 = last_row.get('EMA_20', close)
         prev_ema_20 = prev_row.get('EMA_20', prev_close)
-        ema_50 = last_row.get('EMA_50', ema_20)  # Fallback to EMA_20 if no EMA_50
+        ema_50 = last_row.get('EMA_50', ema_20)
 
         signal = "NEUTRAL"
         reason = "No strong signal"
@@ -80,21 +120,23 @@ class TechnicalAnalysis:
         
         # PRIORITY 2: EMA Crossover (Momentum)
         elif prev_close < prev_ema_20 and close > ema_20:
-            # Price crossed ABOVE EMA20 = Bullish Momentum
             signal = "BUY"
             reason = "📈 Momentum: Price crossed above EMA20"
         elif prev_close > prev_ema_20 and close < ema_20:
-            # Price crossed BELOW EMA20 = Bearish Momentum
             signal = "SELL"
             reason = "📉 Momentum: Price crossed below EMA20"
             
-        # PRIORITY 3: Trend Detection (for info)
+        # PRIORITY 3: Trend Detection
         elif close > ema_20 and ema_20 > ema_50:
             signal = "BULLISH"
             reason = "📈 Strong Uptrend: Price > EMA20 > EMA50"
         elif close < ema_20 and ema_20 < ema_50:
             signal = "BEARISH"
             reason = "📉 Downtrend: Price < EMA20 < EMA50"
+
+        # VWAP Confirmation (Optional append)
+        if signal == "BUY" and vwap > 0 and close > vwap:
+             reason += " (VWAP Confirmed)"
 
         return {
             "price": round(close, 8),
@@ -103,4 +145,3 @@ class TechnicalAnalysis:
             "reason": reason,
             "ema_status": "Above" if close > ema_20 else "Below"
         }
-
