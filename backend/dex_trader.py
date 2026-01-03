@@ -275,7 +275,6 @@ class DexTrader:
         
         # Safety check & Dynamic Sizing
         balance = self.get_sol_balance()
-        balance = self.get_sol_balance()
         required = sol_amount + 0.04 # Buffer increased
         
         if balance < required:
@@ -292,13 +291,15 @@ class DexTrader:
         
         amount_lamports = int(sol_amount * 1e9)
         
+        print(f"🔄 BUYING {token_mint} | SOL: {sol_amount:.4f}")
+
         # First attempt (Default Slippage)
         result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports)
         
         # Retry logic for Slippage (0x177e)
         if 'error' in result and '0x177e' in str(result['error']):
-             print("⚠️ Slippage exceeded (15%). Retrying with 30%...")
-             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=3000)
+             print("⚠️ Buy Slippage exceeded (15%). Retrying with 40%...")
+             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=4000)
         
         if result.get('success'):
             # Track position
@@ -323,6 +324,8 @@ class DexTrader:
         else:
              sell_amount = int(token_balance * (percentage / 100))
         
+        print(f"🔄 SELLING {token_mint} | Amount: {sell_amount}")
+
         result = self.execute_swap(token_mint, self.SOL_MINT, sell_amount)
         
         # Retry logic for Slippage (0x177e) on SELLS - Force Exit
