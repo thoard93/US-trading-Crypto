@@ -325,6 +325,11 @@ class DexTrader:
         
         result = self.execute_swap(token_mint, self.SOL_MINT, sell_amount)
         
+        # Retry logic for Slippage (0x177e) on SELLS - Force Exit
+        if 'error' in result and '0x177e' in str(result['error']):
+             print("⚠️ Sell Slippage exceeded (15%). Retrying with 50% (Force Exit)...")
+             result = self.execute_swap(token_mint, self.SOL_MINT, sell_amount, override_slippage=5000)
+        
         if result.get('success') and percentage == 100:
             # Remove from positions
             if token_mint in self.positions:
