@@ -104,8 +104,8 @@ class DexTrader:
         try:
             slippage_bps = override_slippage if override_slippage else self.slippage_bps
             
-            # Using public Jupiter API v6
-            url = f"https://quote-api.jup.ag/v6/quote?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}"
+            # Using public Jupiter API v6 (Reverted due to DNS issues with quote-api.jup.ag)
+            url = f"https://public.jupiterapi.com/quote?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}"
             
             response = requests.get(url)
             

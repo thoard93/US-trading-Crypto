@@ -319,6 +319,9 @@ class AlertSystem(commands.Cog):
                             
                             trade_happened = False
                             
+                            if info['chain'] != 'solana':
+                                embed.set_footer(text=f"ℹ️ Auto-Trade Skipped: {info['chain'].upper()} not supported (Solana Only)")
+
                             # AUTO-TRADE logic (Multi-User)
                             if (self.dex_auto_trade and 
                                 self.dex_traders and 
