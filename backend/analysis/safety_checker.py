@@ -105,6 +105,11 @@ class SafetyChecker:
                         elif level == "warn":
                             score -= 10
                             risks.append(f"⚠️ {name}")
+
+                        # 2a. SPECIAL: Check for Whale dominance (User Request)
+                        if "holder" in name.lower() or "concentration" in name.lower():
+                             score -= 50 # Instant Fail territory
+                             risks.append(f"🚨 WHALE ALERT: {name}")
                             
                     # 3. Freeze Authority check (explicit if not in risks)
                     if data.get("token", {}).get("freezeAuthority"):

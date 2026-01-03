@@ -620,7 +620,10 @@ class AlertSystem(commands.Cog):
 
     async def _process_alert(self, channel, symbol, data, asset_type):
         if data is not None:
-            result = self.analyzer.analyze_trend(data)
+             # Enable Aggressive Scalping Mode for Crypto/Meme
+            is_scalping = asset_type in ["Crypto", "Meme"]
+            result = self.analyzer.analyze_trend(data, aggressive_mode=is_scalping)
+            
             # Trigger on BUY, SELL, BULLISH, or BEARISH
             if 'signal' in result and result['signal'] != 'NEUTRAL':
                 # Map colors

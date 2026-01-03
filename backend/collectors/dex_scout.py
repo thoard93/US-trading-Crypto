@@ -102,6 +102,7 @@ class DexScout:
                         filtered = [
                             p for p in pairs
                             if float(p.get('liquidity', {}).get('usd', 0)) >= min_liquidity
+                            and p.get('dexId') == 'raydium' # "Final Stretch" Strategy: Only migrated tokens
                         ]
                         # Sort by 5m price change to find pumping gems
                         filtered.sort(

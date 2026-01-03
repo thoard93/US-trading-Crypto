@@ -12,54 +12,40 @@ class TechnicalAnalysis:
         if df is None or len(df) < 5:
             return {"error": "Insufficient data"}
         
-        # RSI Thresholds based on mode
-        RSI_OVERSOLD = 35 if aggressive_mode else 30
-        RSI_OVERBOUGHT = 65 if aggressive_mode else 70
-        
-        # Calculate Indicators (Need at least 14 for RSI, but we can compute what we have)
+        # Scalping Mode: RSI(2) + EMA(9) for hyper-fast signals
+        if aggressive_mode:
+            if len(df) >= 2: df.ta.rsi(length=2, append=True)
+            if len(df) >= 9: df.ta.ema(length=9, append=True)
+            rsi_val = last_row.get('RSI_2', 50)
+            ema_fast = last_row.get('EMA_9', close)
+            
+            # Scalping Thresholds (Extremely sensitive)
+            if rsi_val < 10 and close > ema_fast: # Reversal Up
+                 return {
+                    "price": round(close, 8),
+                    "rsi": round(rsi_val, 2),
+                    "signal": "BUY",
+                    "reason": f"⚡ SCALP BUY: RSI(2) < 10 & Price > EMA(9)",
+                    "ema_status": "Above EMA9"
+                 }
+            if rsi_val > 90 and close < ema_fast: # Reversal Down
+                 return {
+                    "price": round(close, 8),
+                    "rsi": round(rsi_val, 2),
+                    "signal": "SELL",
+                    "reason": f"⚡ SCALP SELL: RSI(2) > 90 & Price < EMA(9)",
+                    "ema_status": "Below EMA9"
+                 }
+
+        # Standard Mode: VWAP + RSI(14)
         if len(df) >= 14:
-            df.ta.rsi(length=14, append=True)
-        if len(df) >= 20:
-            df.ta.ema(length=20, append=True)
-        if len(df) >= 50:
-            df.ta.ema(length=50, append=True)
+            df.ta.vwap(append=True) # Volume Weighted Average Price
+            
+        vwap = last_row.get('VWAP_D', 0) # Daily VWAP
         
-        last_row = df.iloc[-1]
-        prev_row = df.iloc[-2] if len(df) >= 2 else last_row
-        close = last_row['close']
-        prev_close = prev_row['close']
-        
-        # Minimum 14 bars for RSI-only analysis
-        if len(df) < 14:
-            return {
-                "price": round(close, 8),
-                "rsi": "N/A",
-                "signal": "NEUTRAL",
-                "reason": f"Warming up engine ({len(df)}/14 bars for RSI)",
-                "ema_status": "N/A"
-            }
-        
-        rsi = last_row.get('RSI_14', 50)  # Default to neutral if not computed
-        
-        # 14-20 bars: RSI-only analysis
+        # 14-20 bars: Basic RSI check
         if len(df) < 20:
-            signal = "NEUTRAL"
-            reason = "Collecting more data for trend analysis"
-            
-            if rsi < RSI_OVERSOLD:
-                signal = "BUY"
-                reason = f"🚀 Oversold (RSI < {RSI_OVERSOLD}) - Potential low entry"
-            elif rsi > RSI_OVERBOUGHT:
-                signal = "SELL"
-                reason = f"⚠️ Overbought (RSI > {RSI_OVERBOUGHT}) - Potential local top"
-            
-            return {
-                "price": round(close, 8),
-                "rsi": round(rsi, 2),
-                "signal": signal,
-                "reason": reason,
-                "ema_status": "N/A"
-            }
+
         
         ema_20 = last_row.get('EMA_20', close)
         prev_ema_20 = prev_row.get('EMA_20', prev_close)
