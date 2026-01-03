@@ -546,7 +546,12 @@ class AlertSystem(commands.Cog):
                     scalp_mode = (asset_type == "Meme" or symbol_price < 1.0)
 
                     if result['signal'] == 'BUY':
-                        # 0. Check Cooldown (Wash Trade Prevention)
+                        # 0. Check Restricted List (Session Blacklist)
+                        if symbol in self.restricted_assets:
+                            print(f"🚫 {symbol} is blacklisted for this session. Skipping.")
+                            return
+                            
+                        # 0a. Check Cooldown (Wash Trade Prevention)
                         if symbol in self.last_exit_times:
                             elapsed = (datetime.datetime.now() - self.last_exit_times[symbol]).total_seconds()
                             if elapsed < 90: # DAY TRADER MODE: 90 second cooldown (was 5 min)
@@ -606,6 +611,13 @@ class AlertSystem(commands.Cog):
                             
                             if trade_result.get('success'):
                                 self.stock_positions[symbol] = trade_result
+                            else:
+                                # Handle Stock Specific Errors (Wash Trade)
+                                err = trade_result.get('error', '').lower()
+                                if "wash" in err or "complex order" in err:
+                                    print(f"🚫 {symbol} wash trade detected. Blacklisting for session.")
+                                    self.restricted_assets.add(symbol)
+                                    return
                         else:
                             trade_result = self.trader.execute_market_buy(symbol, amount_usdt=trade_amount)
                             
