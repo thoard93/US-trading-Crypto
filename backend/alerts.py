@@ -129,11 +129,24 @@ class AlertSystem(commands.Cog):
             sol_balance = self.dex_trader.get_sol_balance()
             print(f"💰 DEX Wallet SOL Balance: {sol_balance:.4f} SOL")
         
-        # Log Stock trading status
+        # Sync Stock positions from Alpaca (CRITICAL: prevents wash trade errors)
         if self.stocks and self.stocks.api:
-            account = self.stocks.get_account()
-            if account:
-                print(f"📈 Alpaca Account - Cash: ${account['cash']:.2f}, Buying Power: ${account['buying_power']:.2f}")
+            try:
+                positions = self.stocks.api.list_positions()
+                for pos in positions:
+                    symbol = pos.symbol
+                    self.stock_positions[symbol] = {
+                        'qty': float(pos.qty),
+                        'avg_entry_price': float(pos.avg_entry_price),
+                        'market_value': float(pos.market_value)
+                    }
+                print(f"📈 Synced {len(positions)} Alpaca positions: {list(self.stock_positions.keys())}")
+                
+                account = self.stocks.get_account()
+                if account:
+                    print(f"💵 Alpaca - Cash: ${account['cash']:.2f}, Buying Power: ${account['buying_power']:.2f}")
+            except Exception as e:
+                print(f"⚠️ Failed to sync Alpaca positions: {e}")
 
 
 
@@ -525,6 +538,12 @@ class AlertSystem(commands.Cog):
                                 return
                             if len(self.stock_positions) >= self.stock_max_positions:
                                 print(f"⚠️ Max stock positions ({self.stock_max_positions}) reached. Skipping {symbol}.")
+                                return
+                            
+                            # Check buying power before trading
+                            account = self.stocks.get_account()
+                            if account and account['buying_power'] < self.stock_trade_amount:
+                                # Silently skip - not enough buying power
                                 return
                             
                             trade_result = self.trader.execute_market_buy_stock(symbol, notional=self.stock_trade_amount)

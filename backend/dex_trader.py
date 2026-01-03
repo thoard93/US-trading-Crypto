@@ -150,20 +150,22 @@ class DexTrader:
             # 3. Deserialize, sign, and send transaction
             tx_bytes = base64.b64decode(swap_tx_base64)
             
-            # OLD API (broken): tx.sign([self.keypair])
-            # NEW API: VersionedTransaction doesn't have .sign() method
-            # We need to sign the message and create a new transaction with signatures
-            
-            # Parse the unsigned transaction
+            # Parse the transaction from Jupiter
             unsigned_tx = VersionedTransaction.from_bytes(tx_bytes)
             
-            # Sign the message with our keypair
-            message_bytes = bytes(unsigned_tx.message)
+            # The transaction from Jupiter already has placeholder signatures
+            # We need to sign the MESSAGE (not the whole tx) and replace the first signature
+            
+            # Get the serialized message bytes (this is what we sign)
+            message = unsigned_tx.message
+            message_bytes = message.serialize()
+            
+            # Sign the serialized message
             signature = self.keypair.sign_message(message_bytes)
             
-            # Create signed transaction with our signature
-            # The transaction expects signatures in order of accounts
-            signed_tx = VersionedTransaction.populate(unsigned_tx.message, [signature])
+            # Create a new transaction with our signature
+            # The first signature slot is always for the fee payer (our wallet)
+            signed_tx = VersionedTransaction.populate(message, [signature])
             
             # 4. Send transaction
             signed_tx_bytes = bytes(signed_tx)
