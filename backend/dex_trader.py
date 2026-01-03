@@ -9,6 +9,7 @@ import requests
 from solders.keypair import Keypair
 from solders.transaction import VersionedTransaction
 from solders.signature import Signature
+from solders.message import to_bytes_versioned
 from nacl.signing import SigningKey
 
 class DexTrader:
@@ -16,6 +17,7 @@ class DexTrader:
         # Load wallet from environment or argument
         private_key = private_key or os.getenv('SOLANA_PRIVATE_KEY')
         self.rpc_url = os.getenv('SOLANA_RPC_URL', 'https://api.mainnet-beta.solana.com')
+        self._raw_secret = None  # Store raw secret for signing
         
         if private_key:
             try:
@@ -26,6 +28,9 @@ class DexTrader:
                 else:
                     # Base58 format
                     key_bytes = base58.b58decode(private_key)
+                
+                # Store the raw bytes for signing (first 32 = seed, or all 64 if full key)
+                self._raw_secret = key_bytes
                 
                 self.keypair = Keypair.from_bytes(key_bytes)
                 self.wallet_address = str(self.keypair.pubkey())
@@ -154,22 +159,29 @@ class DexTrader:
             # Parse the transaction from Jupiter
             unsigned_tx = VersionedTransaction.from_bytes(tx_bytes)
             
-            # Get the message bytes - try multiple methods
+            # Get the message bytes using the CORRECT method for versioned transactions
             message = unsigned_tx.message
+            message_bytes = to_bytes_versioned(message)
+            
+            # Try Solders native signing first (most reliable if available)
             try:
-                message_bytes = bytes(message)
-            except:
-                message_bytes = message.serialize() if hasattr(message, 'serialize') else bytes(message)
+                signature = self.keypair.sign_message(message_bytes)
+                print(f"🔐 Signed using Solders native method")
+            except Exception as e:
+                print(f"⚠️ Solders sign failed ({e}), using nacl fallback")
+                # Fallback to nacl signing
+                if self._raw_secret and len(self._raw_secret) >= 32:
+                    signing_key = SigningKey(self._raw_secret[:32])
+                else:
+                    secret_key_bytes = bytes(self.keypair)
+                    signing_key = SigningKey(secret_key_bytes[:32])
+                
+                signed_message = signing_key.sign(message_bytes)
+                signature = Signature.from_bytes(signed_message.signature)
             
-            # Sign using nacl directly (bypasses Solders API issues)
-            # Extract private key bytes (first 32 bytes of the 64-byte secret key)
-            secret_key_bytes = bytes(self.keypair)
-            signing_key = SigningKey(secret_key_bytes[:32])
-            signed_message = signing_key.sign(message_bytes)
-            signature_bytes = signed_message.signature  # 64 bytes
-            
-            # Create Solders Signature object
-            signature = Signature.from_bytes(signature_bytes)
+            # Debug info
+            print(f"🔐 Signing with wallet: {self.wallet_address}")
+            print(f"🔐 Message size: {len(message_bytes)} bytes")
             
             # Reconstruct transaction with our signature
             signed_tx = VersionedTransaction.populate(message, [signature])
