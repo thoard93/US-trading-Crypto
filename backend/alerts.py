@@ -90,7 +90,7 @@ class AlertSystem(commands.Cog):
         self.dex_auto_trade = True  # Toggle for DEX auto-trading
         self.dex_min_safety_score = 50  # Lowered from 70 to 50 for MAXIMUM ACTION
         self.dex_min_liquidity = 5000  # Raised to $5k (Quality Control)
-        self.dex_max_positions = 10  # Increased from 5 to 10 (User Request)
+        self.dex_max_positions = 15  # Increased from 10 to 15 (User Request)
         
         # STOCK Auto-trading configuration
         self.stock_auto_trade = True  # Toggle for stock auto-trading
@@ -692,7 +692,7 @@ class AlertSystem(commands.Cog):
                 if (asset_type in ["Crypto", "Meme"] or asset_type == "Stock") and result['signal'] in ['BUY', 'SELL']:
                     symbol_price = result['price']
                     trade_result = None
-                    MAX_POSITIONS = 10
+                    MAX_POSITIONS = 15
                     
                     # Kraken requires ~$10 minimum for most pairs
                     trade_amount = 10.0 
