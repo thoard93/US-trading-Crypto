@@ -273,21 +273,25 @@ class DexTrader:
         if sol_amount is None:
             sol_amount = self.max_trade_sol
         
+        # Prevent buying SOL/USDC wrappers
+        if token_mint in [self.SOL_MINT, self.USDC_MINT]:
+            return {"error": "Cannot buy SOL/USDC native wrappers"}
+
         # Safety check & Dynamic Sizing
         balance = self.get_sol_balance()
-        required = sol_amount + 0.04 # Buffer increased
+        required = sol_amount + 0.07 # Buffer increased to 0.07 SOL (~$10)
         
         if balance < required:
-            if balance > 0.05: # Stricter Safety Floor (Leave 0.04 SOL)
-                # Increase buffer to leave at least 0.04 for fees/sells
-                safe_amount = balance - 0.04 
+            if balance > 0.08: # Stricter Safety Floor
+                # Increase buffer to leave at least 0.07 for fees/rent
+                safe_amount = balance - 0.07 
                 if safe_amount < 0.01:
                     return {"error": f"Insufficient SOL for safe trade. Balance: {balance:.4f}"}
                     
                 print(f"⚠️ Low balance ({balance:.4f} SOL). Reducing buy size from {sol_amount} to {safe_amount:.4f} SOL")
                 sol_amount = safe_amount
             else:
-                return {"error": f"Insufficient SOL guardrail. Balance: {balance:.4f} < 0.05"}
+                return {"error": f"Insufficient SOL guardrail. Balance: {balance:.4f} < 0.08"}
         
         amount_lamports = int(sol_amount * 1e9)
         

@@ -816,15 +816,19 @@ class AlertSystem(commands.Cog):
                             trade_result = None # No position to sell
 
                     if trade_result and "error" not in trade_result:
+                        # Calculate amount (fallback to cost/price if exchange returns None)
+                        amt = trade_result.get('amount')
+                        if amt is None:
+                            amt = trade_amount / symbol_price
+
                         # Record position for SL/TP tracking (only for BUYs)
                         if result['signal'] == 'BUY':
-                            self.trader.track_position(symbol, symbol_price, trade_result.get('amount', 0))
+                            self.trader.track_position(symbol, symbol_price, amt)
                         
                         # --- RECORD TRADE TO DATABASE ---
                         db = SessionLocal()
                         try:
-                            # Use amount from trade_result if possible, else fallback to trade_amount / price
-                            amt = trade_result.get('amount') or (trade_amount / symbol_price)
+                            # Use calculated amt
                             new_trade = models.Trade(
                                 symbol=symbol,
                                 side=result['signal'],

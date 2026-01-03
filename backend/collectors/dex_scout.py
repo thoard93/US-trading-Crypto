@@ -102,10 +102,24 @@ class DexScout:
                         data = await response.json()
                         pairs = data.get('pairs', [])
                         
+                        # Blacklist (SOL, USDC, USDT, WSOL)
+                        BLACKLIST = [
+                            "So11111111111111111111111111111111111111112", # WSOL
+                            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # USDC
+                            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", # USDT
+                            "USDH1SM1ojwWU5QyH6qna19vk5aKqeRAFXrb5swJq2f", # USDH
+                        ]
+                        
                         filtered = []
                         current_ms = time.time() * 1000
                         
                         for p in pairs:
+                            # 0. Blacklist Check
+                            base_address = p.get('baseToken', {}).get('address', '')
+                            quote_address = p.get('quoteToken', {}).get('address', '')
+                            if base_address in BLACKLIST:
+                                continue
+
                             # 1. Base Liquidity Check
                             if float(p.get('liquidity', {}).get('usd', 0)) < min_liquidity:
                                 continue
