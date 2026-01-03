@@ -99,19 +99,16 @@ class DexTrader:
             print(f"Error getting token balance: {e}")
             return 0
     
-    def get_jupiter_quote(self, input_mint, output_mint, amount_lamports):
+    def get_jupiter_quote(self, input_mint, output_mint, amount_lamports, override_slippage=None):
         """Get swap quote from Jupiter."""
         try:
-            # url = "https://quote-api.jup.ag/v6/quote" # Failed DNS
-            url = "https://public.jupiterapi.com/quote"
-            params = {
-                "inputMint": input_mint,
-                "outputMint": output_mint,
-                "amount": str(amount_lamports),
-                "slippageBps": self.slippage_bps,
-                "onlyDirectRoutes": "false"
-            }
-            response = requests.get(url, params=params)
+            slippage_bps = override_slippage if override_slippage else self.slippage_bps
+            
+            # Using public Jupiter API v6
+            url = f"https://quote-api.jup.ag/v6/quote?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}"
+            
+            response = requests.get(url)
+            
             if response.status_code == 200:
                 return response.json()
             else:
@@ -121,14 +118,14 @@ class DexTrader:
             print(f"Error getting Jupiter quote: {e}")
             return None
     
-    def execute_swap(self, input_mint, output_mint, amount_lamports):
+    def execute_swap(self, input_mint, output_mint, amount_lamports, override_slippage=None):
         """Execute a swap via Jupiter."""
         if not self.keypair:
             return {"error": "Wallet not initialized"}
         
         try:
             # 1. Get quote
-            quote = self.get_jupiter_quote(input_mint, output_mint, amount_lamports)
+            quote = self.get_jupiter_quote(input_mint, output_mint, amount_lamports, override_slippage)
             if not quote:
                 return {"error": "Failed to get quote"}
             
@@ -204,7 +201,9 @@ class DexTrader:
             
             if 'error' in result:
                 msg = result['error']['message']
-                if '0x1' in str(msg) or 'Instruction 6' in str(msg):
+                if '0x177e' in str(msg):
+                    msg += " (Slippage Tolerance Exceeded)"
+                elif '0x1' in str(msg):
                     msg += " (Likely Insufficient SOL for Rent/Fees)"
                 print(f"❌ Swap Failed: {msg}")
                 return {"error": msg}
@@ -247,7 +246,13 @@ class DexTrader:
         
         amount_lamports = int(sol_amount * 1e9)
         
+        # First attempt (Default Slippage)
         result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports)
+        
+        # Retry logic for Slippage (0x177e)
+        if 'error' in result and '0x177e' in str(result['error']):
+             print("⚠️ Slippage exceeded (15%). Retrying with 30%...")
+             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=3000)
         
         if result.get('success'):
             # Track position
