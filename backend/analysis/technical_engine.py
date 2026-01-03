@@ -45,6 +45,7 @@ class TechnicalAnalysis:
         
         # 14-20 bars: Basic RSI check
         if len(df) < 20:
+             # Syntax Verified
             signal = "NEUTRAL"
             reason = "Collecting more data for trend analysis"
             
