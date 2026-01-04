@@ -430,6 +430,8 @@ class AlertSystem(commands.Cog):
                                                     entry_price = info['price_usd']
                                                     trader.positions[token_address]['entry_price_usd'] = entry_price
                                                     trader.positions[token_address]['symbol'] = info['symbol']
+                                                    trader.positions[token_address]['entry_time'] = datetime.datetime.now().timestamp()
+                                                    trader.positions[token_address]['highest_price_usd'] = entry_price
                                                     
                                                     # PERSIST TO DATABASE (Critical for SL/TP across restarts)
                                                     try:
@@ -521,6 +523,37 @@ class AlertSystem(commands.Cog):
                                         if pnl >= 50.0:
                                             should_sell = True
                                             reason = f"🌙 Moonbag Exit (+{pnl:.1f}%)"
+                                        
+                                        # --- DEX TRAILING STOP (NEW) ---
+                                        # Update high water mark
+                                        current_price = info['price_usd']
+                                        if 'highest_price_usd' not in pos:
+                                            pos['highest_price_usd'] = entry_price
+                                        if current_price > pos['highest_price_usd']:
+                                            pos['highest_price_usd'] = current_price
+                                        
+                                        # Trigger trailing stop if +10% reached
+                                        if pnl >= 10.0 and not should_sell:
+                                            peak = pos['highest_price_usd']
+                                            drawdown = ((peak - current_price) / peak) * 100
+                                            if drawdown >= 5.0:  # 5% drop from peak
+                                                locked_gain = ((current_price - entry_price) / entry_price) * 100
+                                                should_sell = True
+                                                reason = f"📉 Trailing Stop (Locked +{locked_gain:.1f}% from +{pnl:.1f}% peak)"
+                                        
+                                        # --- TIME-BASED EXIT (NEW) ---
+                                        entry_time = pos.get('entry_time', 0)
+                                        if entry_time and not should_sell:
+                                            hours_held = (datetime.datetime.now().timestamp() - entry_time) / 3600
+                                            if hours_held >= 3.0:
+                                                if pnl > 0:
+                                                    should_sell = True
+                                                    reason = f"⏰ Time Exit: +{pnl:.1f}% after {hours_held:.1f}h (take profit)"
+                                                elif pnl <= -15.0:
+                                                    should_sell = True
+                                                    reason = f"⏰ Time Exit: {pnl:.1f}% after {hours_held:.1f}h (cut loser)"
+                                        
+                                        # Hard Stop Loss
                                         elif pnl <= -25.0: # SL: -25% (Room to breathe)
                                             should_sell = True
                                             reason = f"🛑 Stop Loss ({pnl:.1f}%)"
