@@ -50,3 +50,14 @@ class Position(Base):
     entry_price = Column(Float)
     amount = Column(Float)
     user_id = Column(Integer, ForeignKey("users.id"))
+
+class DexPosition(Base):
+    """Persisted DEX positions to preserve entry prices across restarts."""
+    __tablename__ = "dex_positions"
+    id = Column(Integer, primary_key=True, index=True)
+    token_address = Column(String, index=True)  # Solana Mint Address
+    wallet_address = Column(String, index=True) # Owner wallet
+    symbol = Column(String)
+    entry_price_usd = Column(Float)  # ACTUAL entry price (not current)
+    amount = Column(Float)
+    timestamp = Column(DateTime, default=datetime.datetime.utcnow)

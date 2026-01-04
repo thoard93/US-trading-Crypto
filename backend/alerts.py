@@ -229,37 +229,64 @@ class AlertSystem(commands.Cog):
                 await asyncio.sleep(1)
 
     async def sync_all_dex_positions(self):
-        """Syncs on-chain positions for all traders and adopts them."""
+        """Syncs on-chain positions for all traders, loading entry prices from DB."""
         if not hasattr(self, 'dex_traders') or not self.dex_traders: return
 
         print("🔄 Syncing DEX positions from blockchain...")
         
+        # 1. Load persisted positions from database
+        db_positions = {}  # {(wallet_address, token_address): DexPosition}
+        try:
+            db = SessionLocal()
+            all_db_pos = db.query(models.DexPosition).all()
+            for pos in all_db_pos:
+                key = (pos.wallet_address, pos.token_address)
+                db_positions[key] = pos
+            print(f"📚 Loaded {len(db_positions)} persisted DEX positions from DB")
+        except Exception as e:
+            print(f"⚠️ Error loading DB positions: {e}")
+        finally:
+            db.close()
+        
         for trader in self.dex_traders:
             try:
-                # 1. Get raw on-chain tokens
+                # 2. Get raw on-chain tokens
                 wallet_tokens = trader.get_all_tokens()
                 if not wallet_tokens: continue
 
                 user_label = getattr(trader, 'user_id', 'Main')
+                print(f"💰 Found {len(wallet_tokens)} existing tokens in wallet.")
                 
                 for mint, amount in wallet_tokens.items():
                     if mint in trader.positions: continue
                     
                     try:
+                        # Check database for persisted entry price
+                        db_key = (trader.wallet_address, mint)
+                        db_pos = db_positions.get(db_key)
+                        
                         # Map input for DexScout
                         pair_data = await self.dex_scout.get_pair_data('solana', mint)
                         if pair_data:
                             info = self.dex_scout.extract_token_info(pair_data)
-                            price = info.get('price_usd')
+                            current_price = info.get('price_usd')
                             symbol = info.get('symbol', 'UNKNOWN')
                             
-                            if price:
-                                # ADOPT POSITION (Reset baseline)
+                            if current_price:
+                                # Use DB entry price if available, else fall back to current (legacy)
+                                if db_pos:
+                                    entry_price = db_pos.entry_price_usd
+                                    print(f"🔓 Restored {symbol} for User {user_label} @ ${entry_price:.6f} (from DB)")
+                                else:
+                                    entry_price = current_price
+                                    print(f"✅ Adopted {symbol} for User {user_label} @ ${entry_price:.6f} (NEW)")
+                                
                                 trader.positions[mint] = {
-                                    'entry_price_usd': price,
+                                    'entry_price_usd': entry_price,
                                     'amount': amount,
                                     'symbol': symbol
                                 }
+                                
                                 # Add to tracking list if not there
                                 found = False
                                 for t in self.trending_dex_gems:
@@ -269,7 +296,6 @@ class AlertSystem(commands.Cog):
                                          'chain': 'solana', 'address': mint, 'symbol': symbol
                                      })
                                 
-                                print(f"✅ Adopted {symbol} for User {user_label} @ ${price:.6f}")
                     except Exception as e:
                         print(f"⚠️ Failed to adopt token {mint}: {e}")
             except Exception as e:
@@ -340,8 +366,30 @@ class AlertSystem(commands.Cog):
                                                 user_label = getattr(trader, 'user_id', 'Main')
                                                 
                                                 if trade_result.get('success'):
-                                                    # New: Record entry price for PnL tracking
-                                                    trader.positions[token_address]['entry_price_usd'] = info['price_usd']
+                                                    # Record entry price for PnL tracking
+                                                    entry_price = info['price_usd']
+                                                    trader.positions[token_address]['entry_price_usd'] = entry_price
+                                                    trader.positions[token_address]['symbol'] = info['symbol']
+                                                    
+                                                    # PERSIST TO DATABASE (Critical for SL/TP across restarts)
+                                                    try:
+                                                        db = SessionLocal()
+                                                        token_amt = trader.positions[token_address].get('tokens_received', 0)
+                                                        new_dex_pos = models.DexPosition(
+                                                            token_address=token_address,
+                                                            wallet_address=trader.wallet_address,
+                                                            symbol=info['symbol'],
+                                                            entry_price_usd=entry_price,
+                                                            amount=float(token_amt)
+                                                        )
+                                                        db.add(new_dex_pos)
+                                                        db.commit()
+                                                        print(f"💾 Persisted DEX position {info['symbol']} @ ${entry_price:.8f}")
+                                                    except Exception as db_err:
+                                                        print(f"⚠️ DB persist error: {db_err}")
+                                                    finally:
+                                                        db.close()
+                                                    
                                                     trade_happened = True
                                                     embed.add_field(
                                                         name=f"🤖 BOUGHT (User {user_label})", 
@@ -435,6 +483,20 @@ class AlertSystem(commands.Cog):
                                         res = trader.sell_token(token_address)
                                         if res.get('success'):
                                             await channel_memes.send(f"{reason}: USER {user_label} Sold {info['symbol']}")
+                                            
+                                            # DELETE FROM DATABASE
+                                            try:
+                                                db = SessionLocal()
+                                                db.query(models.DexPosition).filter(
+                                                    models.DexPosition.wallet_address == trader.wallet_address,
+                                                    models.DexPosition.token_address == token_address
+                                                ).delete()
+                                                db.commit()
+                                                print(f"🗑️ Removed DEX position {info['symbol']} from DB")
+                                            except Exception as db_err:
+                                                print(f"⚠️ DB delete error: {db_err}")
+                                            finally:
+                                                db.close()
                                         else:
                                             print(f"⚠️ Sell failed for {info['symbol']}: {res.get('error')}")
 
