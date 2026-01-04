@@ -824,13 +824,13 @@ class AlertSystem(commands.Cog):
                         print(f"🌙 Overnight Protection: Skipping BUY for {symbol} (Time: {hour}:00)")
                         return
 
-                    # Map colors
-                    color_map = {
-                        'BUY': discord.Color.green(),
-                        'SELL': discord.Color.red(),
-                        'BULLISH': discord.Color.gold(),
-                        'BEARISH': discord.Color.blue()
-                    }
+                # Map colors
+                color_map = {
+                    'BUY': discord.Color.green(),
+                    'SELL': discord.Color.red(),
+                    'BULLISH': discord.Color.gold(),
+                    'BEARISH': discord.Color.blue()
+                }
                 color = color_map.get(result['signal'], discord.Color.light_grey())
                 
                 prefix = "🚀" if result['signal'] in ['BUY', 'SELL'] else "📊"
