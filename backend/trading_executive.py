@@ -160,25 +160,35 @@ class TradingExecutive:
             print(f"Error fetching balance: {e}")
             return 0
 
-    def execute_market_buy(self, symbol, amount_usdt=10.0):
-        """Execute a market buy order."""
+    def execute_market_buy(self, symbol, amount_usdt=10.0, risk_factor=1.0):
+        """Execute a market buy order with risk-adjusted sizing."""
         if not self.exchange:
             return {"error": "API not configured"}
 
         try:
             # Check balance first
             balance = self.get_usdt_balance()
-            if balance < amount_usdt:
-                return {"error": f"Insufficient USDT balance: {balance}"}
-
-            print(f"🚀 Executing MARKET BUY for {symbol} ($ {amount_usdt})")
             
+            # Apply risk factor
+            adjusted_amount = amount_usdt * risk_factor
+            # Clamp to min $11 for Kraken (approx min order size)
+            adjusted_amount = max(11.0, float(adjusted_amount))
+            
+            if balance < adjusted_amount:
+                # Use remaining balance if close enough, else error
+                if balance > 10.0:
+                    adjusted_amount = balance
+                else: 
+                     return {"error": f"Insufficient USDT balance ({balance:.2f})"}
+
+            print(f"🚀 Executing KRAKEN BUY for {symbol} (${adjusted_amount:.2f}) [Risk: {risk_factor}x]")
+            # Kraken requires param 'cost' for market buy by value
             order = self.exchange.create_order(
-                symbol=symbol,
-                type='market',
-                side='buy',
+                symbol=symbol, 
+                type='market', 
+                side='buy', 
                 amount=None, 
-                params={'cost': amount_usdt}
+                params={'cost': adjusted_amount}
             )
             return order
         except Exception as e:

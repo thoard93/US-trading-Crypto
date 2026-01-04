@@ -390,6 +390,9 @@ class AlertSystem(commands.Cog):
                                 title=f"🚀 DEX GEM PUMPING: {info['symbol']} ({info['chain'].upper()})", 
                                 color=color
                             )
+                            
+                            if liquidity < 5000:
+                                embed.add_field(name="⚠️ LOW LIQUIDITY", value=f"${liquidity:,.0f} - High Slippage Risk!", inline=False)
                             embed.add_field(name="Price USD", value=f"${info['price_usd']:.8f}", inline=True)
                             embed.add_field(name="5m Change", value=f"+{info['price_change_5m']}%", inline=True)
                             embed.add_field(name="Liquidity", value=f"${liquidity:,.0f}", inline=True)
@@ -811,14 +814,23 @@ class AlertSystem(commands.Cog):
             result = self.analyzer.analyze_trend(data, aggressive_mode=is_scalping)
             
             # Trigger on BUY, SELL, BULLISH, or BEARISH
-            if 'signal' in result and result['signal'] != 'NEUTRAL':
-                # Map colors
-                color_map = {
-                    'BUY': discord.Color.green(),
-                    'SELL': discord.Color.red(),
-                    'BULLISH': discord.Color.gold(),
-                    'BEARISH': discord.Color.blue()
-                }
+                if 'signal' in result and result['signal'] != 'NEUTRAL':
+                    # 🛡️ TIME-OF-DAY FILTER (Overnight Safety)
+                    # Block BUYS between 00:00 and 08:00 (Local Time)
+                    # Allow SELLS at any time (Stop Losses must work)
+                    if result['signal'] == 'BUY':
+                        hour = datetime.datetime.now().hour
+                        if 0 <= hour < 8:
+                            print(f"🌙 Overnight Protection: Skipping BUY for {symbol} (Time: {hour}:00)")
+                            return
+
+                    # Map colors
+                    color_map = {
+                        'BUY': discord.Color.green(),
+                        'SELL': discord.Color.red(),
+                        'BULLISH': discord.Color.gold(),
+                        'BEARISH': discord.Color.blue()
+                    }
                 color = color_map.get(result['signal'], discord.Color.light_grey())
                 
                 prefix = "🚀" if result['signal'] in ['BUY', 'SELL'] else "📊"
@@ -868,6 +880,12 @@ class AlertSystem(commands.Cog):
                         if symbol in self.trader.active_positions:
                             print(f"ℹ️ Buy signal for {symbol} but already holding.")
                             return
+                        
+                        # Calculate Risk Factor based on RSI
+                        rsi = result.get('rsi', 50)
+                        risk_factor = 1.0
+                        if rsi < 30: risk_factor = 1.2  # Aggressive Buy (Oversold)
+                        if rsi > 70: risk_factor = 0.5  # Risk Buy (Overbought)
                         
                         # 1b. LIVE CHECK: Verify with exchange we don't already hold this (prevents BNB double-buy)
                         if asset_type in ["Crypto", "Meme"]:
@@ -926,7 +944,7 @@ class AlertSystem(commands.Cog):
                                     self.restricted_assets.add(symbol)
                                     return
                         else:
-                            trade_result = self.trader.execute_market_buy(symbol, amount_usdt=trade_amount)
+                            trade_result = self.trader.execute_market_buy(symbol, amount_usdt=trade_amount, risk_factor=risk_factor)
                             
                             # Handle Restricted Errors
                             if not trade_result.get('success'):
