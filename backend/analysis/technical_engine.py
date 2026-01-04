@@ -115,16 +115,18 @@ class TechnicalAnalysis:
                     reason = f"📉 Sniper Entry: 40%+ Pullback ({close:.4f} < {pullback_target:.4f})"
                     confidence = 85
 
+        # PRIORITY 3: Scalping (BUY Only - Exits handled by Trailing Stop/SL/TP)
         if aggressive_mode and confidence < 80:
             # BUY: Dip in Uptrend (Price > EMA 50) + Oversold RSI(2)
             if rsi_fast < 15 and close > ema_50: 
                 signal = "BUY"
                 reason = "⚡ Scalp: Trend Pullback (Price > EMA50 & RSI(2) < 15)"
                 confidence = 75
-            elif rsi_fast > 90 and close < ema_fast:
-                signal = "SELL"
-                reason = "⚡ Scalp: RSI(2) > 90 & Price < EMA9"
-                confidence = 75
+            # NOTE: SELL signals removed from scalping mode.
+            # All exits are handled by check_exit_conditions() which uses:
+            # - Trailing Stop (Trigger +1.5%, Trail 1%)
+            # - Hard Stop-Loss (-2%)
+            # - Hard Take-Profit (+5%)
 
         # PRIORITY 4: Standard Indicators (RSI / Trends)
         if confidence < 70:
