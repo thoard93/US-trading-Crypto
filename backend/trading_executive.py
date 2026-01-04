@@ -94,12 +94,17 @@ class TradingExecutive:
             db.close()
 
     def check_exit_conditions(self, symbol, current_price):
-        """Check if we should exit a trade based on SL/TP/Trailing Stop."""
+        """Check if we should exit a trade based on SL/TP/Trailing Stop.
+        Uses different thresholds for stocks vs crypto.
+        """
         if symbol not in self.active_positions:
             return None
 
         pos = self.active_positions[symbol]
         entry = pos["entry_price"]
+        
+        # Determine asset type (stocks don't have '/')
+        is_stock = '/' not in symbol
         
         # Initialize high water mark if missing (legacy positions)
         if "highest_price" not in pos:
@@ -108,26 +113,38 @@ class TradingExecutive:
         # Update High Water Mark
         if current_price > pos["highest_price"]:
             pos["highest_price"] = current_price
+        
+        # --- ASSET-SPECIFIC TRAILING STOP LOGIC ---
+        if is_stock:
+            # STOCKS: Wider thresholds (stocks trend more smoothly)
+            # Trigger: +5% profit, Trail: 3% (locks in +2% minimum)
+            trailing_trigger_pct = 1.05
+            trail_distance = 0.97
+            hard_sl = 0.95  # -5% stop loss
+            hard_tp = 1.15  # +15% take profit
+        else:
+            # CRYPTO: Tighter thresholds (more volatile)
+            # Trigger: +1.5% profit, Trail: 1% (locks in +0.5% minimum)
+            trailing_trigger_pct = 1.015
+            trail_distance = 0.99
+            hard_sl = 0.98  # -2% stop loss
+            hard_tp = 1.05  # +5% take profit
             
-        # --- TRAILING STOP LOGIC ---
-        # Trigger: If price reaches +1.5% profit
-        # Trail: 1.0% distance (locks in +0.5% minimum)
-        trailing_trigger_price = entry * 1.015
+        trailing_trigger_price = entry * trailing_trigger_pct
         
         if pos["highest_price"] >= trailing_trigger_price:
             # Trailing Stop is ACTIVE
-            stop_price = pos["highest_price"] * 0.990 # 1.0% below peak
+            stop_price = pos["highest_price"] * trail_distance
             
             if current_price <= stop_price:
-                return f"TRAILING_STOP (Locked +{(stop_price/entry - 1)*100:.1f}%)"
+                gain = (stop_price/entry - 1)*100
+                return f"TRAILING_STOP (Locked +{gain:.1f}%)"
                 
         # --- STANDARD SAFETY NETS ---
-        # Hard Stop-Loss: -2% (Safety Net)
-        if current_price <= entry * 0.98:
+        if current_price <= entry * hard_sl:
             return "STOP_LOSS"
         
-        # Hard Take-Profit: +5% (Moonbag capture)
-        if current_price >= entry * 1.05:
+        if current_price >= entry * hard_tp:
             return "TAKE_PROFIT"
             
         return None

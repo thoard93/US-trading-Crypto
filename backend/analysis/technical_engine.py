@@ -40,8 +40,13 @@ class TechnicalAnalysis:
         if aggressive_mode:
             if len(df) >= 2: df.ta.rsi(length=2, append=True)
             if len(df) >= 9: df.ta.ema(length=9, append=True)
-
-        # 3. Fetch Latest Data Row
+        
+        # MACD (Momentum Confirmation)
+        if len(df) >= 26:
+            df.ta.macd(append=True)
+        
+        # Volume Analysis
+        df['volume_avg'] = df['volume'].rolling(window=20).mean()
         last_row = df.iloc[-1]
         prev_row = df.iloc[-2] if len(df) >= 2 else last_row
         
@@ -57,6 +62,15 @@ class TechnicalAnalysis:
         # Scalping Vars
         rsi_fast = last_row.get('RSI_2', 50)
         ema_fast = last_row.get('EMA_9', close)
+        
+        # MACD Confirmation (Momentum)
+        macd_hist = last_row.get('MACDh_12_26_9', 0)
+        macd_bullish = macd_hist > 0
+        
+        # Volume Confirmation
+        current_vol = last_row.get('volume', 0)
+        avg_vol = last_row.get('volume_avg', current_vol or 1)
+        volume_spike = current_vol > (avg_vol * 1.5)
 
         # Thresholds
         RSI_OVERSOLD = 35 if aggressive_mode else 30
@@ -117,10 +131,10 @@ class TechnicalAnalysis:
 
         # PRIORITY 3: Scalping (BUY Only - Exits handled by Trailing Stop/SL/TP)
         if aggressive_mode and confidence < 80:
-            # BUY: Dip in Uptrend (Price > EMA 50) + Oversold RSI(2)
-            if rsi_fast < 15 and close > ema_50: 
+            # BUY: Dip in Uptrend + Oversold RSI(2) + MACD Confirmation
+            if rsi_fast < 15 and close > ema_50 and macd_bullish: 
                 signal = "BUY"
-                reason = "⚡ Scalp: Trend Pullback (Price > EMA50 & RSI(2) < 15)"
+                reason = "⚡ Scalp: Trend Pullback + MACD Confirm"
                 confidence = 75
             # NOTE: SELL signals removed from scalping mode.
             # All exits are handled by check_exit_conditions() which uses:

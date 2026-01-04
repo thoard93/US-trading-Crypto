@@ -315,6 +315,23 @@ class AlertSystem(commands.Cog):
 
         channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
         
+        # --- SOL LOW BALANCE ALERT (every ~5 mins) ---
+        if not hasattr(self, 'sol_alert_tick'): self.sol_alert_tick = 0
+        self.sol_alert_tick += 1
+        if self.sol_alert_tick % 20 == 0:  # Every ~5 mins (20 * 15s)
+            for trader in self.dex_traders:
+                sol_bal = trader.get_sol_balance()
+                if sol_bal < 0.1:  # Low SOL threshold
+                    user_label = getattr(trader, 'user_id', 'Main')
+                    addr = trader.wallet_address[:8] + "..." + trader.wallet_address[-4:]
+                    if channel_memes:
+                        await channel_memes.send(
+                            f"⚠️ **LOW SOL ALERT** | User {user_label}\n"
+                            f"Balance: `{sol_bal:.4f} SOL` (< 0.1 SOL)\n"
+                            f"Wallet: `{addr}`\n"
+                            f"Top up to continue trading!"
+                        )
+        
         # Monitor DEX Scout (New Gems) + Auto-Trade
         # print(f"⚡ DEX Monitor: Scouting {len(self.dex_watchlist)} tokens...")
         if channel_memes:
@@ -446,9 +463,19 @@ class AlertSystem(commands.Cog):
                                         if self.pnl_tick % 40 == 0: 
                                             print(f"👀 Status {info['symbol']} (User {user_label}): {pnl:+.2f}% (TP: +25 | SL: -25)")
 
-                                        if pnl >= 25.0: # TP: +25% (Capture pumps)
+                                        # PARTIAL PROFIT: At +25%, sell 50% and let rest ride
+                                        partial_sold = pos.get('partial_sold', False)
+                                        if pnl >= 25.0 and not partial_sold:
+                                            # Sell 50% (partial)
+                                            res = trader.sell_token(token_address, percentage=50)
+                                            if res.get('success'):
+                                                pos['partial_sold'] = True
+                                                await channel_memes.send(f"🎯 **Partial TP (+{pnl:.1f}%)**: USER {user_label} Sold 50% of {info['symbol']}")
+                                        
+                                        # FULL EXIT: +50% OR trailing (moonbag capture)
+                                        if pnl >= 50.0:
                                             should_sell = True
-                                            reason = f"🎯 Take Profit (+{pnl:.1f}%)"
+                                            reason = f"🌙 Moonbag Exit (+{pnl:.1f}%)"
                                         elif pnl <= -25.0: # SL: -25% (Room to breathe)
                                             should_sell = True
                                             reason = f"🛑 Stop Loss ({pnl:.1f}%)"

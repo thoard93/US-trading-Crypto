@@ -483,6 +483,37 @@ async def get_stats(user_id: int, db: Session = Depends(get_db)):
         "active_bot_names": status_label
     }
 
+@app.get("/trades/export/{user_id}")
+async def export_trades_csv(user_id: int, db: Session = Depends(get_db)):
+    """Export trade history as CSV for tax reporting."""
+    from fastapi.responses import StreamingResponse
+    import io
+    import csv
+    
+    trades = db.query(models.Trade).filter(models.Trade.user_id == user_id).order_by(models.Trade.timestamp.desc()).all()
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Date", "Symbol", "Side", "Amount", "Price", "Cost", "Type"])
+    
+    for t in trades:
+        writer.writerow([
+            t.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+            t.symbol,
+            t.side,
+            t.amount,
+            t.price,
+            t.cost,
+            t.asset_type
+        ])
+    
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=trades_user_{user_id}.csv"}
+    )
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
