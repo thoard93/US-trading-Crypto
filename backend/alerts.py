@@ -299,6 +299,28 @@ class AlertSystem(commands.Cog):
                                 
                     except Exception as e:
                         print(f"⚠️ Failed to adopt token {mint}: {e}")
+                
+                # 3. Cleanup: Remove positions NOT in wallet (Manual Sells)
+                current_mints = list(wallet_tokens.keys())
+                to_remove = []
+                for mint in trader.positions.keys():
+                    if mint not in current_mints:
+                        to_remove.append(mint)
+                
+                for mint in to_remove:
+                    print(f"🧹 Detecting manual sell for {trader.positions[mint].get('symbol', 'Unknown')}. Clearing from memory/DB.")
+                    del trader.positions[mint]
+                    # Clean DB
+                    try:
+                        db = SessionLocal()
+                        db.query(models.DexPosition).filter(
+                            models.DexPosition.wallet_address == trader.wallet_address,
+                            models.DexPosition.token_address == mint
+                        ).delete()
+                        db.commit()
+                        db.close()
+                    except: pass
+
             except Exception as e:
                 print(f"❌ Error syncing user {user_label}: {e}")
 
@@ -335,8 +357,20 @@ class AlertSystem(commands.Cog):
         # Monitor DEX Scout (New Gems) + Auto-Trade
         # print(f"⚡ DEX Monitor: Scouting {len(self.dex_watchlist)} tokens...")
         if channel_memes:
-            # Combined list of manual watchlist and trending gems
-            all_dex = self.dex_watchlist + self.trending_dex_gems
+            # 1. Collect all tokens to monitor: Watchlist + Trending + HELD POSITIONS
+            held_tokens = []
+            if self.dex_traders:
+                for trader in self.dex_traders:
+                    for token_addr, data in trader.positions.items():
+                        held_tokens.append({'address': token_addr, 'symbol': data.get('symbol', 'UNKNOWN'), 'chain': 'solana'})
+            
+            # Combine unique by address
+            all_dex_map = {}
+            for item in self.dex_watchlist + self.trending_dex_gems + held_tokens:
+                all_dex_map[item['address']] = item
+            
+            all_dex = list(all_dex_map.values())
+
             for item in all_dex:
                 try:
                     pair_data = await self.dex_scout.get_pair_data(item['chain'], item['address'])
