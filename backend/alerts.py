@@ -405,6 +405,8 @@ class AlertSystem(commands.Cog):
                                                     embed.color = discord.Color.green()
                                                 else:
                                                     embed.add_field(name=f"⚠️ Failed (User {user_label})", value=trade_result.get('error', 'Unknown'), inline=False)
+                                                    # ADD FAILED BUY COOLDOWN: Don't retry for 10 mins
+                                                    self.dex_exit_cooldowns[token_address] = datetime.datetime.now().timestamp()
                                         else:
                                             # Already holding
                                             pass
@@ -507,7 +509,26 @@ class AlertSystem(commands.Cog):
                                             finally:
                                                 db.close()
                                         else:
-                                            print(f"⚠️ Sell failed for {info['symbol']}: {res.get('error')}")
+                                            error_msg = res.get('error', '')
+                                            print(f"⚠️ Sell failed for {info['symbol']}: {error_msg}")
+                                            
+                                            # GHOST POSITION CLEANUP: Remove from memory if no tokens on-chain
+                                            if 'No tokens to sell' in str(error_msg):
+                                                if token_address in trader.positions:
+                                                    del trader.positions[token_address]
+                                                    print(f"👻 Cleared ghost position {info['symbol']} from memory")
+                                                # Also remove from DB
+                                                try:
+                                                    db = SessionLocal()
+                                                    db.query(models.DexPosition).filter(
+                                                        models.DexPosition.wallet_address == trader.wallet_address,
+                                                        models.DexPosition.token_address == token_address
+                                                    ).delete()
+                                                    db.commit()
+                                                except Exception:
+                                                    pass
+                                                finally:
+                                                    db.close()
 
                 except Exception as ex:
                     print(f"⚠️ Error checking DEX token {item.get('address')}: {ex}")
