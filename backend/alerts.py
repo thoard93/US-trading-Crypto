@@ -415,13 +415,19 @@ class AlertSystem(commands.Cog):
                                 
                                 if safety_score >= self.dex_min_safety_score and liquidity >= self.dex_min_liquidity:
                                     
+                                    # --- CONVICTION SIZING (NEW) ---
+                                    # High-conviction = 2x position for vetted tokens
+                                    is_high_conviction = (safety_score >= 80 and liquidity >= 50000)
+                                    dex_trade_amount = 0.10 if is_high_conviction else 0.05  # SOL
+                                    conviction_label = "🔥 HIGH CONVICTION" if is_high_conviction else ""
+                                    
                                     # Execute for EACH trader
                                     for trader in self.dex_traders:
                                         dex_positions = len(trader.positions)
                                         
                                         if dex_positions < self.dex_max_positions:
                                             if token_address not in trader.positions:
-                                                trade_result = trader.buy_token(token_address)
+                                                trade_result = trader.buy_token(token_address, sol_amount=dex_trade_amount)
                                                 
                                                 user_label = getattr(trader, 'user_id', 'Main')
                                                 
@@ -900,8 +906,8 @@ class AlertSystem(commands.Cog):
                     trade_result = None
                     MAX_POSITIONS = 15
                     
-                    # Kraken requires ~$10 minimum for most pairs
-                    trade_amount = 10.0 
+                    # Base trade amount - will be adjusted by conviction
+                    base_trade_amount = 10.0 
                     scalp_mode = (asset_type == "Meme" or symbol_price < 1.0)
 
                     if result['signal'] == 'BUY':
@@ -922,11 +928,23 @@ class AlertSystem(commands.Cog):
                             print(f"ℹ️ Buy signal for {symbol} but already holding.")
                             return
                         
-                        # Calculate Risk Factor based on RSI
+                        # Calculate Risk Factor and Conviction Sizing based on RSI
                         rsi = result.get('rsi', 50)
                         risk_factor = 1.0
-                        if rsi < 30: risk_factor = 1.2  # Aggressive Buy (Oversold)
-                        if rsi > 70: risk_factor = 0.5  # Risk Buy (Overbought)
+                        conviction_multiplier = 1.0
+                        
+                        if rsi < 20:
+                            # 🔥 HIGH CONVICTION: Deeply oversold = 2x position
+                            risk_factor = 1.5
+                            conviction_multiplier = 2.0
+                            print(f"🔥 HIGH CONVICTION: {symbol} RSI={rsi:.0f} (Deeply Oversold)")
+                        elif rsi < 30:
+                            risk_factor = 1.2  # Aggressive Buy (Oversold)
+                        elif rsi > 70:
+                            risk_factor = 0.5  # Risk Buy (Overbought)
+                        
+                        # Apply conviction multiplier to trade amount
+                        trade_amount = base_trade_amount * conviction_multiplier
                         
                         # 1b. LIVE CHECK: Verify with exchange we don't already hold this (prevents BNB double-buy)
                         if asset_type in ["Crypto", "Meme"]:
