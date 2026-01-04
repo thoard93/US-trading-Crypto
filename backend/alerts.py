@@ -852,8 +852,9 @@ class AlertSystem(commands.Cog):
                             except Exception as e:
                                 print(f"⚠️ Live balance check failed: {e}")
 
-                        # 2. Check position cap
-                        if len(self.trader.active_positions) >= MAX_POSITIONS:
+                        # 2. Check position cap (CRYPTO ONLY - stocks have separate cap)
+                        crypto_positions = [s for s in self.trader.active_positions.keys() if '/' in s]
+                        if len(crypto_positions) >= MAX_POSITIONS:
                             print(f"⚠️ Position cap ({MAX_POSITIONS}) reached. Skipping buy for {symbol}.")
                             return
 
