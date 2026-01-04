@@ -89,7 +89,7 @@ class AlertSystem(commands.Cog):
         # DEX Auto-trading configuration
         self.dex_auto_trade = True  # Toggle for DEX auto-trading
         self.dex_min_safety_score = 50  # Lowered from 70 to 50 for MAXIMUM ACTION
-        self.dex_min_liquidity = 5000  # Raised to $5k (Quality Control)
+        self.dex_min_liquidity = 10000  # RAISED to $10k to prevent low-liquidity traps
         self.dex_max_positions = 15  # Increased from 10 to 15 (User Request)
         
         # STOCK Auto-trading configuration
@@ -464,6 +464,14 @@ class AlertSystem(commands.Cog):
                                         else:
                                             # Already holding
                                             pass
+                                else:
+                                    # LOG REJECTION: Low Liquidity or Safety
+                                    reason = []
+                                    if liquidity < self.dex_min_liquidity:
+                                        reason.append(f"Liq ${liquidity:,.0f} < ${self.dex_min_liquidity:,.0f}")
+                                    if safety_score < self.dex_min_safety_score:
+                                        reason.append(f"Safety {safety_score} < {self.dex_min_safety_score}")
+                                    print(f"🚫 Skipped {info['symbol']}: {', '.join(reason)}")
                             
                             # Smart Alerting: Only send if trade happened OR cooldown passed (10 mins)
                             should_send = False
