@@ -135,6 +135,7 @@ class AlertSystem(commands.Cog):
         self.restricted_assets = set() # Session-based blacklist for "Restricted Region" assets
         self.last_exit_times = {} # {symbol: timestamp} for wash trade prevention
         self.last_alert_times = {} # {symbol: timestamp} to prevent discord spam
+        self.dex_exit_cooldowns = {} # {token_address: timestamp} - prevents re-buying after SL
 
         self.monitor_market.start()
         self.dex_monitor.start() # Start new 30s loop
@@ -353,6 +354,11 @@ class AlertSystem(commands.Cog):
                                 self.dex_traders and 
                                 info['chain'] == 'solana'):
                                 
+                                # CHECK COOLDOWN: Skip if recently sold this token
+                                cooldown_time = self.dex_exit_cooldowns.get(token_address, 0)
+                                if datetime.datetime.now().timestamp() - cooldown_time < 300: # 5 min cooldown
+                                    continue  # Skip this token
+                                
                                 if safety_score >= self.dex_min_safety_score and liquidity >= self.dex_min_liquidity:
                                     
                                     # Execute for EACH trader
@@ -483,6 +489,9 @@ class AlertSystem(commands.Cog):
                                         res = trader.sell_token(token_address)
                                         if res.get('success'):
                                             await channel_memes.send(f"{reason}: USER {user_label} Sold {info['symbol']}")
+                                            
+                                            # SET COOLDOWN: Prevent re-buying for 5 minutes
+                                            self.dex_exit_cooldowns[token_address] = datetime.datetime.now().timestamp()
                                             
                                             # DELETE FROM DATABASE
                                             try:
