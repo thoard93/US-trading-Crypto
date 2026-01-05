@@ -287,6 +287,7 @@ class TradingExecutive:
                 print(f"📉 Executing ALPACA CLOSE POSITION for {symbol}")
                 # close_position automatically liquidates the full amount
                 order = self.stock_api.close_position(symbol)
+                qty = getattr(order, 'qty', 'ALL')
                 # Note: close_position returns a different object (Order) or just the order details
                 # It avoids precision errors with fractional shares
             else:
