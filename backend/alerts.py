@@ -1213,10 +1213,16 @@ class AlertSystem(commands.Cog):
                 await self.execute_swarm_trade(mint)
                 
             # 2. Periodically run the Hunter (every 60 mins)
-            # We can use a counter or separate loop. 
-            # For MVP, running hunter here might block. 
-            # ideally the hunter runs in background.
-            # We'll skip auto-hunting in this loop for now to avoid lag.
+            # We use a counter to trigger this once per hour (60 * 1 minute)
+            if not hasattr(self, 'swarm_tick'): self.swarm_tick = 0
+            self.swarm_tick += 1
+            
+            if self.swarm_tick % 60 == 0:
+                print("🦈 Auto-Hunter: Scanning for fresh whales...")
+                # Run lightly (Top 5 pairs, max 3 traders) to avoid blocking too long
+                new_wallets = await self.copy_trader.scan_market_for_whales(max_pairs=5, max_traders_per_pair=3)
+                if new_wallets > 0:
+                    print(f"✅ Auto-Hunter found {new_wallets} new wallets! List updated.")
             
         except Exception as e:
             print(f"❌ Swarm Monitor Error: {e}")
