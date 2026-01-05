@@ -506,6 +506,17 @@ class AlertSystem(commands.Cog):
                                     reason = ""
                                     user_label = getattr(trader, 'user_id', 'Main')
                                     
+                                    # --- LEGACY POSITION CLEANUP (One-Time) ---
+                                    # Positions without entry_time are from before the time-exit update
+                                    # Force sell these old bags
+                                    if not pos.get('entry_time'):
+                                        pnl = 0
+                                        if entry_price and info['price_usd']:
+                                            pnl = ((info['price_usd'] - entry_price) / entry_price) * 100
+                                        should_sell = True
+                                        reason = f"🧹 Legacy Cleanup (No entry_time, P&L: {pnl:+.1f}%)"
+                                        print(f"🧹 Cleaning legacy position: {info['symbol']} (User {user_label})")
+                                    
                                     if entry_price:
                                         pnl = ((info['price_usd'] - entry_price) / entry_price) * 100
                                         
