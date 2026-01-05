@@ -1,0 +1,54 @@
+{
+  "3oqV3EEz24idYxpX7REh8r8Axum84ABBZZDAcEsJtqzc": {
+    "discovered_on": "DIY",
+    "discovered_at": "2026-01-05T13:36:21.703185",
+    "stats": {
+      "address": "3oqV3EEz24idYxpX7REh8r8Axum84ABBZZDAcEsJtqzc",
+      "tx_count": 41,
+      "trade_count": 11,
+      "avg_holding_time_sec": 946.7272727272727,
+      "p10_holding_time_sec": 145,
+      "is_qualified": true
+    },
+    "score": 10
+  },
+  "DNPLXbWUSe7X9oGLd2G5CQ4xByCHuwfvLCbnwSn9J3zX": {
+    "discovered_on": "DIY",
+    "discovered_at": "2026-01-05T13:36:24.614364",
+    "stats": {
+      "address": "DNPLXbWUSe7X9oGLd2G5CQ4xByCHuwfvLCbnwSn9J3zX",
+      "tx_count": 44,
+      "trade_count": 20,
+      "avg_holding_time_sec": 1211.3,
+      "p10_holding_time_sec": 84,
+      "is_qualified": true
+    },
+    "score": 10
+  },
+  "7NmVct81XqyzC7r1QUtfRZFTcvyWMkXnb37oV54kR8dQ": {
+    "discovered_on": "SOLBISCUIT",
+    "discovered_at": "2026-01-05T13:36:30.315870",
+    "stats": {
+      "address": "7NmVct81XqyzC7r1QUtfRZFTcvyWMkXnb37oV54kR8dQ",
+      "tx_count": 47,
+      "trade_count": 6,
+      "avg_holding_time_sec": 75030.66666666667,
+      "p10_holding_time_sec": 1089,
+      "is_qualified": true
+    },
+    "score": 10
+  },
+  "3wytxATwePFqgQ3TjJSvnWo7qxX2i4UfhhXQphP41QRX": {
+    "discovered_on": "SOLBISCUIT",
+    "discovered_at": "2026-01-05T13:36:32.976195",
+    "stats": {
+      "address": "3wytxATwePFqgQ3TjJSvnWo7qxX2i4UfhhXQphP41QRX",
+      "tx_count": 41,
+      "trade_count": 17,
+      "avg_holding_time_sec": 3737.0,
+      "p10_holding_time_sec": 105,
+      "is_qualified": true
+    },
+    "score": 10
+  }
+}

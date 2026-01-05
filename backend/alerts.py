@@ -10,6 +10,7 @@ from collectors.dex_scout import DexScout
 from analysis.safety_checker import SafetyChecker
 from database import SessionLocal
 import models
+from analysis.copy_trader import SmartCopyTrader
 
 # Import DEX trader for automated Solana trading
 try:
@@ -35,6 +36,8 @@ class AlertSystem(commands.Cog):
         self.trader = TradingExecutive(user_id=1)
         self.dex_scout = DexScout()
         self.safety = SafetyChecker()
+        self.copy_trader = SmartCopyTrader()
+        self.processed_swarms = set() # Track processed swarm signals (mint + window_id)
         
         # Initialize DEX trader for Solana memecoins
         if DEX_TRADING_ENABLED:
@@ -575,6 +578,14 @@ class AlertSystem(commands.Cog):
                                             should_sell = True
                                             reason = f"🛑 Stop Loss ({pnl:.1f}%)"
                                         
+                                        # --- SWARM DUMP EXIT (Smart Copy) ---
+                                        # If the whales are dumping, we dump.
+                                        elif not should_sell:
+                                            is_swarm_dump = await self.copy_trader.check_swarm_exit(token_address)
+                                            if is_swarm_dump:
+                                                should_sell = True
+                                                reason = f"📉 Swarm Dump (Whales exiting)"
+
                                         # PSYCHOLOGICAL RESISTANCE EXITS (Research Phase 9)
                                         mc = info.get('market_cap', 0)
                                         if not should_sell and pnl > 5.0: 
@@ -1178,6 +1189,94 @@ class AlertSystem(commands.Cog):
         """Check Kraken USDT balance."""
         bal = self.trader.get_usdt_balance()
         await ctx.send(f"💰 **Kraken Portfolio Balance:** `{bal}` USDT")
+
+    @tasks.loop(minutes=1)
+    async def swarm_monitor(self):
+        """Polls for Swarm Signals (Copy Trading)."""
+        if not self.dex_trader:
+            return
+            
+        try:
+            # 1. Get Signals
+            signals = await self.copy_trader.monitor_swarm()
+            
+            for mint in signals:
+                # Dedup: If we bought this in last 30 mins, ignore
+                # Simple dedup: check active positions
+                current_time = datetime.datetime.utcnow().timestamp()
+                
+                # Check if we already have a position
+                if any(p.get('token_symbol') == mint for p in self.dex_positions.values()):
+                    continue
+                    
+                print(f"🚨 EXECUTING SWARM BUY: {mint}")
+                await self.execute_swarm_trade(mint)
+                
+            # 2. Periodically run the Hunter (every 60 mins)
+            # We can use a counter or separate loop. 
+            # For MVP, running hunter here might block. 
+            # ideally the hunter runs in background.
+            # We'll skip auto-hunting in this loop for now to avoid lag.
+            
+        except Exception as e:
+            print(f"❌ Swarm Monitor Error: {e}")
+
+    async def execute_swarm_trade(self, mint):
+        """Executes a BUY for a Swarm Signal."""
+        # 1. Get Token Info (Symbol, Liquidity)
+        try:
+            pair = await self.dex_scout.get_pair_data("solana", mint)
+            if not pair: return
+            
+            symbol = pair.get('baseToken', {}).get('symbol')
+            liquidity = float(pair.get('liquidity', {}).get('usd', 0))
+            
+            # 2. Hard Blocks (Liquidity)
+            if liquidity < self.dex_min_liquidity:
+                print(f"🚫 Swarm Ignored: Low Liquidity (${liquidity:,.0f}) for {symbol}")
+                return
+                
+            # 3. Safety Check
+            safety_score, risks = await self.safety.check_token(mint)
+            if safety_score < 70: # Swarm signals can be riskier, but let's keep 70 floor
+                print(f"🚫 Swarm Ignored: Low Safety ({safety_score}) for {symbol}")
+                return
+                
+            # 4. Sizing (High Conviction)
+            amount_sol = 0.10 # Fixed High Amount (User wants action)
+            
+            # 5. Execute
+            print(f"🚀 BUYING SWARM: {symbol} - {amount_sol} SOL")
+            
+            # Use the first available trader
+            trader = self.dex_traders[0]
+            sig = trader.swap_sol_to_token(mint, amount_sol, slippage_bps=2000) # 20% slippage for swarms
+            
+            if sig:
+                # Log to Discord
+                embed = discord.Embed(
+                    title=f"🚨 SWARM BUY: {symbol}",
+                    description=f"Followed the Smart Money!\nAmount: {amount_sol} SOL\nScore: {safety_score}",
+                    color=0xFF00FF # Magenta for Swarm
+                )
+                if self.bot.get_channel(1324747517610492021): # Replace with config channel
+                     await self.bot.get_channel(1324747517610492021).send(embed=embed)
+                     
+                # Track Position
+                self.track_dex_position(trader.wallet_address, mint, symbol, amount_sol, 0, sig)
+
+        except Exception as e:
+            print(f"❌ Execute Swarm Error: {e}")
+
+    @swarm_monitor.before_loop
+    async def before_swarm_monitor(self):
+        await self.bot.wait_until_ready()
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        self.check_alerts.start()
+        self.swarm_monitor.start() # Start the swarm loop
+        print(f"✅ Bot connected as {self.bot.user}")
 
 async def setup(bot):
     await bot.add_cog(AlertSystem(bot))

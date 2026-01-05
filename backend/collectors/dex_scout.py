@@ -92,64 +92,40 @@ class DexScout:
             return []
 
     async def get_trending_solana_pairs(self, min_liquidity=2000, limit=15):
-        """Fetch trending Solana pairs from DexScreener."""
-        # Using the standard Solana list which is a good proxy for 'Trending' on Sol
-        url = "https://api.dexscreener.com/latest/dex/pairs/solana"
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        pairs = data.get('pairs', [])
-                        
-                        # Blacklist (SOL, USDC, USDT, WSOL)
-                        BLACKLIST = [
-                            "So11111111111111111111111111111111111111112", # WSOL
-                            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", # USDC
-                            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", # USDT
-                            "USDH1SM1ojwWU5QyH6qna19vk5aKqeRAFXrb5swJq2f", # USDH
-                        ]
-                        
-                        filtered = []
-                        current_ms = time.time() * 1000
-                        
-                        for p in pairs:
-                            # 0. Blacklist Check
-                            base_address = p.get('baseToken', {}).get('address', '')
-                            quote_address = p.get('quoteToken', {}).get('address', '')
-                            if base_address in BLACKLIST:
-                                continue
-
-                            # 1. Base Liquidity Check
-                            if float(p.get('liquidity', {}).get('usd', 0)) < min_liquidity:
-                                continue
-                                
-                            created_at = p.get('pairCreatedAt', current_ms)
-                            age_min = (current_ms - created_at) / 60000
-                            dex_id = p.get('dexId', '').lower()
-                            
-                            # Strategy 1: "Final Stretch" (Fresh & Hot)
-                            # Age < 30 mins. Catching the initial pump or Pump.fun gems.
-                            is_final_stretch = age_min <= 30
-                            
-                            # Strategy 2: "Migrated / Stabilized" (Safe Play)
-                            # Age > 60 mins AND on Raydium (Verified migration usually).
-                            # "Wait for pullback of 40-60% from migration high" applies here.
-                            is_migrated = (dex_id == 'raydium' and age_min >= 60)
-                            
-                            if is_final_stretch or is_migrated:
-                                filtered.append(p)
-
-                        # Sort by 5m price change to find pumping gems
-                        filtered.sort(
-                            key=lambda x: float(x.get('priceChange', {}).get('m5', 0)),
-                            reverse=True
-                        )
-                        return filtered[:limit]
-                    return []
-        except Exception as e:
-            self.logger.error(f"Error fetching trending Solana: {e}")
+        """Fetch trending Solana pairs from DexScreener (2-Step Process)."""
+        # Step 1: Get Latest Profiles (Trending/New)
+        profiles = await self.get_latest_token_profiles()
+        if not profiles:
             return []
+            
+        # Filter for Solana
+        sol_profiles = [p for p in profiles if p.get('chainId') == 'solana']
+        
+        candidates = []
+        # Step 2: Fetch detailed pair data for candidates
+        # We limit to scanning top 20 profiles to save API calls/time
+        for p in sol_profiles[:20]:
+            addr = p.get('tokenAddress')
+            if not addr: continue
+            
+            # Fetch Pair Data (Price, Liquidity)
+            # This uses the 'tokens/{addr}' endpoint which is reliable
+            pair = await self.get_pair_data('solana', addr)
+            
+            if not pair: continue
+            
+            # Apply Filters
+            liq = float(pair.get('liquidity', {}).get('usd', 0))
+            if liq < min_liquidity:
+                continue
+                
+            # Allow it
+            candidates.append(pair)
+            
+            if len(candidates) >= limit:
+                break
+                
+        return candidates
 
     async def get_new_solana_pairs(self, max_age_hours=6, limit=10):
         """Fetch newly created Solana pairs (just launched gems)."""
