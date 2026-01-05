@@ -4,8 +4,8 @@ import json
 import os
 import random
 from datetime import datetime
-from backend.collectors.dex_scout import DexScout
-from backend.collectors.wallet_collector import WalletCollector
+from collectors.dex_scout import DexScout
+from collectors.wallet_collector import WalletCollector
 
 class SmartCopyTrader:
     """
