@@ -873,14 +873,8 @@ class AlertSystem(commands.Cog):
             
             # Trigger on BUY, SELL, BULLISH, or BEARISH
             if 'signal' in result and result['signal'] != 'NEUTRAL':
-                # 🛡️ TIME-OF-DAY FILTER (Overnight Safety)
-                # Block BUYS between 00:00 and 08:00 (Local Time)
-                # Allow SELLS at any time (Stop Losses must work)
-                if result['signal'] == 'BUY':
-                    hour = datetime.datetime.now().hour
-                    if 0 <= hour < 8:
-                        print(f"🌙 Overnight Protection: Skipping BUY for {symbol} (Time: {hour}:00)")
-                        return
+                # Time-of-Day Filter REMOVED by user request
+                # was: if 0 <= hour < 8: skip buy
 
                 # Map colors
                 color_map = {

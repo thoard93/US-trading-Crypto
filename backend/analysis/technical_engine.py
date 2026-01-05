@@ -123,30 +123,39 @@ class TechnicalAnalysis:
             max_high = df['high'].max()
             pullback_target = max_high * 0.60 # 40% Drop
             if close <= pullback_target:
-                 # Ensure we aren't catching a falling knife blindly; check RSI not dead
-                 if rsi > 20: 
+                 # Ensure we aren't catching a falling knife blindly
+                 # REQUIREMENT: Volume Capitulation (Panic Selling) to confirm bottom
+                 if volume_spike and rsi > 20: 
                     signal = "BUY"
-                    reason = f"📉 Sniper Entry: 40%+ Pullback ({close:.4f} < {pullback_target:.4f})"
+                    reason = f"📉 Sniper Entry: 40%+ Pullback + Vol Spike ({close:.4f})"
                     confidence = 85
 
         # PRIORITY 3: Scalping (BUY Only - Exits handled by Trailing Stop/SL/TP)
         if aggressive_mode and confidence < 80:
             # BUY: Dip in Uptrend + Oversold RSI(2) + MACD Confirmation
+            # This logic was already good (Close > EMA 50), keeping it.
             if rsi_fast < 15 and close > ema_50 and macd_bullish: 
                 signal = "BUY"
                 reason = "⚡ Scalp: Trend Pullback + MACD Confirm"
                 confidence = 75
-            # NOTE: SELL signals removed from scalping mode.
-            # All exits are handled by check_exit_conditions() which uses:
-            # - Trailing Stop (Trigger +1.5%, Trail 1%)
-            # - Hard Stop-Loss (-2%)
-            # - Hard Take-Profit (+5%)
 
-        # PRIORITY 4: Standard Indicators (RSI / Trends)
+        # PRIORITY 4: Standard Indicators (RSI / Trends) - OVERHAULED 2026
         if confidence < 70:
+            # RSI OVERSOLD LOGIC (The "Knife Catching" Fix)
             if rsi < RSI_OVERSOLD:
-                signal = "BUY"
-                reason = f"🚀 Oversold (RSI {rsi:.0f})"
+                # SCENARIO A: Strong Uptrend (Safe to buy dip)
+                if close > ema_50:
+                    signal = "BUY"
+                    reason = f"🚀 Uptrend Dip (RSI {rsi:.0f} > EMA50)"
+                # SCENARIO B: Downtrend but Capitulation (Volume Spike + MACD)
+                # Harder to catch, usually safer to wait.
+                elif volume_spike and macd_bullish:
+                     signal = "BUY"
+                     reason = f"♻️ Reversal: Volume+MACD (RSI {rsi:.0f})"
+                else:
+                    # IGNORING signal - Trend is down and no reversal confirmation
+                    pass
+
             elif rsi > RSI_OVERBOUGHT:
                 signal = "SELL"
                 reason = f"⚠️ Overbought (RSI {rsi:.0f})"
