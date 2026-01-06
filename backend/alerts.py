@@ -203,7 +203,7 @@ class AlertSystem(commands.Cog):
         self.discovery_loop.cancel()
         self.kraken_discovery_loop.cancel()
 
-    @tasks.loop(minutes=2)  # DAY TRADER MODE: Was 5 min, now 2 min
+    @tasks.loop(minutes=10)  # POSITION TRADER MODE: Was 2 min, now 10 min (reduce churning)
     async def monitor_market(self):
         if not self.bot.is_ready():
             await self.bot.wait_until_ready()
@@ -344,7 +344,7 @@ class AlertSystem(commands.Cog):
             except Exception as e:
                 print(f"❌ Error syncing user {user_label}: {e}")
 
-    @tasks.loop(seconds=15)  # DAY TRADER MODE: Was 30s, now 15s (sniper speed)
+    @tasks.loop(minutes=3)  # POSITION TRADER MODE: Was 15s, now 3 min (stop churning)
     async def dex_monitor(self):
         """Dedicated high-speed loop for DEX memecoins (30s)."""
         if not self.bot.is_ready():
@@ -526,16 +526,16 @@ class AlertSystem(commands.Cog):
                                     reason = ""
                                     user_label = getattr(trader, 'user_id', 'Main')
                                     
-                                    # --- LEGACY POSITION CLEANUP (One-Time) ---
-                                    # Positions without entry_time are from before the time-exit update
-                                    # Force sell these old bags
-                                    if not pos.get('entry_time'):
-                                        pnl = 0
-                                        if entry_price and info['price_usd']:
-                                            pnl = ((info['price_usd'] - entry_price) / entry_price) * 100
-                                        should_sell = True
-                                        reason = f"🧹 Legacy Cleanup (No entry_time, P&L: {pnl:+.1f}%)"
-                                        print(f"🧹 Cleaning legacy position: {info['symbol']} (User {user_label})")
+                                    # --- LEGACY POSITION CLEANUP (DISABLED) ---
+                                    # This was causing all positions to sell on restart
+                                    # Now we keep positions until they hit exit conditions
+                                    # if not pos.get('entry_time'):
+                                    #     pnl = 0
+                                    #     if entry_price and info['price_usd']:
+                                    #         pnl = ((info['price_usd'] - entry_price) / entry_price) * 100
+                                    #     should_sell = True
+                                    #     reason = f"🧹 Legacy Cleanup (No entry_time, P&L: {pnl:+.1f}%)"
+                                    #     print(f"🧹 Cleaning legacy position: {info['symbol']} (User {user_label})")
                                     
                                     if entry_price:
                                         pnl = ((info['price_usd'] - entry_price) / entry_price) * 100
@@ -751,7 +751,7 @@ class AlertSystem(commands.Cog):
                 print(f"⚠️ Error checking {symbol}: {e}")
         await asyncio.sleep(0.3)
 
-    @tasks.loop(minutes=2)  # SNIPER MODE: Was 10 min, now 2 min
+    @tasks.loop(minutes=10)  # POSITION TRADER MODE: Was 2 min, now 10 min
     async def discovery_loop(self):
         """Find new trending DEX gems automatically - SNIPER MODE."""
         if not self.bot.is_ready(): return
@@ -953,8 +953,8 @@ class AlertSystem(commands.Cog):
                         # 0a. Check Cooldown (Wash Trade Prevention)
                         if symbol in self.last_exit_times:
                             elapsed = (datetime.datetime.now() - self.last_exit_times[symbol]).total_seconds()
-                            if elapsed < 90: # DAY TRADER MODE: 90 second cooldown (was 5 min)
-                                print(f"⏳ Cooldown active for {symbol} ({int(90-elapsed)}s remaining). Skipping buy.")
+                            if elapsed < 1800: # POSITION TRADER MODE: 30 min cooldown (was 90 sec)
+                                print(f"⏳ Cooldown active for {symbol} ({int((1800-elapsed)/60)} min remaining). Skipping buy.")
                                 return
 
                         # 1. Check if we already have a position (local cache)
