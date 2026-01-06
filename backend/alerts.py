@@ -12,6 +12,15 @@ from database import SessionLocal
 import models
 from analysis.copy_trader import SmartCopyTrader
 
+# Import Polymarket modules (optional - may not be installed)
+try:
+    from collectors.polymarket_collector import get_polymarket_collector
+    from analysis.polymarket_trader import get_polymarket_trader
+    POLYMARKET_ENABLED = True
+except ImportError as e:
+    print(f"⚠️ Polymarket disabled: {e}")
+    POLYMARKET_ENABLED = False
+
 # Import DEX trader for automated Solana trading
 try:
     from dex_trader import DexTrader
@@ -38,6 +47,14 @@ class AlertSystem(commands.Cog):
         self.safety = SafetyChecker()
         self.copy_trader = SmartCopyTrader()
         self.processed_swarms = set() # Track processed swarm signals (mint + window_id)
+        
+        # Initialize Polymarket (Paper Mode by default)
+        self.polymarket_collector = None
+        self.polymarket_trader = None
+        if POLYMARKET_ENABLED:
+            self.polymarket_collector = get_polymarket_collector()
+            self.polymarket_trader = get_polymarket_trader()
+            print(f"🎲 Polymarket Copy-Trader initialized (PAPER MODE)")
         
         # Initialize DEX trader for Solana memecoins
         if DEX_TRADING_ENABLED:
@@ -1278,10 +1295,70 @@ class AlertSystem(commands.Cog):
     async def before_swarm_monitor(self):
         await self.bot.wait_until_ready()
 
+    @tasks.loop(minutes=10)
+    async def polymarket_monitor(self):
+        """Monitor Polymarket for whale swarm signals."""
+        if not POLYMARKET_ENABLED or not self.polymarket_collector or not self.polymarket_trader:
+            return
+        
+        try:
+            # 1. Detect whale swarms
+            swarm_signals = await self.polymarket_collector.detect_whale_swarm(
+                min_whales=3,
+                time_window_minutes=60
+            )
+            
+            if not swarm_signals:
+                return
+            
+            print(f"🐋 Polymarket: Found {len(swarm_signals)} swarm signals")
+            
+            for signal in swarm_signals:
+                # 2. Evaluate signal
+                evaluation = await self.polymarket_trader.evaluate_swarm_signal(signal)
+                
+                if evaluation["action"] == "BUY":
+                    # 3. Execute (Paper mode by default)
+                    result = await self.polymarket_trader.execute_buy(
+                        token_id=signal["token_id"],
+                        amount_usdc=evaluation["bet_size"],
+                        whale_count=signal["whale_count"]
+                    )
+                    
+                    if result["success"]:
+                        mode = "PAPER" if self.polymarket_trader.config.paper_mode else "LIVE"
+                        print(f"🎲 [{mode}] Polymarket BUY: {signal['whale_count']} whales @ ${evaluation['bet_size']}")
+                else:
+                    print(f"🔍 Polymarket Skip: {evaluation['reason']}")
+            
+            # 4. Check for exits on existing positions
+            # Get current prices for all positions
+            current_prices = {}
+            for token_id in self.polymarket_trader.positions.keys():
+                price = await self.polymarket_collector.get_market_price(token_id)
+                if price:
+                    current_prices[token_id] = price
+            
+            exits = await self.polymarket_trader.check_position_exits(current_prices)
+            for exit_data in exits:
+                result = await self.polymarket_trader.execute_sell(exit_data["token_id"])
+                if result["success"]:
+                    print(f"🎲 Polymarket EXIT: {exit_data['reason']} (PNL: ${result['pnl']:.2f})")
+                    
+        except Exception as e:
+            print(f"❌ Polymarket Monitor Error: {e}")
+    
+    @polymarket_monitor.before_loop
+    async def before_polymarket_monitor(self):
+        await self.bot.wait_until_ready()
+
     @commands.Cog.listener()
     async def on_ready(self):
         self.check_alerts.start()
         self.swarm_monitor.start() # Start the swarm loop
+        if POLYMARKET_ENABLED:
+            self.polymarket_monitor.start()
+            print(f"🎲 Polymarket Monitor started")
         print(f"✅ Bot connected as {self.bot.user}")
 
 async def setup(bot):
