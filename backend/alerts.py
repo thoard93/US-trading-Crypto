@@ -1213,6 +1213,55 @@ class AlertSystem(commands.Cog):
         await ctx.send(f"💰 **Kraken Portfolio Balance:** `{bal}` USDT")
 
     @commands.command()
+    async def hunt(self, ctx):
+        """Manually trigger whale wallet discovery."""
+        await ctx.send("🦈 **Starting Whale Hunt...** Scanning trending pairs for profitable traders...")
+        
+        try:
+            new_wallets = await self.copy_trader.scan_market_for_whales(max_pairs=15, max_traders_per_pair=5)
+            
+            if new_wallets > 0:
+                embed = discord.Embed(
+                    title="🐋 Whale Hunt Complete!",
+                    description=f"Discovered **{new_wallets}** new qualified wallets!",
+                    color=discord.Color.green()
+                )
+                embed.add_field(name="Total Tracked", value=f"{len(self.copy_trader.qualified_wallets)} wallets", inline=True)
+                await ctx.send(embed=embed)
+            else:
+                await ctx.send("📭 No new qualified wallets found. Try again later when markets are more active.")
+        except Exception as e:
+            await ctx.send(f"❌ Hunt failed: {str(e)[:100]}")
+
+    @commands.command()
+    async def whales(self, ctx):
+        """List currently tracked whale wallets."""
+        wallets = self.copy_trader.qualified_wallets
+        
+        if not wallets:
+            await ctx.send("📭 No whale wallets tracked yet. Run `!hunt` to discover some!")
+            return
+        
+        embed = discord.Embed(
+            title="🐋 Tracked Whale Wallets",
+            description=f"Monitoring **{len(wallets)}** qualified wallets",
+            color=discord.Color.blue()
+        )
+        
+        for addr, info in list(wallets.items())[:10]:  # Show first 10
+            stats = info.get('stats', {})
+            embed.add_field(
+                name=f"`{addr[:8]}...{addr[-4:]}`",
+                value=f"Trades: {stats.get('trade_count', 0)} | Discovered: {info.get('discovered_on', 'Unknown')}",
+                inline=False
+            )
+        
+        if len(wallets) > 10:
+            embed.set_footer(text=f"...and {len(wallets) - 10} more")
+        
+        await ctx.send(embed=embed)
+
+    @commands.command()
     async def polymarket(self, ctx):
         """Check Polymarket paper trading status."""
         if not POLYMARKET_ENABLED or not self.polymarket_trader:
