@@ -107,13 +107,13 @@ class AlertSystem(commands.Cog):
             self.dex_trader = None
         
         # DEX Auto-trading configuration
-        self.dex_auto_trade = True  # Toggle for DEX auto-trading
+        self.dex_auto_trade = False  # DISABLED: Copy-trading only mode (no sniper targets)
         self.dex_min_safety_score = 50  # Lowered from 70 to 50 for MAXIMUM ACTION
         self.dex_min_liquidity = 10000  # RAISED to $10k to prevent low-liquidity traps
         self.dex_max_positions = 15  # Increased from 10 to 15 (User Request)
         
         # STOCK Auto-trading configuration
-        self.stock_auto_trade = True  # Toggle for stock auto-trading
+        self.stock_auto_trade = False  # DISABLED: Copy-trading only mode (no RSI signals)
         self.stock_trade_amount = 5.0  # $5 per trade (fractional shares)
         self.stock_max_positions = 5  # Max concurrent stock positions
         self.stock_positions = {}  # Track stock positions locally
@@ -756,6 +756,10 @@ class AlertSystem(commands.Cog):
         """Find new trending DEX gems automatically - SNIPER MODE."""
         if not self.bot.is_ready(): return
         
+        # COPY-TRADING ONLY MODE: Skip discovery when auto-trade is disabled
+        if not self.dex_auto_trade:
+            return  # Only trade via swarm copy-trading
+        
         print("🔍 Running DEX Gem Discovery... (SNIPER MODE)")
         channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
         
@@ -1244,6 +1248,80 @@ class AlertSystem(commands.Cog):
                 embed.add_field(name="📊 Open Positions", value="\n".join(pos_list), inline=False)
         
         await ctx.send(embed=embed)
+
+    @commands.command()
+    async def sellprofits(self, ctx):
+        """Sell all DEX positions currently in profit. Use for clean slate."""
+        if not self.dex_traders:
+            await ctx.send("⚠️ No DEX traders configured.")
+            return
+        
+        await ctx.send("🔍 Scanning DEX positions for profitable exits...")
+        
+        sold_count = 0
+        total_pnl = 0.0
+        sold_tokens = []
+        
+        for trader in self.dex_traders:
+            user_label = getattr(trader, 'user_id', 'Main')
+            
+            # Get current prices for all positions
+            for token_address, pos in list(trader.positions.items()):
+                try:
+                    entry_price = pos.get('entry_price_usd', 0)
+                    if not entry_price:
+                        continue
+                    
+                    # Fetch current price
+                    pair_data = await self.dex_scout.get_pair_data('solana', token_address)
+                    if not pair_data:
+                        continue
+                    
+                    info = self.dex_scout.extract_token_info(pair_data)
+                    current_price = info.get('price_usd', 0)
+                    
+                    if not current_price:
+                        continue
+                    
+                    # Calculate P&L
+                    pnl_pct = ((current_price - entry_price) / entry_price) * 100
+                    
+                    # Only sell if in profit
+                    if pnl_pct > 0:
+                        result = trader.sell_token(token_address)
+                        if result.get('success'):
+                            sold_count += 1
+                            total_pnl += pnl_pct
+                            sold_tokens.append(f"✅ {info['symbol']}: +{pnl_pct:.1f}%")
+                            
+                            # Remove from DB
+                            try:
+                                db = SessionLocal()
+                                db.query(models.DexPosition).filter(
+                                    models.DexPosition.token_address == token_address
+                                ).delete()
+                                db.commit()
+                                db.close()
+                            except: pass
+                        else:
+                            sold_tokens.append(f"❌ {info['symbol']}: Failed - {result.get('error', 'Unknown')[:30]}")
+                    
+                    await asyncio.sleep(0.5)  # Rate limit
+                    
+                except Exception as e:
+                    print(f"Error checking position {token_address[:8]}: {e}")
+        
+        # Send result
+        if sold_count > 0:
+            embed = discord.Embed(
+                title="🧹 Profitable Positions Sold",
+                description=f"Sold **{sold_count}** positions for clean slate.",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="Results", value="\n".join(sold_tokens[:10]), inline=False)
+            await ctx.send(embed=embed)
+        else:
+            await ctx.send("📭 No profitable positions found to sell.")
 
     @tasks.loop(minutes=1)
     async def swarm_monitor(self):
