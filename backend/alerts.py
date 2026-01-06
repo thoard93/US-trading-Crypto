@@ -1208,6 +1208,43 @@ class AlertSystem(commands.Cog):
         bal = self.trader.get_usdt_balance()
         await ctx.send(f"💰 **Kraken Portfolio Balance:** `{bal}` USDT")
 
+    @commands.command()
+    async def polymarket(self, ctx):
+        """Check Polymarket paper trading status."""
+        if not POLYMARKET_ENABLED or not self.polymarket_trader:
+            await ctx.send("⚠️ Polymarket module is not enabled.")
+            return
+        
+        status = self.polymarket_trader.get_status()
+        
+        embed = discord.Embed(
+            title="🎲 Polymarket Copy-Trader Status",
+            color=discord.Color.purple()
+        )
+        
+        # Mode indicator
+        mode_emoji = "📝" if status['mode'] == "PAPER" else "💰"
+        embed.add_field(name="Mode", value=f"{mode_emoji} {status['mode']}", inline=True)
+        embed.add_field(name="Balance", value=f"${status['balance']:.2f}", inline=True)
+        embed.add_field(name="Open Positions", value=str(status['open_positions']), inline=True)
+        
+        embed.add_field(name="Position Value", value=f"${status['total_position_value']:.2f}", inline=True)
+        embed.add_field(name="Daily P&L", value=f"${status['daily_pnl']:+.2f}", inline=True)
+        embed.add_field(name="Total P&L", value=f"${status['total_pnl']:+.2f}", inline=True)
+        
+        if status['daily_loss_limit_hit']:
+            embed.add_field(name="⚠️ Status", value="Daily loss limit hit - paused", inline=False)
+        
+        # Show open positions if any
+        if self.polymarket_trader.positions:
+            pos_list = []
+            for token_id, pos in list(self.polymarket_trader.positions.items())[:5]:
+                pos_list.append(f"• {pos.outcome}: ${pos.size_usdc:.2f} @ {pos.entry_price:.2f}¢")
+            if pos_list:
+                embed.add_field(name="📊 Open Positions", value="\n".join(pos_list), inline=False)
+        
+        await ctx.send(embed=embed)
+
     @tasks.loop(minutes=1)
     async def swarm_monitor(self):
         """Polls for Swarm Signals (Copy Trading)."""
