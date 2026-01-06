@@ -941,6 +941,7 @@ class AlertSystem(commands.Cog):
                     
                     # Base trade amount - will be adjusted by conviction
                     base_trade_amount = 10.0 
+                    trade_amount = base_trade_amount  # Initialize for both BUY and SELL paths
                     scalp_mode = (asset_type == "Meme" or symbol_price < 1.0)
 
                     if result['signal'] == 'BUY':
