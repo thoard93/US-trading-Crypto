@@ -1413,6 +1413,7 @@ class AlertSystem(commands.Cog):
             # 2. Periodically run the Hunter (every 60 mins)
             if not hasattr(self, 'swarm_tick'): self.swarm_tick = 0
             self.swarm_tick += 1
+            self.last_swarm_scan = datetime.datetime.now() # Track last scan time
             
             if self.swarm_tick % 60 == 0:
                 print("🦈 Auto-Hunter: Scanning for fresh whales...")
@@ -1482,6 +1483,39 @@ class AlertSystem(commands.Cog):
 
         except Exception as e:
             print(f"❌ Execute Swarm Error: {e}")
+
+    @commands.command()
+    async def status(self, ctx):
+        """Show system health and monitoring status."""
+        
+        # 1. Swarm Monitor Status
+        if hasattr(self, 'last_swarm_scan'):
+            delta = datetime.datetime.now() - self.last_swarm_scan
+            scan_msg = f"Last scan: **{int(delta.total_seconds())}s ago**"
+            heartbeat = "❤️ **Active**"
+        else:
+            scan_msg = "Last scan: **Never**"
+            heartbeat = "⚠️ **Waiting...**"
+            
+        # 2. Tracking Count
+        wallets = len(self.copy_trader.qualified_wallets) if self.copy_trader else 0
+        
+        # 3. Settings
+        mode = "🐋 **Copy-Trading Only**" if not self.dex_auto_trade else "🔫 **Sniper Mode**"
+        
+        embed = discord.Embed(title="🏥 System Status", color=discord.Color.teal())
+        embed.add_field(name="Monitor Heartbeat", value=heartbeat, inline=True)
+        embed.add_field(name="Whale Scan", value=scan_msg, inline=True)
+        embed.add_field(name="Tracked Wallets", value=f"**{wallets}** whales", inline=True)
+        embed.add_field(name="Trading Mode", value=mode, inline=False)
+        
+        # 4. Resources
+        try:
+             # Basic mem check if possible, or just skip
+             pass
+        except: pass
+        
+        await ctx.send(embed=embed)
 
     @swarm_monitor.before_loop
     async def before_swarm_monitor(self):
