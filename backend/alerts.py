@@ -1326,37 +1326,53 @@ class AlertSystem(commands.Cog):
     @tasks.loop(minutes=1)
     async def swarm_monitor(self):
         """Polls for Swarm Signals (Copy Trading)."""
-        if not self.dex_trader:
+        if not self.dex_traders:
             return
             
         try:
             # 1. Get Signals
             signals = await self.copy_trader.monitor_swarm()
             
+            channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
+            
+            if signals:
+                # 🚨 Discord Alert: Signals Detected!
+                if channel_memes:
+                    embed = discord.Embed(
+                        title="🐋 WHALE SWARM DETECTED!",
+                        description=f"Found **{len(signals)}** token(s) with whale activity!",
+                        color=discord.Color.purple()
+                    )
+                    for mint in signals[:5]:  # Show first 5
+                        embed.add_field(name="Token", value=f"`{mint[:16]}...`", inline=True)
+                    await channel_memes.send(embed=embed)
+            
             for mint in signals:
-                # Dedup: If we bought this in last 30 mins, ignore
-                # Simple dedup: check active positions
-                current_time = datetime.datetime.utcnow().timestamp()
+                # Check if ANY user already has a position
+                already_holding = False
+                for trader in self.dex_traders:
+                    if mint in trader.positions:
+                        already_holding = True
+                        break
                 
-                # Check if we already have a position
-                if any(p.get('token_symbol') == mint for p in self.dex_positions.values()):
+                if already_holding:
                     continue
                     
                 print(f"🚨 EXECUTING SWARM BUY: {mint}")
                 await self.execute_swarm_trade(mint)
                 
             # 2. Periodically run the Hunter (every 60 mins)
-            # We use a counter to trigger this once per hour (60 * 1 minute)
             if not hasattr(self, 'swarm_tick'): self.swarm_tick = 0
             self.swarm_tick += 1
             
             if self.swarm_tick % 60 == 0:
                 print("🦈 Auto-Hunter: Scanning for fresh whales...")
-                # Run lightly (Top 5 pairs, max 3 traders) to avoid blocking too long
                 new_wallets = await self.copy_trader.scan_market_for_whales(max_pairs=5, max_traders_per_pair=3)
                 if new_wallets > 0:
                     print(f"✅ Auto-Hunter found {new_wallets} new wallets! List updated.")
-            
+                    if channel_memes:
+                        await channel_memes.send(f"🦈 **Auto-Hunter** found {new_wallets} new profitable wallets to track!")
+                
         except Exception as e:
             print(f"❌ Swarm Monitor Error: {e}")
 
@@ -1384,25 +1400,36 @@ class AlertSystem(commands.Cog):
             # 4. Sizing (High Conviction)
             amount_sol = 0.10 # Fixed High Amount (User wants action)
             
-            # 5. Execute
-            print(f"🚀 BUYING SWARM: {symbol} - {amount_sol} SOL")
+            # 5. Execute for ALL traders (multi-user support)
+            channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
             
-            # Use the first available trader
-            trader = self.dex_traders[0]
-            sig = trader.swap_sol_to_token(mint, amount_sol, slippage_bps=2000) # 20% slippage for swarms
-            
-            if sig:
-                # Log to Discord
-                embed = discord.Embed(
-                    title=f"🚨 SWARM BUY: {symbol}",
-                    description=f"Followed the Smart Money!\nAmount: {amount_sol} SOL\nScore: {safety_score}",
-                    color=0xFF00FF # Magenta for Swarm
-                )
-                if self.bot.get_channel(1324747517610492021): # Replace with config channel
-                     await self.bot.get_channel(1324747517610492021).send(embed=embed)
-                     
-                # Track Position
-                self.track_dex_position(trader.wallet_address, mint, symbol, amount_sol, 0, sig)
+            for trader in self.dex_traders:
+                user_label = getattr(trader, 'user_id', 'Main')
+                
+                # Skip if this trader already holds
+                if mint in trader.positions:
+                    continue
+                
+                print(f"🚀 BUYING SWARM (User {user_label}): {symbol} - {amount_sol} SOL")
+                sig = trader.swap_sol_to_token(mint, amount_sol, slippage_bps=2000) # 20% slippage for swarms
+                
+                if sig:
+                    # Log to Discord
+                    if channel_memes:
+                        embed = discord.Embed(
+                            title=f"🐋 SWARM BUY: {symbol}",
+                            description=f"Following Smart Money!\n**User:** {user_label}\n**Amount:** {amount_sol} SOL\n**Safety:** {safety_score}/100",
+                            color=discord.Color.purple()
+                        )
+                        embed.add_field(name="TX", value=f"`{sig[:32]}...`", inline=False)
+                        await channel_memes.send(embed=embed)
+                         
+                    # Track Position
+                    trader.positions[mint] = {
+                        'entry_price_usd': float(pair.get('priceUsd', 0)),
+                        'entry_time': datetime.datetime.now().timestamp(),
+                        'amount_sol': amount_sol
+                    }
 
         except Exception as e:
             print(f"❌ Execute Swarm Error: {e}")
