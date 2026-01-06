@@ -61,3 +61,13 @@ class DexPosition(Base):
     entry_price_usd = Column(Float)  # ACTUAL entry price (not current)
     amount = Column(Float)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
+
+class WhaleWallet(Base):
+    """Qualified whale wallets for copy-trading (persisted)."""
+    __tablename__ = "whale_wallets"
+    id = Column(Integer, primary_key=True, index=True)
+    address = Column(String, unique=True, index=True)
+    score = Column(Float, default=10.0)
+    discovered_on = Column(String)  # Symbol or source
+    discovered_at = Column(DateTime, default=datetime.datetime.utcnow)
+    stats = Column(JSON, nullable=True) # Full analysis data

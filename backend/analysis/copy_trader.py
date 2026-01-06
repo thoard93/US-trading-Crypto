@@ -19,26 +19,94 @@ class SmartCopyTrader:
         self.dex_scout = DexScout()
         self.collector = WalletCollector()
         self.logger = logging.getLogger(__name__)
-        self.wallets_file = os.path.join(os.path.dirname(__file__), "../data/qualified_wallets.json")
-        self.ensure_data_dir()
+        self.collector = WalletCollector()
+        self.logger = logging.getLogger(__name__)
+        # DB Persistence
         self.qualified_wallets = self._load_wallets()
         self.active_swarms = {} # token_mint -> set(wallet_addresses)
 
-    def ensure_data_dir(self):
-        os.makedirs(os.path.dirname(self.wallets_file), exist_ok=True)
-
     def _load_wallets(self):
-        if os.path.exists(self.wallets_file):
-            try:
-                with open(self.wallets_file, 'r') as f:
-                    return json.load(f)
-            except:
-                return {}
-        return {}
+        """Load wallets from Database."""
+        try:
+            from database import SessionLocal
+            from models import WhaleWallet
+            
+            db = SessionLocal()
+            wallets_db = db.query(WhaleWallet).all()
+            
+            # Convert to internal dict format
+            # Format: {address: {stats: ..., discovered_on: ...}}
+            result = {}
+            for w in wallets_db:
+                result[w.address] = {
+                    "stats": w.stats,
+                    "discovered_on": w.discovered_on,
+                    "discovered_at": w.discovered_at.isoformat() if w.discovered_at else None,
+                    "score": w.score
+                }
+            
+            db.close()
+            return result
+        except Exception as e:
+            self.logger.error(f"Error loading wallets from DB: {e}")
+            return {}
     
-    def _save_wallets(self):
-        with open(self.wallets_file, 'w') as f:
-            json.dump(self.qualified_wallets, f, indent=2)
+    def _save_wallet_to_db(self, address, data):
+        """Save a single wallet to DB."""
+        try:
+            from database import SessionLocal
+            from models import WhaleWallet
+            
+            db = SessionLocal()
+            
+            # Check if exists
+            existing = db.query(WhaleWallet).filter(WhaleWallet.address == address).first()
+            if not existing:
+                new_wallet = WhaleWallet(
+                    address=address,
+                    stats=data['stats'],
+                    discovered_on=data['discovered_on'],
+                    score=data['score']
+                )
+                db.add(new_wallet)
+            else:
+                existing.stats = data['stats'] # Update stats
+            
+            db.commit()
+            db.close()
+        except Exception as e:
+            self.logger.error(f"Error saving wallet to DB: {e}")
+
+    def _prune_old_whales(self, keep_count=100):
+        """Remove oldest whales to keep list fresh."""
+        try:
+            from database import SessionLocal
+            from models import WhaleWallet
+            
+            # Sort by discovery date (descending)
+            sorted_wallets = sorted(
+                self.qualified_wallets.items(), 
+                key=lambda x: x[1].get('discovered_at', ''),
+                reverse=True
+            )
+            
+            # Keep top N
+            to_keep = dict(sorted_wallets[:keep_count])
+            to_remove = dict(sorted_wallets[keep_count:])
+            
+            self.qualified_wallets = to_keep
+            
+            # Remove from DB
+            if to_remove:
+                db = SessionLocal()
+                for addr in to_remove.keys():
+                    db.query(WhaleWallet).filter(WhaleWallet.address == addr).delete()
+                db.commit()
+                db.close()
+                self.logger.info(f"🧹 Pruned {len(to_remove)} old whales from DB.")
+                
+        except Exception as e:
+            self.logger.error(f"Error pruning whales: {e}")
 
     async def scan_market_for_whales(self, max_pairs=10, max_traders_per_pair=5):
         """
@@ -96,14 +164,19 @@ class SmartCopyTrader:
                 
                 if stats and stats.get('is_qualified'):
                     self.logger.info(f"    🔥 FOUND QUALIFIED TRADER: {wallet} (P10: {stats['p10_holding_time_sec']}s)")
-                    self.qualified_wallets[wallet] = {
+                    wallet_data = {
                         "discovered_on": symbol,
                         "discovered_at": datetime.now().isoformat(),
                         "stats": stats,
                         "score": 10 # Base Score
                     }
+                    self.qualified_wallets[wallet] = wallet_data
                     new_wallets += 1
-                    self._save_wallets()
+                    self._save_wallet_to_db(wallet, wallet_data)
+                    
+        # Pruning: Keep only top 100 whales (by score/freshness)
+        if len(self.qualified_wallets) > 100:
+            self._prune_old_whales()
             
             # Respect rate limits
             await asyncio.sleep(1) 
