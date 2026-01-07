@@ -360,9 +360,9 @@ class DexTrader:
             tx_signature = result.get('result')
             print(f"📤 PumpPortal TX sent: {tx_signature}")
             
-            # Wait for confirmation (up to 30 seconds)
+            # Wait for confirmation (up to 60 seconds)
             import time
-            for i in range(6):
+            for i in range(12):
                 time.sleep(5)
                 confirm_response = requests.post(self.rpc_url, json={
                     "jsonrpc": "2.0",
