@@ -1697,15 +1697,33 @@ class AlertSystem(commands.Cog):
                         amount_usdc=evaluation.get("bet_size", 0),
                         whale_count=signal.get("whale_count", 0)
                     )
+                try:
+                    evaluation = await self.polymarket_trader.evaluate_swarm_signal(signal)
                     
-                    if result and result.get("success"):
-                        mode = "PAPER" if self.polymarket_trader.config.paper_mode else "LIVE"
-                        whale_count = signal.get('whale_count', 0) or 0
-                        bet_size = evaluation.get('bet_size', 0) or 0
-                        print(f"🎲 [{mode}] Polymarket BUY: {whale_count} whales @ ${bet_size}")
-                else:
-                    reason = evaluation.get('reason', 'Unknown')
-                    print(f"🔍 Polymarket Skip: {reason}")
+                    if not evaluation:
+                        continue
+                        
+                    if evaluation.get("action") == "BUY":
+                        # 3. Execute
+                        result = await self.polymarket_trader.execute_buy(
+                            token_id=signal.get("token_id"),
+                            amount_usdc=evaluation.get("bet_size", 0),
+                            whale_count=signal.get("whale_count", 0)
+                        )
+                        
+                        if result and result.get("success"):
+                            mode = "PAPER" if self.polymarket_trader.config.paper_mode else "LIVE"
+                            whale_count = signal.get('whale_count', 0) or 0
+                            bet_size = evaluation.get('bet_size', 0) or 0
+                            print(f"🎲 [{mode}] Polymarket BUY: {whale_count} whales @ ${bet_size}")
+                    else:
+                        reason = evaluation.get('reason', 'Unknown')
+                        # Check for None just in case
+                        if reason is None: reason = "Unknown"
+                        print(f"🔍 Polymarket Skip: {reason}")
+                except Exception as inner_e:
+                    print(f"⚠️ Error processing Polymarket signal: {inner_e}")
+                    continue
             
             # 4. Check for exits on existing positions
             # Get current prices for all positions
