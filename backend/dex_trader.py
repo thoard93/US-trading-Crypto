@@ -351,13 +351,35 @@ class DexTrader:
                 return {"error": error_msg}
             
             tx_signature = result.get('result')
-            print(f"✅ PumpPortal swap executed! TX: {tx_signature}")
+            print(f"📤 PumpPortal TX sent: {tx_signature}")
             
-            return {
-                "success": True,
-                "signature": tx_signature,
-                "provider": "pumpportal"
-            }
+            # Wait for confirmation (up to 30 seconds)
+            import time
+            for i in range(6):
+                time.sleep(5)
+                confirm_response = requests.post(self.rpc_url, json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getSignatureStatuses",
+                    "params": [[tx_signature]]
+                }, timeout=10)
+                
+                confirm_result = confirm_response.json()
+                status = confirm_result.get('result', {}).get('value', [{}])[0]
+                
+                if status and status.get('confirmationStatus') in ['confirmed', 'finalized']:
+                    if status.get('err'):
+                        print(f"❌ PumpPortal TX FAILED on-chain: {status.get('err')}")
+                        return {"error": f"TX failed on-chain: {status.get('err')}"}
+                    print(f"✅ PumpPortal swap CONFIRMED! TX: {tx_signature}")
+                    return {
+                        "success": True,
+                        "signature": tx_signature,
+                        "provider": "pumpportal"
+                    }
+            
+            print(f"⚠️ PumpPortal TX not confirmed after 30s: {tx_signature}")
+            return {"error": "Transaction not confirmed", "signature": tx_signature}
             
         except Exception as e:
             print(f"❌ PumpPortal swap error: {e}")
