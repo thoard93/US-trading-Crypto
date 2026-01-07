@@ -158,8 +158,8 @@ class AlertSystem(commands.Cog):
         self.dex_exit_cooldowns = {} # {token_address: timestamp} - prevents re-buying after SL
 
         self.monitor_market.start()
-        self.dex_monitor.start() # Start new 30s loop
-        self.discovery_loop.start()
+        # self.dex_monitor.start() # PAUSED: Copy-trading only
+        # self.discovery_loop.start() # PAUSED: Copy-trading only
         self.kraken_discovery_loop.start()
         
         # Async startup tasks
