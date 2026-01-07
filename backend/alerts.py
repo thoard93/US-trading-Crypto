@@ -202,6 +202,7 @@ class AlertSystem(commands.Cog):
         self.monitor_market.cancel()
         self.discovery_loop.cancel()
         self.kraken_discovery_loop.cancel()
+        self.swarm_monitor.cancel()
 
     @tasks.loop(minutes=10)  # POSITION TRADER MODE: Was 2 min, now 10 min (reduce churning)
     async def monitor_market(self):
@@ -1584,7 +1585,9 @@ class AlertSystem(commands.Cog):
 
     async def cog_load(self):
         """Called when the cog is loaded - start the monitoring loops."""
-        self.check_alerts.start()
+        self.monitor_market.start()
+        self.discovery_loop.start()
+        self.kraken_discovery_loop.start()
         self.swarm_monitor.start()
         print("🐋 Swarm Monitor started!")
         if POLYMARKET_ENABLED:
