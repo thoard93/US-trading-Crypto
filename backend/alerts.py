@@ -1529,6 +1529,11 @@ class AlertSystem(commands.Cog):
             embed_color = discord.Color.green() if all_pass else discord.Color.red()
             decision = "✅ EXECUTING BUY" if all_pass else "🚫 SKIPPED"
             
+            # Get price change data
+            price_change_24h = float(pair.get('priceChange', {}).get('h24', 0) or 0)
+            change_emoji = "📈" if price_change_24h >= 0 else "📉"
+            change_color = "+" if price_change_24h >= 0 else ""
+            
             embed = discord.Embed(
                 title=f"🐋 Swarm Analysis: {symbol}",
                 description=f"**Decision:** {decision}",
@@ -1537,6 +1542,7 @@ class AlertSystem(commands.Cog):
             embed.add_field(name="💰 Liquidity", value=f"${liquidity:,.0f}", inline=True)
             embed.add_field(name="🛡️ Safety", value=f"{safety_score}/100", inline=True)
             embed.add_field(name="💵 Price", value=f"${price:.8f}" if price < 0.01 else f"${price:.4f}", inline=True)
+            embed.add_field(name=f"{change_emoji} 24h Change", value=f"{change_color}{price_change_24h:.1f}%", inline=True)
             
             # Show why skipped
             if not liq_pass:
