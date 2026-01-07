@@ -449,7 +449,7 @@ class DexTrader:
             }
             # REFRESH HOLDINGS IMMEDIATELY for fast-fail selling
             print("🔄 Refreshing wallet holdings after buy...")
-            self.get_wallet_holdings()
+            self.get_all_tokens()
         
         return result
     
