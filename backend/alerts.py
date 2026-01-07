@@ -1375,6 +1375,9 @@ class AlertSystem(commands.Cog):
     @tasks.loop(minutes=1)
     async def swarm_monitor(self):
         """Polls for Swarm Signals (Copy Trading)."""
+        # Set heartbeat FIRST so we know loop is alive
+        self.last_swarm_scan = datetime.datetime.now()
+        
         if not self.dex_traders:
             return
             
@@ -1413,7 +1416,6 @@ class AlertSystem(commands.Cog):
             # 2. Periodically run the Hunter (every 60 mins)
             if not hasattr(self, 'swarm_tick'): self.swarm_tick = 0
             self.swarm_tick += 1
-            self.last_swarm_scan = datetime.datetime.now() # Track last scan time
             
             if self.swarm_tick % 60 == 0:
                 print("🦈 Auto-Hunter: Scanning for fresh whales...")
@@ -1424,7 +1426,9 @@ class AlertSystem(commands.Cog):
                         await channel_memes.send(f"🦈 **Auto-Hunter** found {new_wallets} new profitable wallets to track!")
                 
         except Exception as e:
+            import traceback
             print(f"❌ Swarm Monitor Error: {e}")
+            traceback.print_exc()
 
     async def execute_swarm_trade(self, mint):
         """Executes a BUY for a Swarm Signal."""
