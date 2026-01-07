@@ -422,27 +422,23 @@ class DexTrader:
         user_id = getattr(self, 'user_id', 'Unknown')
         print(f"🔄 BUYING (User {user_id}) {token_mint} | SOL: {sol_amount:.4f}")
 
-        # First attempt (Default Slippage 15%)
-        result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports)
-        
-        # Retry logic for Slippage (0x177e) - Aggressive retries for volatile memecoins
-        if 'error' in result and '0x177e' in str(result['error']):
-             print("⚠️ Buy Slippage exceeded (15%). Waiting 2s then retrying with 40%...")
-             import time
-             time.sleep(2)  # Let price settle
-             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=4000)
-        
-        # Second retry at 90% for ultra-volatile swarm tokens (meme pumps)
-        if 'error' in result and '0x177e' in str(result['error']):
-             print("⚠️ Buy Slippage exceeded (40%). Waiting 3s then FINAL RETRY with 90%...")
-             import time
-             time.sleep(3)  # Let price settle more
-             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=9000)
-        
-        # PUMPPORTAL FALLBACK: If Jupiter fails on pump.fun token, try PumpPortal
-        if 'error' in result and token_mint.lower().endswith('pump'):
-            print("🎰 Jupiter failed on pump.fun token. Trying PumpPortal...")
-            result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=50)
+        if token_mint.lower().endswith('pump'):
+             print(f"💊 Pump.fun Token detected ({token_mint}). Using PumpPortal FIRST.")
+             result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=50) # Aggressive
+             
+             # If PumpPortal fails, Fallback to Jupiter
+             if 'error' in result:
+                 print(f"⚠️ PumpPortal failed ({result.get('error')}). Fallback to Jupiter...")
+                 result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000) # 100% Slippage
+        else:
+            # 1. Standard Jupiter route for non-pump tokens
+            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports)
+            
+            # Retry logic... (Simplified for non-pump tokens)
+            if 'error' in result and '0x177e' in str(result['error']):
+                 print("⚠️ Buy Slippage exceeded. Retrying with 50%...")
+                 import time; time.sleep(1)
+                 result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=5000)
         
         if result.get('success'):
             # Track position
