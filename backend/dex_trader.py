@@ -297,8 +297,9 @@ class DexTrader:
                     "amount": amount_sol,
                     "denominatedInSol": "true",
                     "slippage": slippage,
-                    "priorityFee": 0.0005,  # 0.0005 SOL priority fee
-                    "pool": "auto"  # Auto-select pump or raydium
+                    "priorityFee": 0.005,  # 0.005 SOL priority fee (10x higher for landing)
+                    "pool": "auto",  # Auto-select pump or raydium
+                    "skipPreflight": "false"  # Validate before sending
                 },
                 timeout=15
             )
@@ -333,15 +334,21 @@ class DexTrader:
             signed_tx_bytes = bytes(signed_tx)
             signed_tx_base64 = base64.b64encode(signed_tx_bytes).decode('utf-8')
             
+            # Send with optimized params for landing
             send_response = requests.post(self.rpc_url, json={
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "sendTransaction",
                 "params": [
                     signed_tx_base64,
-                    {"encoding": "base64", "skipPreflight": False, "preflightCommitment": "confirmed"}
+                    {
+                        "encoding": "base64", 
+                        "skipPreflight": True,  # Skip local sim - PumpPortal already validated
+                        "preflightCommitment": "confirmed",
+                        "maxRetries": 3  # Retry sending if first attempt fails
+                    }
                 ]
-            }, timeout=15)
+            }, timeout=20)
             
             result = send_response.json()
             

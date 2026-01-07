@@ -1418,7 +1418,7 @@ class AlertSystem(commands.Cog):
         else:
             await ctx.send("📭 No DEX tokens found to sell.")
 
-    @tasks.loop(seconds=30)  # Fast scan - Developer plan (10M credits)
+    @tasks.loop(seconds=60)  # Reduced frequency from 30s to 60s to save credits
     async def swarm_monitor(self):
         """Polls for Swarm Signals (Copy Trading)."""
         # Set heartbeat FIRST so we know loop is alive

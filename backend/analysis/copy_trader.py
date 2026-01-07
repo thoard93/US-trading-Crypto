@@ -270,8 +270,29 @@ class SmartCopyTrader:
         signals = []
         cluster = defaultdict(set) # token_mint -> {wallet_addresses}
         
-        # 1. Check each wallet for recent activity (use async to not block)
-        for wallet in list(self.qualified_wallets.keys()):  # Copy keys to avoid mutation error
+        # Optimize: Round-Robin Scanning (10 wallets per cycle)
+        # Prevents API Credit Drain (2M -> 100k per day)
+        if not hasattr(self, '_scan_index'): self._scan_index = 0
+        
+        all_wallets = list(self.qualified_wallets.keys())
+        batch_size = 10
+        total_wallets = len(all_wallets)
+        
+        if total_wallets == 0: return []
+        
+        start_idx = self._scan_index % total_wallets
+        # Handle wrap-around
+        if start_idx + batch_size > total_wallets:
+             batch = all_wallets[start_idx:] + all_wallets[:(start_idx + batch_size - total_wallets)]
+        else:
+             batch = all_wallets[start_idx : start_idx + batch_size]
+             
+        self._scan_index = (self._scan_index + batch_size) % total_wallets
+        
+        self.logger.info(f"👀 Swarm Scan: Checking batch {start_idx}-{start_idx+batch_size} ({len(batch)} whales)...")
+        
+        # 1. Check batch wallets for recent activity
+        for wallet in batch:
             # Fetch last 10 txs (ASYNC to not block Discord heartbeat)
             txs = await self.collector.fetch_helius_history_async(wallet, limit=10)
             if not txs: continue
