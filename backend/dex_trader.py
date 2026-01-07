@@ -301,7 +301,7 @@ class DexTrader:
             print(f"❌ Swap execution error: {e}")
             return {"error": str(e)}
     
-    def execute_pumpportal_swap(self, token_mint, action, amount_sol, slippage=25):
+    def execute_pumpportal_swap(self, token_mint, action, amount_sol, slippage=25, priority_fee=0.02):
         """
         Execute a swap via PumpPortal API for pump.fun tokens.
         This has higher success rate than Jupiter for pump.fun tokens.
@@ -310,7 +310,7 @@ class DexTrader:
             return {"error": "Wallet not initialized"}
         
         try:
-            print(f"🎰 PumpPortal {action.upper()}: {token_mint[:16]}... | {amount_sol} SOL")
+            print(f"🎰 PumpPortal {action.upper()}: {token_mint[:16]}... | {amount_sol} SOL | Fee: {priority_fee}")
             
             # 1. Get transaction from PumpPortal
             response = requests.post(
@@ -322,7 +322,7 @@ class DexTrader:
                     "amount": amount_sol,
                     "denominatedInSol": "true",
                     "slippage": slippage,
-                    "priorityFee": 0.02,  # 0.02 SOL priority fee (Maximum aggression)
+                    "priorityFee": priority_fee,  # Dynamic Priority Fee
                     "pool": "auto",  # Auto-select pump or raydium
                     "skipPreflight": "false"  # Validate before sending
                 },
@@ -449,7 +449,7 @@ class DexTrader:
 
         if "pump" in token_mint.lower():
             # Use HIGH priority fee (0.05 SOL) for swarm snipes
-            result = self.buy_token_pump_portal(token_mint, sol_amount, priority_fee=0.05)
+            result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, priority_fee=0.05)   
             if not result.get('error'):
                 return result
             print(f"⚠️ PumpPortal failed ({result.get('error')}). Fallback to Jupiter...")
