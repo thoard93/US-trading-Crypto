@@ -1468,7 +1468,8 @@ class AlertSystem(commands.Cog):
                         should_exit = await self.copy_trader.check_swarm_exit(mint)
                         if should_exit:
                             print(f"📉 WHALE DUMP DETECTED! Auto-selling {mint}...")
-                            result = trader.sell_token(mint)
+                            loop = asyncio.get_running_loop()
+                            result = await loop.run_in_executor(None, trader.sell_token, mint)
                             if result.get('success'):
                                 # Alert Discord
                                 if channel_memes:
@@ -1594,7 +1595,9 @@ class AlertSystem(commands.Cog):
                     continue
                 
                 print(f"🚀 BUYING SWARM (User {user_label}): {symbol} - {amount_sol} SOL")
-                result = trader.buy_token(mint, amount_sol)
+                # Run sync trading in executor to avoid blocking Discord heartbeat during 30s confirmation wait
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(None, trader.buy_token, mint, amount_sol)
                 
                 if result.get('success'):
                     sig = result.get('signature', 'Unknown')
