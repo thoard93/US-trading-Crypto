@@ -448,8 +448,8 @@ class DexTrader:
         print(f"🔄 BUYING (User {user_id}) {token_mint} | SOL: {sol_amount:.4f}")
 
         if "pump" in token_mint.lower():
-            # Use HIGH priority fee (0.05 SOL) for swarm snipes
-            result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, priority_fee=0.05)   
+            # Use HIGH priority fee (0.05 SOL) and MAX SLIPPAGE (100%) for swarm snipes
+            result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=100, priority_fee=0.05)   
             if not result.get('error'):
                 return result
             print(f"⚠️ PumpPortal failed ({result.get('error')}). Fallback to Jupiter...")
@@ -460,9 +460,9 @@ class DexTrader:
             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
         else:
             # 1. Standard Jupiter route for non-pump tokens
-            # Use 40% slippage for blind send (was 4000)
+            # Use 100% slippage (MAX) for blind send (was 4000)
             amount_lamports = int(sol_amount * 1e9)
-            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=4000)
+            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
             
             # Retry logic... (Simplified for non-pump tokens)
             if 'error' in result and '0x177e' in str(result['error']):
