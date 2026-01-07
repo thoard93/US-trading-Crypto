@@ -1509,6 +1509,11 @@ class AlertSystem(commands.Cog):
                                 # Clean up tracking
                                 if mint in self.copy_trader.active_swarms:
                                     del self.copy_trader.active_swarms[mint]
+                                # ADD TO DUMP BLACKLIST (60 min cooldown for re-entry)
+                                if not hasattr(self, '_dump_blacklist'):
+                                    self._dump_blacklist = {}
+                                self._dump_blacklist[mint] = datetime.datetime.now().timestamp()
+                                print(f"🚫 Added {mint[:16]}... to dump blacklist (60min cooldown)")
                             else:
                                 print(f"❌ Whale exit sell failed: {result.get('error')}")
                 
@@ -1534,8 +1539,22 @@ class AlertSystem(commands.Cog):
         # COOLDOWN: Skip recently failed tokens (5 min cooldown)
         if not hasattr(self, '_failed_tokens'):
             self._failed_tokens = {}
+        # DUMP BLACKLIST: Skip tokens we recently sold due to whale dump (60 min cooldown)
+        if not hasattr(self, '_dump_blacklist'):
+            self._dump_blacklist = {}
         
         now = datetime.datetime.now().timestamp()
+        
+        # Check dump blacklist FIRST (higher priority than failed tokens)
+        if mint in self._dump_blacklist:
+            last_dump = self._dump_blacklist[mint]
+            if now - last_dump < 3600:  # 60 minute cooldown after dump
+                print(f"🚫 Skipping {mint[:16]}... (dumped recently, 60min cooldown)")
+                return
+            else:
+                # Cooldown expired, remove from blacklist
+                del self._dump_blacklist[mint]
+        
         if mint in self._failed_tokens:
             last_fail = self._failed_tokens[mint]
             if now - last_fail < 300:  # 5 minute cooldown
