@@ -267,6 +267,10 @@ class SmartCopyTrader:
         if not self.qualified_wallets:
             return []
             
+        # Initialize persistent cache for activity if not present
+        if not hasattr(self, '_recent_whale_activity'):
+            self._recent_whale_activity = [] # List of {wallet, mint, timestamp, signature}
+            
         signals = []
         cluster = defaultdict(set) # token_mint -> {wallet_addresses}
         
@@ -321,18 +325,48 @@ class SmartCopyTrader:
                 STABLE_MINTS = {SOL_MINT, USDC_MINT, "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"}
 
                 for mint in tokens_in:
-                    if mint not in STABLE_MINTS:
-                        cluster[mint].add(wallet)
+                    if mint in STABLE_MINTS: continue
+                    
+                    # Store this activity
+                    tx_sig = tx.get('signature', '')
+                    is_new = True
+                    for entry in self._recent_whale_activity:
+                        if entry['wallet'] == wallet and entry['mint'] == mint and entry['signature'] == tx_sig:
+                            is_new = False
+                            break
+                    
+                    if is_new:
+                        self.logger.info(f"    👉 Found new BUY: {mint[:8]} by {wallet[:8]} ({age_min:.1f}m ago)")
+                        self._recent_whale_activity.append({
+                            'wallet': wallet,
+                            'mint': mint,
+                            'timestamp': tx_time,
+                            'signature': tx_sig
+                        })
+
+        # 2. PRUNE: Remove old activity from cache
+        now = datetime.utcnow()
+        self._recent_whale_activity = [
+            x for x in self._recent_whale_activity 
+            if (now - x['timestamp']).total_seconds() / 60 <= window_minutes
+        ]
         
-        # 2. Check Thresholds
+        # 3. ANALYZE entire cache for swarms
+        cluster = defaultdict(set) # token_mint -> {wallet_addresses}
+        
+        for entry in self._recent_whale_activity:
+            cluster[entry['mint']].add(entry['wallet'])
+            
+        # 4. Filter for Swarms (Min 3 Buyers)
         for mint, buyers in cluster.items():
             if len(buyers) >= min_buyers:
-                self.logger.info(f"🚨 SWARM DETECTED: {len(buyers)} Qualified Wallets bought {mint}!")
+                # Found a swarm!
+                if mint in self.active_swarms:
+                    continue # Already tracking
+                    
+                self.logger.info(f"🚀 SWARM DETECTED: {len(buyers)} whales bought {mint}")
                 signals.append(mint)
-                # Track participants for Exit Logic
-                if mint not in self.active_swarms:
-                    self.active_swarms[mint] = set()
-                self.active_swarms[mint].update(buyers)
+                self.active_swarms[mint] = buyers
                 
         return signals
 
