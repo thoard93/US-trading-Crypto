@@ -4,6 +4,7 @@ import json
 import os
 import random
 from datetime import datetime
+from collections import defaultdict
 from collectors.dex_scout import DexScout
 from collectors.wallet_collector import WalletCollector
 
