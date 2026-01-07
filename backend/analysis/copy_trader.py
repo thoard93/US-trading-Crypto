@@ -185,6 +185,79 @@ class SmartCopyTrader:
         self.logger.info(f"✅ Hunt Complete. Found {new_wallets} new qualified wallets. Total: {len(self.qualified_wallets)}")
         return new_wallets
 
+    def scan_market_for_whales_sync(self, max_pairs=10, max_traders_per_pair=5):
+        """
+        SYNC version of whale scanner - runs in thread to avoid blocking Discord.
+        """
+        self.logger.info("🌊 Starting Whale Hunt (Sync)...")
+        
+        # 1. Get Trending Pairs (sync call)
+        import requests
+        try:
+            resp = requests.get("https://api.dexscreener.com/token-boosts/top/v1", timeout=10)
+            if resp.status_code != 200:
+                return 0
+            pairs = resp.json()[:max_pairs]
+        except Exception as e:
+            self.logger.error(f"Error fetching trending: {e}")
+            return 0
+            
+        self.logger.info(f"🔎 Found {len(pairs)} trending pairs to scan.")
+        
+        new_wallets = 0
+        
+        for pair in pairs:
+            token_address = pair.get('tokenAddress')
+            if not token_address: continue
+            
+            self.logger.info(f"  👉 Scanning {token_address[:16]}...")
+            
+            # 2. Get Recent Signatures (Trades)
+            sigs = self.collector.get_signatures_for_address(token_address, limit=50)
+            if not sigs: continue
+            
+            sig_list = [s['signature'] for s in sigs]
+            
+            # 3. Parse Transactions to find Signers
+            parsed_txs = self.collector.batch_fetch_parsed_txs(sig_list)
+            
+            traders = set()
+            for tx in parsed_txs:
+                if tx.get('type') == 'SWAP':
+                    payer = tx.get('feePayer')
+                    if payer:
+                        traders.add(payer)
+            
+            self.logger.info(f"    found {len(traders)} unique traders.")
+            
+            # 4. Analyze Each Trader
+            checked_count = 0
+            for wallet in traders:
+                if checked_count >= max_traders_per_pair: break
+                if wallet in self.qualified_wallets:
+                    continue
+                
+                stats = self.collector.analyze_wallet(wallet, lookback_txs=50)
+                checked_count += 1
+                
+                if stats and stats.get('is_qualified'):
+                    self.logger.info(f"    🔥 FOUND QUALIFIED TRADER: {wallet}")
+                    wallet_data = {
+                        "discovered_on": token_address[:16],
+                        "discovered_at": datetime.now().isoformat(),
+                        "stats": stats,
+                        "score": 10
+                    }
+                    self.qualified_wallets[wallet] = wallet_data
+                    new_wallets += 1
+                    self._save_wallet_to_db(wallet, wallet_data)
+                    
+        if len(self.qualified_wallets) > 100:
+            self._prune_old_whales()
+            
+        self.logger.info(f"✅ Hunt Complete. Found {new_wallets} new qualified wallets. Total: {len(self.qualified_wallets)}")
+        return new_wallets
+
     async def monitor_swarm(self, window_minutes=15, min_buyers=3):
         """
         Real-time Swarm Detector.

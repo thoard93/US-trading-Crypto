@@ -1219,7 +1219,13 @@ class AlertSystem(commands.Cog):
         await ctx.send("🦈 **Starting Whale Hunt...** Scanning trending pairs for profitable traders...")
         
         try:
-            new_wallets = await self.copy_trader.scan_market_for_whales(max_pairs=15, max_traders_per_pair=5)
+            # Run in thread to avoid blocking Discord heartbeat
+            import asyncio
+            new_wallets = await asyncio.to_thread(
+                self.copy_trader.scan_market_for_whales_sync, 
+                max_pairs=15, 
+                max_traders_per_pair=5
+            )
             
             if new_wallets > 0:
                 embed = discord.Embed(
