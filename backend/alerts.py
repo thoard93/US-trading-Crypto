@@ -1453,7 +1453,9 @@ class AlertSystem(commands.Cog):
             print(f"📊 Swarm Token: {symbol} | Liq: ${liquidity:,.0f} | MinReq: ${self.dex_min_liquidity:,.0f}")
             
             # 2. Safety Check (do this first for the embed)
-            safety_score, risks = await self.safety.check_token(mint)
+            safety_result = await self.safety.check_token(mint)
+            safety_score = safety_result.get('safety_score', 0)
+            risks = safety_result.get('risks', [])
             print(f"🛡️ Safety Check: {symbol} scored {safety_score}/100")
             
             # 3. Build Analysis Embed
