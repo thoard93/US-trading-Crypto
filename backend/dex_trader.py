@@ -431,8 +431,8 @@ class DexTrader:
                  print(f"⚠️ PumpPortal failed ({result.get('error')}). Fallback to Jupiter...")
                  result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000) # 100% Slippage
         else:
-            # 1. Standard Jupiter route for non-pump tokens
-            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports)
+            # 1. Standard Jupiter route for non-pump tokens (Use 40% slippage for blind send)
+            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=4000)
             
             # Retry logic... (Simplified for non-pump tokens)
             if 'error' in result and '0x177e' in str(result['error']):
