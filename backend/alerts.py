@@ -1585,12 +1585,17 @@ class AlertSystem(commands.Cog):
 
     async def cog_load(self):
         """Called when the cog is loaded - start the monitoring loops."""
-        self.monitor_market.start()
-        self.discovery_loop.start()
-        self.kraken_discovery_loop.start()
-        self.swarm_monitor.start()
-        print("🐋 Swarm Monitor started!")
-        if POLYMARKET_ENABLED:
+        # Safety: Only start if not already running
+        if not self.monitor_market.is_running():
+            self.monitor_market.start()
+        if not self.discovery_loop.is_running():
+            self.discovery_loop.start()
+        if not self.kraken_discovery_loop.is_running():
+            self.kraken_discovery_loop.start()
+        if not self.swarm_monitor.is_running():
+            self.swarm_monitor.start()
+            print("🐋 Swarm Monitor started!")
+        if POLYMARKET_ENABLED and not self.polymarket_monitor.is_running():
             self.polymarket_monitor.start()
             print(f"🎲 Polymarket Monitor started")
         print(f"✅ AlertSystem Cog loaded successfully")
