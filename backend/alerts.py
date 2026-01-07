@@ -1502,6 +1502,17 @@ class AlertSystem(commands.Cog):
 
     async def execute_swarm_trade(self, mint):
         """Executes a BUY for a Swarm Signal."""
+        # COOLDOWN: Skip recently failed tokens (5 min cooldown)
+        if not hasattr(self, '_failed_tokens'):
+            self._failed_tokens = {}
+        
+        now = datetime.datetime.now().timestamp()
+        if mint in self._failed_tokens:
+            last_fail = self._failed_tokens[mint]
+            if now - last_fail < 300:  # 5 minute cooldown
+                print(f"⏳ Skipping {mint[:16]}... (on cooldown after failed trade)")
+                return
+        
         # 1. Get Token Info (Symbol, Liquidity)
         try:
             print(f"🔍 Swarm Trade: Fetching pair data for {mint[:16]}...")
@@ -1601,11 +1612,15 @@ class AlertSystem(commands.Cog):
                         'amount_sol': amount_sol
                     }
                 else:
-                    # Buy failed - log to Discord
+                    # Buy failed - log to Discord and add to cooldown
                     error_msg = result.get('error', 'Unknown error')
                     print(f"❌ Swarm Buy FAILED for {symbol}: {error_msg}")
+                    
+                    # Add to cooldown to prevent infinite retries
+                    self._failed_tokens[mint] = datetime.datetime.now().timestamp()
+                    
                     if channel_memes:
-                        await channel_memes.send(f"❌ **Swarm Buy Failed:** `{symbol}` - {error_msg}")
+                        await channel_memes.send(f"❌ **Swarm Buy Failed:** `{symbol}` - {error_msg[:50]}... (5min cooldown)")
 
         except Exception as e:
             print(f"❌ Execute Swarm Error: {e}")
@@ -1669,19 +1684,25 @@ class AlertSystem(commands.Cog):
                 # 2. Evaluate signal
                 evaluation = await self.polymarket_trader.evaluate_swarm_signal(signal)
                 
-                if evaluation["action"] == "BUY":
+                if not evaluation:
+                    continue
+                    
+                if evaluation.get("action") == "BUY":
                     # 3. Execute (Paper mode by default)
                     result = await self.polymarket_trader.execute_buy(
-                        token_id=signal["token_id"],
-                        amount_usdc=evaluation["bet_size"],
-                        whale_count=signal["whale_count"]
+                        token_id=signal.get("token_id"),
+                        amount_usdc=evaluation.get("bet_size", 0),
+                        whale_count=signal.get("whale_count", 0)
                     )
                     
-                    if result["success"]:
+                    if result and result.get("success"):
                         mode = "PAPER" if self.polymarket_trader.config.paper_mode else "LIVE"
-                        print(f"🎲 [{mode}] Polymarket BUY: {signal['whale_count']} whales @ ${evaluation['bet_size']}")
+                        whale_count = signal.get('whale_count', 0) or 0
+                        bet_size = evaluation.get('bet_size', 0) or 0
+                        print(f"🎲 [{mode}] Polymarket BUY: {whale_count} whales @ ${bet_size}")
                 else:
-                    print(f"🔍 Polymarket Skip: {evaluation['reason']}")
+                    reason = evaluation.get('reason', 'Unknown')
+                    print(f"🔍 Polymarket Skip: {reason}")
             
             # 4. Check for exits on existing positions
             # Get current prices for all positions
@@ -1693,9 +1714,11 @@ class AlertSystem(commands.Cog):
             
             exits = await self.polymarket_trader.check_position_exits(current_prices)
             for exit_data in exits:
-                result = await self.polymarket_trader.execute_sell(exit_data["token_id"])
-                if result["success"]:
-                    print(f"🎲 Polymarket EXIT: {exit_data['reason']} (PNL: ${result['pnl']:.2f})")
+                result = await self.polymarket_trader.execute_sell(exit_data.get("token_id"))
+                if result and result.get("success"):
+                    pnl = result.get('pnl', 0) or 0
+                    reason = exit_data.get('reason', 'Exit')
+                    print(f"🎲 Polymarket EXIT: {reason} (PNL: ${pnl:.2f})")
                     
         except Exception as e:
             print(f"❌ Polymarket Monitor Error: {e}")
