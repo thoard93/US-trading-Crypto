@@ -160,20 +160,27 @@ class DexTrader:
             return {"error": "Wallet not initialized"}
         
         try:
+            # Determine slippage for this trade
+            slippage_bps = override_slippage if override_slippage else self.slippage_bps
+            
             # 1. Get quote
             quote = self.get_jupiter_quote(input_mint, output_mint, amount_lamports, override_slippage)
             if not quote:
                 return {"error": "Failed to get quote"}
             
             # 2. Get swap transaction
-            # swap_url = "https://quote-api.jup.ag/v6/swap" # Failed DNS
             swap_url = "https://public.jupiterapi.com/swap" 
             swap_body = {
                 "quoteResponse": quote,
                 "userPublicKey": self.wallet_address,
                 "wrapAndUnwrapSol": True,
                 "dynamicComputeUnitLimit": True,
-                "prioritizationFeeLamports": "auto"
+                "prioritizationFeeLamports": "auto",
+                # CRITICAL: Explicitly set slippage for swap execution
+                "dynamicSlippage": {
+                    "minBps": slippage_bps,
+                    "maxBps": slippage_bps
+                }
             }
             
             # Low Balance Fee Protection (Ensure we can SELL even if poor)
