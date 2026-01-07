@@ -179,9 +179,9 @@ class DexTrader:
                 "dynamicComputeUnitLimit": True,
                 "prioritizationFeeLamports": "auto",
                 # Enable Jupiter's dynamic slippage (auto-adjusts for volatile tokens)
-                "dynamicSlippage": True,
-                # Also specify max slippage BPS as fallback
-                "autoSlippageCollisionUsdValue": 1000,
+                "dynamicSlippage": True, 
+                # Also specify max slippage BPS as fallback (Boosted to 200% for Swarms)
+                "autoSlippageCollisionUsdValue": 2000,
             }
             
             # Low Balance Fee Protection (Ensure we can SELL even if poor)
@@ -447,16 +447,21 @@ class DexTrader:
         user_id = getattr(self, 'user_id', 'Unknown')
         print(f"🔄 BUYING (User {user_id}) {token_mint} | SOL: {sol_amount:.4f}")
 
-        if token_mint.lower().endswith('pump'):
-             print(f"💊 Pump.fun Token detected ({token_mint}). Using PumpPortal FIRST.")
-             result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=50) # Aggressive
-             
-             # If PumpPortal fails, Fallback to Jupiter
-             if 'error' in result:
-                 print(f"⚠️ PumpPortal failed ({result.get('error')}). Fallback to Jupiter...")
-                 result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000) # 100% Slippage
+        if "pump" in token_mint.lower():
+            # Use HIGH priority fee (0.05 SOL) for swarm snipes
+            result = self.buy_token_pump_portal(token_mint, sol_amount, priority_fee=0.05)
+            if not result.get('error'):
+                return result
+            print(f"⚠️ PumpPortal failed ({result.get('error')}). Fallback to Jupiter...")
+            
+            # Fallback: Jupiter with MEGA SLIPPAGE (200%) for pump tokens
+            # If PumpPortal failed, it's likely extremely volatile
+            amount_lamports = int(sol_amount * 1e9)
+            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=20000)
         else:
-            # 1. Standard Jupiter route for non-pump tokens (Use 40% slippage for blind send)
+            # 1. Standard Jupiter route for non-pump tokens
+            # Use 40% slippage for blind send (was 4000)
+            amount_lamports = int(sol_amount * 1e9)
             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=4000)
             
             # Retry logic... (Simplified for non-pump tokens)
