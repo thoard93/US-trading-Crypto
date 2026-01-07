@@ -297,7 +297,7 @@ class DexTrader:
                     "amount": amount_sol,
                     "denominatedInSol": "true",
                     "slippage": slippage,
-                    "priorityFee": 0.01,  # 0.01 SOL priority fee (Maximum aggression for landing)
+                    "priorityFee": 0.02,  # 0.02 SOL priority fee (Maximum aggression)
                     "pool": "auto",  # Auto-select pump or raydium
                     "skipPreflight": "false"  # Validate before sending
                 },
@@ -345,7 +345,7 @@ class DexTrader:
                         "encoding": "base64", 
                         "skipPreflight": True,  # Skip local sim - PumpPortal already validated
                         "preflightCommitment": "confirmed",
-                        "maxRetries": 3  # Retry sending if first attempt fails
+                        "maxRetries": 5  # Increase retries for aggressive landing
                     }
                 ]
             }, timeout=20)
