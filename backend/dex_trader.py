@@ -246,7 +246,7 @@ class DexTrader:
                 "method": "sendTransaction",
                 "params": [
                     signed_tx_base64,
-                    {"encoding": "base64", "skipPreflight": False, "preflightCommitment": "confirmed"}
+                    {"encoding": "base64", "skipPreflight": True, "preflightCommitment": "confirmed", "maxRetries": 5}
                 ]
             }, timeout=15)
             
@@ -442,7 +442,7 @@ class DexTrader:
         # PUMPPORTAL FALLBACK: If Jupiter fails on pump.fun token, try PumpPortal
         if 'error' in result and token_mint.lower().endswith('pump'):
             print("🎰 Jupiter failed on pump.fun token. Trying PumpPortal...")
-            result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=25)
+            result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=50)
         
         if result.get('success'):
             # Track position
