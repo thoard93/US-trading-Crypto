@@ -298,13 +298,18 @@ class DexTrader:
         user_id = getattr(self, 'user_id', 'Unknown')
         print(f"🔄 BUYING (User {user_id}) {token_mint} | SOL: {sol_amount:.4f}")
 
-        # First attempt (Default Slippage)
+        # First attempt (Default Slippage 15%)
         result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports)
         
-        # Retry logic for Slippage (0x177e)
+        # Retry logic for Slippage (0x177e) - Aggressive retries for volatile memecoins
         if 'error' in result and '0x177e' in str(result['error']):
              print("⚠️ Buy Slippage exceeded (15%). Retrying with 40%...")
              result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=4000)
+        
+        # Second retry at 60% for ultra-volatile swarm tokens
+        if 'error' in result and '0x177e' in str(result['error']):
+             print("⚠️ Buy Slippage exceeded (40%). FINAL RETRY with 60%...")
+             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=6000)
         
         if result.get('success'):
             # Track position
