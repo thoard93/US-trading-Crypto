@@ -1460,7 +1460,7 @@ class AlertSystem(commands.Cog):
             
             # 3. Build Analysis Embed
             liq_pass = liquidity >= self.dex_min_liquidity
-            safety_pass = safety_score >= 70
+            safety_pass = safety_score >= 60  # Lowered from 70 - whales provide extra confidence
             all_pass = liq_pass and safety_pass
             
             embed_color = discord.Color.green() if all_pass else discord.Color.red()
@@ -1479,7 +1479,7 @@ class AlertSystem(commands.Cog):
             if not liq_pass:
                 embed.add_field(name="❌ Blocked By", value=f"Liq ${liquidity:,.0f} < ${self.dex_min_liquidity:,.0f}", inline=False)
             elif not safety_pass:
-                embed.add_field(name="❌ Blocked By", value=f"Safety {safety_score} < 70", inline=False)
+                embed.add_field(name="❌ Blocked By", value=f"Safety {safety_score} < 60", inline=False)
             
             embed.add_field(name="🔗 DEX", value=f"[View on DexScreener]({dex_url})", inline=False)
             
