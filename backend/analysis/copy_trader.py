@@ -198,7 +198,7 @@ class SmartCopyTrader:
         cluster = defaultdict(set) # token_mint -> {wallet_addresses}
         
         # 1. Check each wallet for recent activity (use async to not block)
-        for wallet in self.qualified_wallets:
+        for wallet in list(self.qualified_wallets.keys()):  # Copy keys to avoid mutation error
             # Fetch last 10 txs (ASYNC to not block Discord heartbeat)
             txs = await self.collector.fetch_helius_history_async(wallet, limit=10)
             if not txs: continue
