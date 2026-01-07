@@ -255,9 +255,9 @@ class SmartCopyTrader:
         if total == 0: return False
         
         # Check if > 50% have sold
-        for wallet in participants:
+        for wallet in list(participants):  # Copy to avoid mutation
             # Check recent history for SELL of this token (Last 10 txs)
-            txs = self.collector.fetch_helius_history(wallet, limit=10)
+            txs = await self.collector.fetch_helius_history_async(wallet, limit=10)
             if not txs: continue
             
             did_sell = False

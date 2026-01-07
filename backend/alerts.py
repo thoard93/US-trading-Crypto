@@ -1413,8 +1413,32 @@ class AlertSystem(commands.Cog):
                     
                 print(f"🚨 EXECUTING SWARM BUY: {mint}")
                 await self.execute_swarm_trade(mint)
+            
+            # 2. CHECK WHALE EXITS - Auto-sell if whales are dumping
+            for trader in self.dex_traders:
+                # Check each position we hold that came from a swarm
+                for mint in list(trader.positions.keys()):
+                    if mint in self.copy_trader.active_swarms:
+                        # Check if whales are selling
+                        should_exit = await self.copy_trader.check_swarm_exit(mint)
+                        if should_exit:
+                            print(f"📉 WHALE DUMP DETECTED! Auto-selling {mint}...")
+                            result = trader.sell_token(mint)
+                            if result.get('success'):
+                                # Alert Discord
+                                if channel_memes:
+                                    await channel_memes.send(
+                                        f"📉 **WHALE EXIT TRIGGERED!**\n"
+                                        f"Sold `{mint[:16]}...` - Following smart money OUT!\n"
+                                        f"TX: `{result.get('signature', 'N/A')[:32]}...`"
+                                    )
+                                # Clean up tracking
+                                if mint in self.copy_trader.active_swarms:
+                                    del self.copy_trader.active_swarms[mint]
+                            else:
+                                print(f"❌ Whale exit sell failed: {result.get('error')}")
                 
-            # 2. Periodically run the Hunter (every 60 mins)
+            # 3. Periodically run the Hunter (every 60 mins)
             if not hasattr(self, 'swarm_tick'): self.swarm_tick = 0
             self.swarm_tick += 1
             
