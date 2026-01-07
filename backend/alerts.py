@@ -1435,25 +1435,37 @@ class AlertSystem(commands.Cog):
         """Executes a BUY for a Swarm Signal."""
         # 1. Get Token Info (Symbol, Liquidity)
         try:
+            print(f"🔍 Swarm Trade: Fetching pair data for {mint[:16]}...")
             pair = await self.dex_scout.get_pair_data("solana", mint)
-            if not pair: return
+            if not pair:
+                print(f"🚫 Swarm Ignored: No pair data found for {mint[:16]}...")
+                return
             
             symbol = pair.get('baseToken', {}).get('symbol')
             liquidity = float(pair.get('liquidity', {}).get('usd', 0))
             
+            print(f"📊 Swarm Token: {symbol} | Liq: ${liquidity:,.0f} | MinReq: ${self.dex_min_liquidity:,.0f}")
+            channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
+            
             # 2. Hard Blocks (Liquidity)
             if liquidity < self.dex_min_liquidity:
                 print(f"🚫 Swarm Ignored: Low Liquidity (${liquidity:,.0f}) for {symbol}")
+                if channel_memes:
+                    await channel_memes.send(f"🚫 **Swarm Skipped:** `{symbol}` - Liquidity ${liquidity:,.0f} < ${self.dex_min_liquidity:,.0f} required")
                 return
                 
             # 3. Safety Check
             safety_score, risks = await self.safety.check_token(mint)
-            if safety_score < 70: # Swarm signals can be riskier, but let's keep 70 floor
+            print(f"🛡️ Safety Check: {symbol} scored {safety_score}/100")
+            if safety_score < 70:
                 print(f"🚫 Swarm Ignored: Low Safety ({safety_score}) for {symbol}")
+                if channel_memes:
+                    await channel_memes.send(f"🚫 **Swarm Skipped:** `{symbol}` - Safety {safety_score}/100 < 70 required")
                 return
                 
             # 4. Sizing (High Conviction)
             amount_sol = 0.10 # Fixed High Amount (User wants action)
+            print(f"✅ All checks passed! Executing swarm buy for {symbol}...")
             
             # 5. Execute for ALL traders (multi-user support)
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
