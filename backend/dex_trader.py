@@ -451,6 +451,9 @@ class DexTrader:
                 "tokens_received": int(result.get('output_amount', 0)),
                 "tx": result.get('signature')
             }
+            # REFRESH HOLDINGS IMMEDIATELY for fast-fail selling
+            print("🔄 Refreshing wallet holdings after buy...")
+            self.get_wallet_holdings()
         
         return result
     
