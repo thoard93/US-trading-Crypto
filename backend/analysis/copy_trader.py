@@ -322,7 +322,7 @@ class SmartCopyTrader:
                 # Filter out SOL/USDC imports
                 SOL_MINT = "So11111111111111111111111111111111111111112"
                 USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
-                STABLE_MINTS = {SOL_MINT, USDC_MINT, "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"}
+                STABLE_MINTS = {SOL_MINT, USDC_MINT, "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB"}
 
                 for mint in tokens_in:
                     if mint in STABLE_MINTS: continue
