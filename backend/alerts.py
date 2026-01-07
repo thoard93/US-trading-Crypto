@@ -158,8 +158,8 @@ class AlertSystem(commands.Cog):
         self.dex_exit_cooldowns = {} # {token_address: timestamp} - prevents re-buying after SL
 
         self.monitor_market.start()
-        # self.dex_monitor.start() # PAUSED: Copy-trading only
-        # self.discovery_loop.start() # PAUSED: Copy-trading only
+        # self.dex_monitor.start() # PAUSED: Copy-trading only (No "Dex Gem" alerts)
+        self.discovery_loop.start() # ACTIVE: Running in "Whale Hunter Mode" (Silent)
         self.kraken_discovery_loop.start()
         
         # Async startup tasks
@@ -787,9 +787,12 @@ class AlertSystem(commands.Cog):
                     audit = await self.safety.check_token(addr, "solana")
                     safety_score = audit.get('safety_score', 0)
                     
-                    if safety_score >= self.dex_min_safety_score:
-                        new_gems.append({"chain": "solana", "address": addr})
-                        
+                if safety_score >= self.dex_min_safety_score:
+                    new_gems.append({"chain": "solana", "address": addr})
+                    
+                    # ONLY send alerts if Auto-Trading is enabled (Sniper Mode)
+                    # Prevents spamming "Gem Found" alerts during Copy-Trading only mode
+                    if self.dex_auto_trade:
                         if channel_memes:
                             embed = discord.Embed(
                                 title=f"🎯 SNIPER TARGET: {pair.get('baseToken', {}).get('symbol')}",
@@ -800,8 +803,7 @@ class AlertSystem(commands.Cog):
                             embed.add_field(name="Liquidity", value=f"${liquidity:,.0f}", inline=True)
                             
                             # IMMEDIATE SNIPE when discovery finds a good gem
-                            if (self.dex_auto_trade and 
-                                self.dex_trader and 
+                            if (self.dex_trader and 
                                 self.dex_trader.wallet_address and
                                 addr not in self.dex_trader.positions and
                                 len(self.dex_trader.positions) < self.dex_max_positions):
@@ -1267,6 +1269,32 @@ class AlertSystem(commands.Cog):
             embed.set_footer(text=f"...and {len(wallets) - 10} more")
         
         await ctx.send(embed=embed)
+
+    @commands.command()
+    async def reset(self, ctx):
+        """Reset the whale list (remove all tracked wallets)."""
+        if not self.copy_trader:
+            await ctx.send("⚠️ Copy Trader not initialized.")
+            return
+            
+        count = len(self.copy_trader.qualified_wallets)
+        self.copy_trader.qualified_wallets = {}
+        # Clear persistent DB if applicable, here we just clear memory for now
+        await ctx.send(f"🧹 **Whale List Reset.** Removed {count} wallets. Run `!hunt` to find fresh ones!")
+
+    @commands.command()
+    async def prune(self, ctx):
+        """Remove whales inactive for > 24 hours."""
+        if not self.copy_trader:
+            await ctx.send("⚠️ Copy Trader not initialized.")
+            return
+            
+        before = len(self.copy_trader.qualified_wallets)
+        # Assuming we track 'last_active' or similar, strict prune for now just does nothing if logic missing
+        # For this version, simply clearing old ones manually via reset is safer, but I'll add a dummy prune
+        # actually, let's implement true prune if 'discovered_on' is old?
+        # Simpler: just tell user to use reset.
+        await ctx.send("✂️ **Pruning:** Feature pending. Please use `!reset` to clear all whales and `!hunt` to refresh.")
 
     @commands.command()
     async def polymarket(self, ctx):
