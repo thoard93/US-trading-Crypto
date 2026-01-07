@@ -262,15 +262,40 @@ class DexTrader:
                 return {"error": msg}
             
             tx_signature = result.get('result')
-            print(f"✅ Swap executed! TX: {tx_signature}")
+            print(f"📤 sentTransaction: {tx_signature}. Waiting for confirmation...")
             
-            return {
-                "success": True,
-                "signature": tx_signature,
-                "input_amount": amount_lamports,
-                "output_amount": quote.get('outAmount'),
-                "price_impact": quote.get('priceImpactPct')
-            }
+            # Wait for confirmation (up to 60 seconds)
+            import time
+            confirmed = False
+            for i in range(12):
+                time.sleep(5)
+                # Check status
+                try:
+                    status_resp = requests.post(self.rpc_url, json={
+                         "jsonrpc": "2.0", "id": 1, "method": "getSignatureStatuses",
+                         "params": [[tx_signature], {"searchTransactionHistory": True}]
+                    })
+                    status = status_resp.json().get('result', {}).get('value', [None])[0]
+                    if status:
+                        if status.get('err'):
+                             print(f"❌ Transaction FAILED on-chain: {status['err']}")
+                             return {"error": f"On-chain failure: {status['err']}"}
+                        
+                        if status.get('confirmationStatus') in ['confirmed', 'finalized']:
+                             print(f"✅ Swap CONFIRMED! TX: {tx_signature}")
+                             # Check actual balance change or assume success
+                             return {
+                                "success": True,
+                                "signature": tx_signature,
+                                "input_amount": amount_lamports,
+                                "output_amount": quote.get('outAmount'),
+                                "price_impact": quote.get('priceImpactPct')
+                            }
+                except Exception as e:
+                    print(f"⚠️ Error checking status: {e}")
+            
+            print(f"⚠️ Jupiter TX not confirmed after 60s: {tx_signature}")
+            return {"error": "Transaction detection timeout", "signature": tx_signature}
             
         except Exception as e:
             print(f"❌ Swap execution error: {e}")
