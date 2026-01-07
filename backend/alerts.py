@@ -1437,34 +1437,59 @@ class AlertSystem(commands.Cog):
         try:
             print(f"🔍 Swarm Trade: Fetching pair data for {mint[:16]}...")
             pair = await self.dex_scout.get_pair_data("solana", mint)
-            if not pair:
-                print(f"🚫 Swarm Ignored: No pair data found for {mint[:16]}...")
-                return
-            
-            symbol = pair.get('baseToken', {}).get('symbol')
-            liquidity = float(pair.get('liquidity', {}).get('usd', 0))
-            
-            print(f"📊 Swarm Token: {symbol} | Liq: ${liquidity:,.0f} | MinReq: ${self.dex_min_liquidity:,.0f}")
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
             
-            # 2. Hard Blocks (Liquidity)
-            if liquidity < self.dex_min_liquidity:
-                print(f"🚫 Swarm Ignored: Low Liquidity (${liquidity:,.0f}) for {symbol}")
+            if not pair:
+                print(f"🚫 Swarm Ignored: No pair data found for {mint[:16]}...")
                 if channel_memes:
-                    await channel_memes.send(f"🚫 **Swarm Skipped:** `{symbol}` - Liquidity ${liquidity:,.0f} < ${self.dex_min_liquidity:,.0f} required")
+                    await channel_memes.send(f"🚫 **Swarm Token:** `{mint[:20]}...` - No DEX data found")
                 return
-                
-            # 3. Safety Check
+            
+            symbol = pair.get('baseToken', {}).get('symbol', 'UNKNOWN')
+            liquidity = float(pair.get('liquidity', {}).get('usd', 0))
+            price = float(pair.get('priceUsd', 0))
+            dex_url = f"https://dexscreener.com/solana/{mint}"
+            
+            print(f"📊 Swarm Token: {symbol} | Liq: ${liquidity:,.0f} | MinReq: ${self.dex_min_liquidity:,.0f}")
+            
+            # 2. Safety Check (do this first for the embed)
             safety_score, risks = await self.safety.check_token(mint)
             print(f"🛡️ Safety Check: {symbol} scored {safety_score}/100")
-            if safety_score < 70:
-                print(f"🚫 Swarm Ignored: Low Safety ({safety_score}) for {symbol}")
-                if channel_memes:
-                    await channel_memes.send(f"🚫 **Swarm Skipped:** `{symbol}` - Safety {safety_score}/100 < 70 required")
+            
+            # 3. Build Analysis Embed
+            liq_pass = liquidity >= self.dex_min_liquidity
+            safety_pass = safety_score >= 70
+            all_pass = liq_pass and safety_pass
+            
+            embed_color = discord.Color.green() if all_pass else discord.Color.red()
+            decision = "✅ EXECUTING BUY" if all_pass else "🚫 SKIPPED"
+            
+            embed = discord.Embed(
+                title=f"🐋 Swarm Analysis: {symbol}",
+                description=f"**Decision:** {decision}",
+                color=embed_color
+            )
+            embed.add_field(name="💰 Liquidity", value=f"${liquidity:,.0f}", inline=True)
+            embed.add_field(name="🛡️ Safety", value=f"{safety_score}/100", inline=True)
+            embed.add_field(name="💵 Price", value=f"${price:.8f}" if price < 0.01 else f"${price:.4f}", inline=True)
+            
+            # Show why skipped
+            if not liq_pass:
+                embed.add_field(name="❌ Blocked By", value=f"Liq ${liquidity:,.0f} < ${self.dex_min_liquidity:,.0f}", inline=False)
+            elif not safety_pass:
+                embed.add_field(name="❌ Blocked By", value=f"Safety {safety_score} < 70", inline=False)
+            
+            embed.add_field(name="🔗 DEX", value=f"[View on DexScreener]({dex_url})", inline=False)
+            
+            if channel_memes:
+                await channel_memes.send(embed=embed)
+            
+            # 4. Return if blocked
+            if not all_pass:
                 return
                 
-            # 4. Sizing (High Conviction)
-            amount_sol = 0.10 # Fixed High Amount (User wants action)
+            # 5. Sizing (High Conviction)
+            amount_sol = 0.10
             print(f"✅ All checks passed! Executing swarm buy for {symbol}...")
             
             # 5. Execute for ALL traders (multi-user support)
