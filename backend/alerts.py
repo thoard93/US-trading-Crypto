@@ -1582,14 +1582,15 @@ class AlertSystem(commands.Cog):
     async def before_polymarket_monitor(self):
         await self.bot.wait_until_ready()
 
-    @commands.Cog.listener()
-    async def on_ready(self):
+    async def cog_load(self):
+        """Called when the cog is loaded - start the monitoring loops."""
         self.check_alerts.start()
-        self.swarm_monitor.start() # Start the swarm loop
+        self.swarm_monitor.start()
+        print("🐋 Swarm Monitor started!")
         if POLYMARKET_ENABLED:
             self.polymarket_monitor.start()
             print(f"🎲 Polymarket Monitor started")
-        print(f"✅ Bot connected as {self.bot.user}")
+        print(f"✅ AlertSystem Cog loaded successfully")
 
 async def setup(bot):
     await bot.add_cog(AlertSystem(bot))
