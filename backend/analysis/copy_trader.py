@@ -258,7 +258,7 @@ class SmartCopyTrader:
         self.logger.info(f"✅ Hunt Complete. Found {new_wallets} new qualified wallets. Total: {len(self.qualified_wallets)}")
         return new_wallets
 
-    async def monitor_swarm(self, window_minutes=15, min_buyers=3):
+    async def monitor_swarm(self, window_minutes=10, min_buyers=3):
         """
         Real-time Swarm Detector.
         Polls all Qualified Wallets.
