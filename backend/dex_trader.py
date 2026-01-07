@@ -297,7 +297,7 @@ class DexTrader:
                     "amount": amount_sol,
                     "denominatedInSol": "true",
                     "slippage": slippage,
-                    "priorityFee": 0.005,  # 0.005 SOL priority fee (10x higher for landing)
+                    "priorityFee": 0.01,  # 0.01 SOL priority fee (Maximum aggression for landing)
                     "pool": "auto",  # Auto-select pump or raydium
                     "skipPreflight": "false"  # Validate before sending
                 },
