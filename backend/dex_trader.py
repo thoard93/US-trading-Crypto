@@ -178,10 +178,10 @@ class DexTrader:
                 "wrapAndUnwrapSol": True,
                 "dynamicComputeUnitLimit": True,
                 "prioritizationFeeLamports": "auto",
-                # Enable Jupiter's dynamic slippage (auto-adjusts for volatile tokens)
-                "dynamicSlippage": True, 
-                # Also specify max slippage BPS as fallback (Boosted to 200% for Swarms)
-                "autoSlippageCollisionUsdValue": 2000,
+                # Disable dynamic slippage if we are providing a specific override (manual override takes precedence)
+                "dynamicSlippage": not bool(override_slippage), 
+                # Also specify max slippage BPS as fallback (Capped at 100% since API rejects > 10000)
+                "autoSlippageCollisionUsdValue": 1000,
             }
             
             # Low Balance Fee Protection (Ensure we can SELL even if poor)
@@ -454,10 +454,10 @@ class DexTrader:
                 return result
             print(f"⚠️ PumpPortal failed ({result.get('error')}). Fallback to Jupiter...")
             
-            # Fallback: Jupiter with MEGA SLIPPAGE (200%) for pump tokens
-            # If PumpPortal failed, it's likely extremely volatile
+            # Fallback: Jupiter with MAX SLIPPAGE (100%) for pump tokens
+            # NOTE: Jupiter API rejects slippage > 10000 bps (100%). Capped at 100%.
             amount_lamports = int(sol_amount * 1e9)
-            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=20000)
+            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
         else:
             # 1. Standard Jupiter route for non-pump tokens
             # Use 40% slippage for blind send (was 4000)
