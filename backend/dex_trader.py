@@ -311,12 +311,16 @@ class DexTrader:
         
         # Retry logic for Slippage (0x177e) - Aggressive retries for volatile memecoins
         if 'error' in result and '0x177e' in str(result['error']):
-             print("⚠️ Buy Slippage exceeded (15%). Retrying with 40%...")
+             print("⚠️ Buy Slippage exceeded (15%). Waiting 2s then retrying with 40%...")
+             import time
+             time.sleep(2)  # Let price settle
              result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=4000)
         
         # Second retry at 90% for ultra-volatile swarm tokens (meme pumps)
         if 'error' in result and '0x177e' in str(result['error']):
-             print("⚠️ Buy Slippage exceeded (40%). FINAL RETRY with 90%...")
+             print("⚠️ Buy Slippage exceeded (40%). Waiting 3s then FINAL RETRY with 90%...")
+             import time
+             time.sleep(3)  # Let price settle more
              result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=9000)
         
         if result.get('success'):
