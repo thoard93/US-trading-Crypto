@@ -1516,6 +1516,9 @@ class AlertSystem(commands.Cog):
         # 1. Get Token Info (Symbol, Liquidity)
         try:
             print(f"🔍 Swarm Trade: Fetching pair data for {mint[:16]}...")
+            # NOTE: Some pump.fun tokens work (like PXL), so we don't filter them
+            # The 5-min cooldown handles failed tokens instead
+                
             pair = await self.dex_scout.get_pair_data("solana", mint)
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
             
@@ -1576,8 +1579,8 @@ class AlertSystem(commands.Cog):
             if not all_pass:
                 return
                 
-            # 5. Sizing (High Conviction)
-            amount_sol = 0.10
+            # 5. Sizing (Reduced to 0.05 SOL for less price impact)
+            amount_sol = 0.05
             print(f"✅ All checks passed! Executing swarm buy for {symbol}...")
             
             # 5. Execute for ALL traders (multi-user support)

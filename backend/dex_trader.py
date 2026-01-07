@@ -276,6 +276,93 @@ class DexTrader:
             print(f"❌ Swap execution error: {e}")
             return {"error": str(e)}
     
+    def execute_pumpportal_swap(self, token_mint, action, amount_sol, slippage=25):
+        """
+        Execute a swap via PumpPortal API for pump.fun tokens.
+        This has higher success rate than Jupiter for pump.fun tokens.
+        """
+        if not self.keypair:
+            return {"error": "Wallet not initialized"}
+        
+        try:
+            print(f"🎰 PumpPortal {action.upper()}: {token_mint[:16]}... | {amount_sol} SOL")
+            
+            # 1. Get transaction from PumpPortal
+            response = requests.post(
+                url="https://pumpportal.fun/api/trade-local",
+                data={
+                    "publicKey": self.wallet_address,
+                    "action": action,  # "buy" or "sell"
+                    "mint": token_mint,
+                    "amount": amount_sol,
+                    "denominatedInSol": "true",
+                    "slippage": slippage,
+                    "priorityFee": 0.0005,  # 0.0005 SOL priority fee
+                    "pool": "auto"  # Auto-select pump or raydium
+                },
+                timeout=15
+            )
+            
+            if response.status_code != 200:
+                return {"error": f"PumpPortal API error: {response.text}"}
+            
+            # 2. Sign the transaction
+            tx_bytes = response.content
+            tx = VersionedTransaction.from_bytes(tx_bytes)
+            message = tx.message
+            
+            # Sign using solders native method
+            print("🔐 Signing PumpPortal transaction...")
+            from nacl.signing import SigningKey
+            
+            # Get the seed (first 32 bytes) for signing
+            seed = self._raw_secret[:32] if len(self._raw_secret) >= 32 else self._raw_secret
+            signing_key = SigningKey(seed)
+            
+            message_bytes = bytes(message)
+            signed = signing_key.sign(message_bytes)
+            signature_bytes = signed.signature
+            
+            from solders.signature import Signature
+            signature = Signature.from_bytes(signature_bytes)
+            
+            # Reconstruct signed transaction
+            signed_tx = VersionedTransaction.populate(message, [signature])
+            
+            # 3. Send transaction via our RPC
+            signed_tx_bytes = bytes(signed_tx)
+            signed_tx_base64 = base64.b64encode(signed_tx_bytes).decode('utf-8')
+            
+            send_response = requests.post(self.rpc_url, json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "sendTransaction",
+                "params": [
+                    signed_tx_base64,
+                    {"encoding": "base64", "skipPreflight": False, "preflightCommitment": "confirmed"}
+                ]
+            }, timeout=15)
+            
+            result = send_response.json()
+            
+            if 'error' in result:
+                error_msg = result['error'].get('message', str(result['error']))
+                print(f"❌ PumpPortal TX Failed: {error_msg}")
+                return {"error": error_msg}
+            
+            tx_signature = result.get('result')
+            print(f"✅ PumpPortal swap executed! TX: {tx_signature}")
+            
+            return {
+                "success": True,
+                "signature": tx_signature,
+                "provider": "pumpportal"
+            }
+            
+        except Exception as e:
+            print(f"❌ PumpPortal swap error: {e}")
+            return {"error": str(e)}
+    
     def buy_token(self, token_mint, sol_amount=None):
         """Buy a token using SOL."""
         if sol_amount is None:
@@ -323,6 +410,11 @@ class DexTrader:
              time.sleep(3)  # Let price settle more
              result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=9000)
         
+        # PUMPPORTAL FALLBACK: If Jupiter fails on pump.fun token, try PumpPortal
+        if 'error' in result and token_mint.lower().endswith('pump'):
+            print("🎰 Jupiter failed on pump.fun token. Trying PumpPortal...")
+            result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=25)
+        
         if result.get('success'):
             # Track position
             self.positions[token_mint] = {
@@ -354,6 +446,12 @@ class DexTrader:
         if 'error' in result and '0x177e' in str(result['error']):
              print("⚠️ Sell Slippage exceeded (15%). Retrying with 50% (Force Exit)...")
              result = self.execute_swap(token_mint, self.SOL_MINT, sell_amount, override_slippage=5000)
+        
+        # PUMPPORTAL FALLBACK for pump.fun tokens
+        if 'error' in result and token_mint.lower().endswith('pump'):
+            print("🎰 Jupiter sell failed on pump.fun token. Trying PumpPortal...")
+            # For sells, we use percentage mode
+            result = self.execute_pumpportal_swap(token_mint, "sell", "100%", slippage=50)
         
         if result.get('success') and percentage == 100:
             # Remove from positions
