@@ -1505,9 +1505,10 @@ class AlertSystem(commands.Cog):
                     continue
                 
                 print(f"🚀 BUYING SWARM (User {user_label}): {symbol} - {amount_sol} SOL")
-                sig = trader.swap_sol_to_token(mint, amount_sol, slippage_bps=2000) # 20% slippage for swarms
+                result = trader.buy_token(mint, amount_sol)
                 
-                if sig:
+                if result.get('success'):
+                    sig = result.get('signature', 'Unknown')
                     # Log to Discord
                     if channel_memes:
                         embed = discord.Embed(
@@ -1524,6 +1525,12 @@ class AlertSystem(commands.Cog):
                         'entry_time': datetime.datetime.now().timestamp(),
                         'amount_sol': amount_sol
                     }
+                else:
+                    # Buy failed - log to Discord
+                    error_msg = result.get('error', 'Unknown error')
+                    print(f"❌ Swarm Buy FAILED for {symbol}: {error_msg}")
+                    if channel_memes:
+                        await channel_memes.send(f"❌ **Swarm Buy Failed:** `{symbol}` - {error_msg}")
 
         except Exception as e:
             print(f"❌ Execute Swarm Error: {e}")
