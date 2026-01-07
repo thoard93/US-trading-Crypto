@@ -72,9 +72,9 @@ class TechnicalAnalysis:
         avg_vol = last_row.get('volume_avg', current_vol or 1)
         volume_spike = current_vol > (avg_vol * 1.5)
 
-        # Thresholds
-        RSI_OVERSOLD = 35 if aggressive_mode else 30
-        RSI_OVERBOUGHT = 65 if aggressive_mode else 70
+        # Thresholds - CONSERVATIVE MODE to reduce bleeding
+        RSI_OVERSOLD = 25 if aggressive_mode else 25  # Was 35/30 - now requires deeper oversold
+        RSI_OVERBOUGHT = 75 if aggressive_mode else 75  # Was 65/70 - now requires higher overbought
 
         # --- SIGNAL LOGIC PRIORITY ---
         signal = "NEUTRAL"

@@ -1373,7 +1373,46 @@ class AlertSystem(commands.Cog):
         else:
             await ctx.send("📭 No profitable positions found to sell.")
 
-    @tasks.loop(minutes=1)
+    @commands.command()
+    async def sellall(self, ctx):
+        """Sell ALL DEX tokens for all users - emergency liquidation."""
+        await ctx.send("🚨 **EMERGENCY LIQUIDATION** - Selling all DEX tokens for all users...")
+        
+        sold_count = 0
+        results = []
+        
+        for trader in self.dex_traders:
+            user_id = getattr(trader, 'user_id', 'Unknown')
+            
+            # Get all tokens in wallet
+            holdings = trader.get_all_tokens()
+            
+            for mint, balance in holdings.items():
+                if balance > 0:
+                    print(f"🔥 Selling {mint[:16]}... for User {user_id}")
+                    result = trader.sell_token(mint)
+                    
+                    if result.get('success'):
+                        sold_count += 1
+                        results.append(f"✅ User {user_id}: `{mint[:12]}...`")
+                        # Clear from positions
+                        if mint in trader.positions:
+                            del trader.positions[mint]
+                    else:
+                        results.append(f"❌ User {user_id}: `{mint[:12]}...` - {result.get('error', 'Failed')[:30]}")
+        
+        if sold_count > 0:
+            embed = discord.Embed(
+                title="🔥 Emergency Liquidation Complete",
+                description=f"Sold **{sold_count}** tokens across all users.",
+                color=discord.Color.red()
+            )
+            embed.add_field(name="Results", value="\n".join(results[:15]), inline=False)
+            await ctx.send(embed=embed)
+        else:
+            await ctx.send("📭 No DEX tokens found to sell.")
+
+    @tasks.loop(seconds=30)  # Fast scan - Developer plan (10M credits)
     async def swarm_monitor(self):
         """Polls for Swarm Signals (Copy Trading)."""
         # Set heartbeat FIRST so we know loop is alive
