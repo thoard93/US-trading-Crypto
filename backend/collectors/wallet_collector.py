@@ -74,6 +74,30 @@ class WalletCollector:
             self.logger.error(f"Helius Exception: {e}")
             return None
 
+    async def fetch_helius_history_async(self, address, limit=10):
+        """Async version to avoid blocking Discord heartbeat."""
+        import aiohttp
+        
+        if not self.helius_key:
+            return None
+            
+        url = f"https://api.helius.xyz/v0/addresses/{address}/transactions"
+        params = {
+            "api-key": self.helius_key,
+            "type": "SWAP",
+            "limit": limit
+        }
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        return await resp.json()
+                    return None
+        except Exception as e:
+            self.logger.error(f"Helius Async Error: {e}")
+            return None
+
     def batch_fetch_parsed_txs(self, signatures):
         """
         Fetches parsed details for a batch of signatures (Max 100).
