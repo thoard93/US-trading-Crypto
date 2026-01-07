@@ -168,6 +168,8 @@ class DexTrader:
             if not quote:
                 return {"error": "Failed to get quote"}
             
+            print(f"🔄 Jupiter Quote: slippage={slippage_bps}bps, outAmount={quote.get('outAmount')}")
+            
             # 2. Get swap transaction
             swap_url = "https://public.jupiterapi.com/swap" 
             swap_body = {
@@ -176,11 +178,10 @@ class DexTrader:
                 "wrapAndUnwrapSol": True,
                 "dynamicComputeUnitLimit": True,
                 "prioritizationFeeLamports": "auto",
-                # CRITICAL: Explicitly set slippage for swap execution
-                "dynamicSlippage": {
-                    "minBps": slippage_bps,
-                    "maxBps": slippage_bps
-                }
+                # Enable Jupiter's dynamic slippage (auto-adjusts for volatile tokens)
+                "dynamicSlippage": True,
+                # Also specify max slippage BPS as fallback
+                "autoSlippageCollisionUsdValue": 1000,
             }
             
             # Low Balance Fee Protection (Ensure we can SELL even if poor)
