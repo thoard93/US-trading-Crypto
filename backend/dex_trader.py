@@ -16,8 +16,14 @@ from solders.system_program import transfer, TransferParams
 from nacl.signing import SigningKey
 import random
 
-# Jito Block Engine Configuration
-JITO_BLOCK_ENGINE = "https://mainnet.block-engine.jito.wtf"
+# Jito Block Engine Configuration (Multiple endpoints for failover)
+JITO_BLOCK_ENGINES = [
+    "https://mainnet.block-engine.jito.wtf",
+    "https://ny.mainnet.block-engine.jito.wtf",
+    "https://amsterdam.mainnet.block-engine.jito.wtf",
+    "https://frankfurt.mainnet.block-engine.jito.wtf",
+    "https://tokyo.mainnet.block-engine.jito.wtf",
+]
 JITO_TIP_FLOOR_URL = "https://bundles.jito.wtf/api/v1/bundles/tip_floor"
 JITO_TIP_ACCOUNTS = [
     "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
@@ -578,19 +584,41 @@ class DexTrader:
                 ]
             }
             
-            jito_url = f"{JITO_BLOCK_ENGINE}/api/v1/bundles"
-            print(f"📤 Submitting Jito Bundle...")
+            # 6. Submit bundle to Jito Block Engine (try multiple endpoints)
+            print(f"📤 Submitting Jito Bundle (trying {len(JITO_BLOCK_ENGINES)} endpoints)...")
             
-            bundle_response = requests.post(jito_url, json=bundle_payload, timeout=15)
-            bundle_result = bundle_response.json()
+            bundle_id = None
+            selected_endpoint = None
             
-            if 'error' in bundle_result:
-                error_msg = bundle_result['error'].get('message', str(bundle_result['error']))
-                print(f"❌ Jito Bundle rejected: {error_msg}")
-                return {"error": f"Jito: {error_msg}"}
+            for jito_base in JITO_BLOCK_ENGINES:
+                jito_url = f"{jito_base}/api/v1/bundles"
+                try:
+                    bundle_response = requests.post(jito_url, json=bundle_payload, timeout=10)
+                    bundle_result = bundle_response.json()
+                    
+                    if 'error' in bundle_result:
+                        error_msg = str(bundle_result['error'].get('message', bundle_result['error']))
+                        # Check if rate limited - try next endpoint
+                        if 'rate' in error_msg.lower() or 'congested' in error_msg.lower():
+                            print(f"⚠️ {jito_base.split('//')[1].split('.')[0]} rate limited, trying next...")
+                            continue
+                        # Other error - report it
+                        print(f"❌ Jito Bundle rejected: {error_msg}")
+                        return {"error": f"Jito: {error_msg}"}
+                    
+                    bundle_id = bundle_result.get('result')
+                    selected_endpoint = jito_url
+                    print(f"✅ Jito Bundle submitted via {jito_base.split('//')[1].split('.')[0]}! ID: {bundle_id}")
+                    break
+                except requests.exceptions.Timeout:
+                    print(f"⚠️ {jito_base.split('//')[1].split('.')[0]} timeout, trying next...")
+                    continue
+                except Exception as e:
+                    print(f"⚠️ {jito_base.split('//')[1].split('.')[0]} error: {e}, trying next...")
+                    continue
             
-            bundle_id = bundle_result.get('result')
-            print(f"✅ Jito Bundle submitted! ID: {bundle_id}")
+            if not bundle_id:
+                return {"error": "All Jito endpoints rate-limited or unavailable"}
             
             # 7. Wait for bundle confirmation (faster timeout for Jito)
             import time
@@ -603,7 +631,7 @@ class DexTrader:
                     "method": "getBundleStatuses",
                     "params": [[bundle_id]]
                 }
-                status_response = requests.post(jito_url, json=status_payload, timeout=10)
+                status_response = requests.post(selected_endpoint, json=status_payload, timeout=10)
                 status_data = status_response.json()
                 
                 statuses = status_data.get('result', {}).get('value', [])
