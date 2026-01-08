@@ -530,16 +530,26 @@ class DexTrader:
                 return {"error": "No swap transaction returned"}
             
             # 3. Deserialize and sign the Jupiter swap TX
+            # MUST use to_bytes_versioned for correct message serialization
             tx_bytes = base64.b64decode(swap_tx_b64)
             swap_tx = VersionedTransaction.from_bytes(tx_bytes)
             
-            seed = self._raw_secret[:32] if len(self._raw_secret) >= 32 else self._raw_secret
-            signing_key = SigningKey(seed)
-            message_bytes = bytes(swap_tx.message)
-            signed = signing_key.sign(message_bytes)
-            signature = Signature.from_bytes(signed.signature)
+            # Get message bytes using the CORRECT method for versioned transactions
+            message = swap_tx.message
+            message_bytes = to_bytes_versioned(message)
             
-            signed_swap_tx = VersionedTransaction.populate(swap_tx.message, [signature])
+            # Sign using keypair.sign_message (same as working execute_swap)
+            try:
+                signature = self.keypair.sign_message(message_bytes)
+                print(f"🔐 Signed using Solders native method")
+            except Exception as e:
+                print(f"⚠️ Solders sign failed ({e}), using nacl fallback")
+                seed = self._raw_secret[:32] if len(self._raw_secret) >= 32 else self._raw_secret
+                signing_key = SigningKey(seed)
+                signed = signing_key.sign(message_bytes)
+                signature = Signature.from_bytes(signed.signature)
+            
+            signed_swap_tx = VersionedTransaction.populate(message, [signature])
             signed_swap_b64 = base64.b64encode(bytes(signed_swap_tx)).decode('utf-8')
             
             # 4. Submit to Jito sendTransaction with bundleOnly=true
