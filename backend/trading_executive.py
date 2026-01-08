@@ -347,6 +347,21 @@ class TradingExecutive:
                                 self.track_position(symbol, price, total_amount)
                                 print(f"✅ Adopting Kraken: {symbol}")
                         except: continue
+                
+                # --- Kraken Ghost Cleanup ---
+                all_current_kraken = []
+                for asset, amt in total_bals.items():
+                    if amt > 0:
+                        all_current_kraken.append(f"{asset}/USDT")
+                        all_current_kraken.append(f"X{asset}/USDT")
+                
+                for symbol in list(self.active_positions.keys()):
+                    if '/' in symbol and symbol not in all_current_kraken:
+                        print(f"👻 Removing Kraken ghost position: {symbol}")
+                        del self.active_positions[symbol]
+                        # Clean DB
+                        self._delete_position_from_db(symbol)
+
             except Exception as e: print(f"❌ Kraken sync error: {e}")
 
         # --- 2. Alpaca Sync ---
@@ -360,4 +375,29 @@ class TradingExecutive:
                     qty = float(pos.qty)
                     self.track_position(symbol, price, qty)
                     print(f"✅ Adopting Alpaca: {symbol}")
+                
+                # --- Alpaca Ghost Cleanup ---
+                alp_symbols = [p.symbol for p in alp_positions]
+                for symbol in list(self.active_positions.keys()):
+                    if '/' not in symbol and symbol not in alp_symbols:
+                        print(f"👻 Removing Alpaca ghost position: {symbol}")
+                        del self.active_positions[symbol]
+                        # Clean DB
+                        self._delete_position_from_db(symbol)
             except Exception as e: print(f"❌ Alpaca sync error: {e}")
+
+    def _delete_position_from_db(self, symbol):
+        """Helper to remove a position from the database."""
+        from database import SessionLocal
+        import models
+        db = SessionLocal()
+        try:
+            db.query(models.Position).filter(
+                models.Position.user_id == self.user_id,
+                models.Position.symbol == symbol
+            ).delete()
+            db.commit()
+        except Exception as e:
+            print(f"⚠️ Failed to delete {symbol} from DB: {e}")
+        finally:
+            db.close()

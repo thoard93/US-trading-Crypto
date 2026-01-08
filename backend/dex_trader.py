@@ -500,10 +500,24 @@ class DexTrader:
             
             print(f"⚠️ PumpPortal TX not confirmed after 30s: {tx_signature}")
             return {"error": "Transaction not confirmed", "signature": tx_signature}
-            
         except Exception as e:
             print(f"❌ PumpPortal swap error: {e}")
             return {"error": str(e)}
+
+    def execute_pumpportal_swap(self, token_mint, action, sol_amount, slippage=10, priority_fee=0.005):
+        """Execute swap via PumpPortal API as a fallback. Priority fee increased to 0.005 SOL."""
+        try:
+            url = "https://pumpportal.fun/api/trade-local"
+            payload = {
+                "publicKey": self.wallet_address,
+                "action": action,
+                "mint": token_mint,
+                "denominatedInSol": "true",
+                "amount": sol_amount,
+                "slippage": slippage,
+                "priorityFee": priority_fee,
+                "pool": "pump"
+            }
     
     def get_jito_tip_amount(self):
         """Fetch dynamic tip amount from Jito API (75th percentile)."""
@@ -550,8 +564,7 @@ class DexTrader:
             instr_data = None
             hosts = [
                 ("quote-api.jup.ag", "/v6/swap-instructions"),
-                ("jup.ag", "/api/v6/swap-instructions"), # Try jup.ag site proxy
-                ("public.jupiterapi.com", "/v6/swap-instructions")
+                ("public.jupiterapi.com", "/swap-instructions")  # Base path (no /v6) for public mirror
             ]
             
             for host, path in hosts:

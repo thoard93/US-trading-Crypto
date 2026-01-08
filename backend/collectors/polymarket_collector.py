@@ -229,15 +229,22 @@ class PolymarketCollector:
         
         try:
             session = await self._get_session()
-            async with session.get(url, params=params) as resp:
+            async with session.get(url, params=params, timeout=10) as resp:
                 if resp.status != 200:
+                    text = await resp.text()
+                    logger.warning(f"⚠️ Polymarket Price API Error ({token_id[:8]}): Status {resp.status} - {text[:100]}")
                     return None
                 
                 data = await resp.json()
-                return float(data.get("price", 0))
+                price = data.get("price")
+                if price is not None:
+                    return float(price)
+                else:
+                    logger.warning(f"⚠️ Polymarket Price missing in JSON: {data}")
+                    return None
                 
         except Exception as e:
-            logger.error(f"❌ Error fetching price: {e}")
+            logger.error(f"❌ Error fetching Polymarket price: {e}")
             return None
     
     async def detect_whale_swarm(
