@@ -340,13 +340,17 @@ class DexTrader:
             
             result = send_response.json()
             
+            # DEBUG: Full RPC response
+            print(f"📋 DEBUG: RPC sendTransaction response: {result}")
+            
             if 'error' in result:
-                msg = result['error']['message']
-                if '0x177e' in str(msg):
+                msg = result['error'].get('message', str(result['error']))
+                code = result['error'].get('code', 'unknown')
+                print(f"❌ Swap Failed [code={code}]: {msg}")
+                if '0x177e' in str(msg) or '6014' in str(msg):
                     msg += " (Slippage Tolerance Exceeded)"
                 elif '0x1' in str(msg):
                     msg += " (Likely Insufficient SOL for Rent/Fees)"
-                print(f"❌ Swap Failed: {msg}")
                 return {"error": msg}
             
             tx_signature = result.get('result')
@@ -785,11 +789,12 @@ class DexTrader:
         user_id = getattr(self, 'user_id', 'Unknown')
         print(f"🔄 BUYING (User {user_id}) {token_mint} | SOL: {sol_amount:.4f}")
 
-        # PUMPPORTAL DIRECT for Pump.fun tokens (Jito V4 disabled due to solders library issues)
-        # Higher priority fee (0.01 SOL) ensures faster confirmation on congested network
+        # ALL TOKENS NOW USE JUPITER - PumpPortal transactions never land
+        # Jupiter TXs actually reach the chain (proven with Kaiju trade)
+        # Using maximum slippage (100%) for pump.fun tokens due to volatility
         if "pump" in token_mint.lower():
-            print(f"🎰 Pump.fun token detected. Using PUMPPORTAL DIRECT (high priority).")
-            result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=100, priority_fee=0.01)
+            print(f"🎰 Pump.fun token detected. Routing via JUPITER (100% slippage).")
+            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
         else:
             # Standard Jupiter Flow for Raydium/etc
             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
