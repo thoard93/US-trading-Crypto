@@ -205,8 +205,7 @@ class DexTrader:
                 "dynamicComputeUnitLimit": True,
                 "prioritizationFeeLamports": 1000000,  # 0.001 SOL - Moderate Fast Fee (Worth $0.15 risk)
                 # Disable dynamic slippage if we are providing a specific override (manual override takes precedence)
-                # Enable Dynamic Slippage (let Jupiter manage volatility)
-                "dynamicSlippage": True, 
+                "dynamicSlippage": not bool(override_slippage), 
                 # Also specify max slippage BPS as fallback (Capped at 100% since API rejects > 10000)
                 "autoSlippageCollisionUsdValue": 1000,
             }
