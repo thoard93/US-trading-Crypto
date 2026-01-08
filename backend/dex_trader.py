@@ -16,7 +16,18 @@ class DexTrader:
     def __init__(self, private_key=None):
         # Load wallet from environment or argument
         private_key = private_key or os.getenv('SOLANA_PRIVATE_KEY')
-        self.rpc_url = os.getenv('SOLANA_RPC_URL', 'https://api.mainnet-beta.solana.com')
+        # RPC Auto-Configuration
+        env_rpc = os.getenv('SOLANA_RPC_URL')
+        helius_key = os.getenv('HELIUS_API_KEY')
+        
+        if env_rpc:
+            self.rpc_url = env_rpc
+        elif helius_key:
+            print("🚀 Upgrading to High-Speed Helius RPC (Auto-detected key)")
+            self.rpc_url = f"https://mainnet.helius-rpc.com/?api-key={helius_key}"
+        else:
+            print("⚠️ Using Slow Public RPC (High risk of slippage failure)")
+            self.rpc_url = 'https://api.mainnet-beta.solana.com'
         self._raw_secret = None  # Store raw secret for signing
         
         if private_key:
