@@ -1633,10 +1633,10 @@ class AlertSystem(commands.Cog):
             change_emoji = "📈" if price_change_24h >= 0 else "📉"
             change_color = "+" if price_change_24h >= 0 else ""
             
-            # VOLATILITY FILTER: Skip tokens moving too fast (>250% in 24h = likely untradeable)
-            volatility_pass = abs(price_change_24h) < 250
+            # VOLATILITY FILTER: Skip tokens moving too fast (>500% in 24h = likely untradeable or extreme rug risk)
+            volatility_pass = abs(price_change_24h) < 500
             if not volatility_pass:
-                print(f"🌋 VOLATILITY BLOCK: {symbol} moved {price_change_24h:.0f}% in 24h (limit: 250%)")
+                print(f"🌋 VOLATILITY BLOCK: {symbol} moved {price_change_24h:.0f}% in 24h (limit: 500%)")
             
             # NOTE: Pump.fun tokens now use JITO BUNDLES (atomic - zero fee on failure)
             # No longer blocking pump.fun tokens since Jito handles them properly

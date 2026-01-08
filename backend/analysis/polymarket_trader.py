@@ -208,8 +208,12 @@ class PolymarketTrader:
             return result
         
         # Check 2: Price within range
-        price = signal.get("current_price", 0)
-        if price is None or price < self.config.min_price:
+        price = signal.get("current_price")
+        if price is None:
+             result["reason"] = "Price data unavailable"
+             return result
+             
+        if price < self.config.min_price:
             result["reason"] = f"Price too low ({price:.2f} < {self.config.min_price})"
             return result
         if price > self.config.max_price:

@@ -150,15 +150,15 @@ class TradingExecutive:
         return None
 
     def get_usdt_balance(self):
-        """Fetch current USDT balance."""
+        """Fetch current USDT balance. Returns None on network error to prevent false '0.00' balance."""
         if not self.exchange:
             return 0
         try:
             balance = self.exchange.fetch_balance()
             return balance.get('USDT', {}).get('free', 0)
         except Exception as e:
-            print(f"Error fetching balance: {e}")
-            return 0
+            print(f"⚠️ Kraken Balance Fetch Failed (Flaky Network): {e}")
+            return None
 
     def execute_market_buy(self, symbol, amount_usdt=10.0, risk_factor=1.0):
         """Execute a market buy order with risk-adjusted sizing."""
@@ -174,6 +174,9 @@ class TradingExecutive:
             # Clamp to min $11 for Kraken (approx min order size)
             adjusted_amount = max(11.0, float(adjusted_amount))
             
+            if balance is None:
+                return {"error": "Skipping trade: Kraken balance fetch failed (Network issue)"}
+                
             if balance < adjusted_amount:
                 # Use remaining balance if close enough, else error
                 if balance > 10.0:
