@@ -49,7 +49,7 @@ class DexTrader:
         self.USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
         
         # Trading config
-        self.slippage_bps = 1500  # 15% slippage for extreme volatility (was 5%)
+        self.slippage_bps = 3000  # 30% default for volatile markets (was 15%)
         self.max_trade_sol = 0.05  # Max 0.05 SOL per trade (~$6)
         
         # Active positions
@@ -458,11 +458,11 @@ class DexTrader:
         
         # Retry logic if slippage exceeded
         if 'error' in result and ('0x177e' in str(result['error']) or '6014' in str(result['error'])):
-            print("⚠️ Slippage exceeded. Retrying with DYNAMIC SLIPPAGE...")
+            print("⚠️ Slippage exceeded. Retrying with 50% SLIPPAGE...")
             import time
             time.sleep(1)
-            # Retry WITHOUT override (let Jupiter Dynamic Slippage handle it fully)
-            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=None)
+            # Retry with 50% (gives more room than 15% default, but less likely to fail API than 100%)
+            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=5000)
         
         if result.get('success'):
             # Track position
