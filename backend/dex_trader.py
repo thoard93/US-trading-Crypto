@@ -151,25 +151,30 @@ class DexTrader:
             return 0
     
     def get_jupiter_quote(self, input_mint, output_mint, amount_lamports, override_slippage=None):
-        """Get swap quote from Jupiter."""
+        """Get a quote from Jupiter Aggregator with retries."""
         try:
+            # Determine slippage
             slippage_bps = override_slippage if override_slippage else self.slippage_bps
             
-            # Using public Jupiter API v6 - STANDARD ROUTING (Smart Router)
-            # Reverted 'onlyDirectRoutes' and 'restrictIntermediateTokens' to let Jupiter find best path
-            url = f"https://public.jupiterapi.com/quote?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}"
+            import time
+            for attempt in range(3):
+                try:
+                    url = f"https://quote-api.jup.ag/v6/quote?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}&onlyDirectRoute=false"
+                    response = requests.get(url, timeout=10)
+                    if response.status_code == 200:
+                        return response.json()
+                    else:
+                        print(f"⚠️ Jupiter Quote attempt {attempt+1} failed ({response.status_code}): {response.text}")
+                except Exception as e:
+                    print(f"⚠️ Jupiter Quote attempt {attempt+1} error: {e}")
+                
+                if attempt < 2: time.sleep(1)
             
-            response = requests.get(url)
-            
-            if response.status_code == 200:
-                return response.json()
-            else:
-                print(f"Jupiter quote error: {response.text}")
-                return None
-        except Exception as e:
-            print(f"Error getting Jupiter quote: {e}")
             return None
-
+        except Exception as e:
+            print(f"❌ Error in get_jupiter_quote: {e}")
+            return None
+    
     def get_all_tokens(self):
         """Fetch all SPL tokens held by the wallet."""
         if not self.keypair: return {}
