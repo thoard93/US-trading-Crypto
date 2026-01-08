@@ -443,63 +443,81 @@ class DexTrader:
             # Reconstruct signed transaction
             signed_tx = VersionedTransaction.populate(message, [signature])
             
-            # 3. Send transaction via our RPC
-            signed_tx_bytes = bytes(signed_tx)
-            signed_tx_base64 = base64.b64encode(signed_tx_bytes).decode('utf-8')
-            
-            # Send with optimized params for landing
-            send_response = requests.post(self.rpc_url, json={
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "sendTransaction",
-                "params": [
-                    signed_tx_base64,
-                    {
-                        "encoding": "base64", 
-                        "skipPreflight": True,  # Skip local sim - PumpPortal already validated
-                        "preflightCommitment": "confirmed",
-                        "maxRetries": 5  # Increase retries for aggressive landing
-                    }
-                ]
-            }, timeout=20)
-            
-            result = send_response.json()
-            
-            if 'error' in result:
-                error_msg = result['error'].get('message', str(result['error']))
-                print(f"❌ PumpPortal TX Failed: {error_msg}")
-                return {"error": error_msg}
-            
-            tx_signature = result.get('result')
-            print(f"📤 PumpPortal TX sent: {tx_signature}")
-            
-            # Wait for confirmation (up to 60 seconds)
+            # 3. AGGRESSIVE RETRY LOOP - Keep resubmitting until confirm or blockhash expires (~60s)
+            # This is the key to landing trades during pump.fun congestion
             import time
-            for i in range(12):
-                time.sleep(5)
-                confirm_response = requests.post(self.rpc_url, json={
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "getSignatureStatuses",
-                    "params": [[tx_signature]]
-                }, timeout=10)
-                
-                confirm_result = confirm_response.json()
-                status = confirm_result.get('result', {}).get('value', [{}])[0]
-                
-                if status and status.get('confirmationStatus') in ['confirmed', 'finalized']:
-                    if status.get('err'):
-                        print(f"❌ PumpPortal TX FAILED on-chain: {status.get('err')}")
-                        return {"error": f"TX failed on-chain: {status.get('err')}"}
-                    print(f"✅ PumpPortal swap CONFIRMED! TX: {tx_signature}")
-                    return {
-                        "success": True,
-                        "signature": tx_signature,
-                        "provider": "pumpportal"
-                    }
+            tx_signature = None
+            max_attempts = 20  # 3s * 20 = 60s total
             
-            print(f"⚠️ PumpPortal TX not confirmed after 30s: {tx_signature}")
-            return {"error": "Transaction not confirmed", "signature": tx_signature}
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    # Send (or resend) the transaction
+                    send_response = requests.post(self.rpc_url, json={
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "sendTransaction",
+                        "params": [
+                            signed_tx_base64,
+                            {
+                                "encoding": "base64", 
+                                "skipPreflight": True,
+                                "preflightCommitment": "confirmed",
+                                "maxRetries": 0  # We handle retries ourselves
+                            }
+                        ]
+                    }, timeout=10)
+                    
+                    result = send_response.json()
+                    
+                    # Capture signature on first successful send
+                    if 'result' in result and not tx_signature:
+                        tx_signature = result.get('result')
+                        print(f"📤 PumpPortal TX sent (attempt {attempt}/{max_attempts}): {tx_signature[:16]}...")
+                    
+                    # Check if we have a signature to poll
+                    if tx_signature:
+                        confirm_response = requests.post(self.rpc_url, json={
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "getSignatureStatuses",
+                            "params": [[tx_signature], {"searchTransactionHistory": True}]
+                        }, timeout=10)
+                        
+                        confirm_result = confirm_response.json()
+                        status = confirm_result.get('result', {}).get('value', [{}])[0]
+                        
+                        if status and status.get('confirmationStatus') in ['confirmed', 'finalized']:
+                            if status.get('err'):
+                                print(f"❌ PumpPortal TX FAILED on-chain: {status.get('err')}")
+                                return {"error": f"TX failed on-chain: {status.get('err')}"}
+                            print(f"✅ PumpPortal swap CONFIRMED on attempt {attempt}! TX: {tx_signature}")
+                            return {
+                                "success": True,
+                                "signature": tx_signature,
+                                "provider": "pumpportal"
+                            }
+                    
+                    # Check for blockhash expiry error
+                    if 'error' in result:
+                        error_msg = str(result['error'])
+                        if 'Blockhash not found' in error_msg or 'expired' in error_msg.lower():
+                            print(f"⏰ Blockhash expired on attempt {attempt}. TX cannot land.")
+                            return {"error": "Blockhash expired", "signature": tx_signature}
+                        # Other errors - log but continue retrying
+                        if attempt == 1:
+                            print(f"⚠️ Send error (will retry): {error_msg[:50]}...")
+                    
+                except requests.exceptions.Timeout:
+                    print(f"⏱️ RPC timeout on attempt {attempt}, retrying...")
+                except Exception as e:
+                    print(f"⚠️ Attempt {attempt} error: {str(e)[:50]}...")
+                
+                # Wait before next resubmission
+                time.sleep(3)
+            
+            # If we get here, all attempts exhausted
+            print(f"⚠️ PumpPortal TX not confirmed after {max_attempts} attempts: {tx_signature}")
+            return {"error": "Transaction not confirmed after max retries", "signature": tx_signature}
         except Exception as e:
             print(f"❌ PumpPortal swap error: {e}")
             return {"error": str(e)}
