@@ -9,10 +9,11 @@ import requests
 from solders.keypair import Keypair
 from solders.transaction import VersionedTransaction
 from solders.signature import Signature
-from solders.message import to_bytes_versioned
+from solders.message import to_bytes_versioned, MessageV0
 from solders.pubkey import Pubkey
 from solders.instruction import Instruction, AccountMeta
 from solders.system_program import transfer, TransferParams
+from solders.address_lookup_table_account import AddressLookupTableAccount
 from nacl.signing import SigningKey
 import random
 
@@ -484,91 +485,124 @@ class DexTrader:
     def execute_jito_bundle(self, token_mint, sol_amount):
         """
         Execute swap via Jito for MEV protection and atomic execution.
-        Uses Jito's sendTransaction with bundleOnly=true for revert protection.
-        
-        With bundleOnly=true:
-        - Transaction executes atomically (reverts if any instruction fails)
-        - Tip is included via priority fee (Jito recommends 70/30 split)
-        - No fees if transaction reverts
+        Uses Jupiter's /swap-instructions to build a SINGLE transaction with an internal tip.
         """
         if not self.keypair:
             return {"error": "Wallet not initialized"}
         
         try:
             import time
+            from solders.hash import Hash
             
             amount_lamports = int(sol_amount * 1e9)
             
-            # 1. Get Jupiter quote
+            # 1. Get dynamic tip amount
+            tip_sol = self.get_jito_tip_amount()
+            tip_lamports = int(tip_sol * 1e9)
+            tip_account = Pubkey.from_string(random.choice(JITO_TIP_ACCOUNTS))
+            
+            # 2. Get Jupiter quote
             quote = self.get_jupiter_quote(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
             if not quote:
                 return {"error": "Failed to get Jupiter quote"}
             
-            print(f"📊 Jito Quote: outAmount={quote.get('outAmount')}")
-            
-            # 2. Get Jupiter swap transaction with HIGH priority fee (includes Jito tip)
-            # Jito recommends 70% priority fee + 30% tip
-            # We use a high priority fee that covers both
-            swap_url = "https://public.jupiterapi.com/swap"
-            swap_body = {
+            # 3. Get swap instructions from Jupiter
+            instr_url = "https://quote-api.jup.ag/v6/swap-instructions"
+            instr_body = {
                 "quoteResponse": quote,
                 "userPublicKey": self.wallet_address,
                 "wrapAndUnwrapSol": True,
-                "dynamicComputeUnitLimit": True,
-                # Use higher priority fee - this becomes the Jito tip
-                "prioritizationFeeLamports": 100000,  # 0.0001 SOL
-                "dynamicSlippage": True,
             }
+            instr_response = requests.post(instr_url, json=instr_body, timeout=15)
+            if instr_response.status_code != 200:
+                return {"error": f"Jupiter instructions API error: {instr_response.text}"}
             
-            swap_response = requests.post(swap_url, json=swap_body, timeout=15)
-            if swap_response.status_code != 200:
-                return {"error": f"Jupiter swap API error: {swap_response.text}"}
+            instr_data = instr_response.json()
             
-            swap_data = swap_response.json()
-            swap_tx_b64 = swap_data.get('swapTransaction')
-            if not swap_tx_b64:
-                return {"error": "No swap transaction returned"}
+            # 4. Helper to parse Jupiter instructions
+            def parse_instr(obj):
+                if not obj: return None
+                return Instruction(
+                    program_id=Pubkey.from_string(obj['programId']),
+                    accounts=[AccountMeta(
+                        pubkey=Pubkey.from_string(a['pubkey']),
+                        is_signer=a['isSigner'],
+                        is_writable=a['isWritable']
+                    ) for a in obj['accounts']],
+                    data=base64.b64decode(obj['data'])
+                )
+
+            instructions = []
+            # Setup instructions
+            for obj in instr_data.get('setupInstructions', []):
+                instructions.append(parse_instr(obj))
+            # Core swap instruction
+            instructions.append(parse_instr(instr_data.get('swapInstruction')))
+            # Cleanup instruction
+            if instr_data.get('cleanupInstruction'):
+                instructions.append(parse_instr(instr_data.get('cleanupInstruction')))
             
-            # 3. Deserialize and sign the Jupiter swap TX
-            # MUST use to_bytes_versioned for correct message serialization
-            tx_bytes = base64.b64decode(swap_tx_b64)
-            swap_tx = VersionedTransaction.from_bytes(tx_bytes)
+            # 5. Add Jito Tip instruction (SOL transfer)
+            # Use solders.system_program.transfer (already imported as transfer)
+            tip_ix = transfer(TransferParams(
+                from_pubkey=self.keypair.pubkey(),
+                to_pubkey=tip_account,
+                lamports=tip_lamports
+            ))
+            instructions.append(tip_ix)
             
-            # Get message bytes using the CORRECT method for versioned transactions
-            message = swap_tx.message
+            # 6. Fetch Address Lookup Table accounts
+            alt_addresses = instr_data.get('addressLookupTableAddresses', [])
+            lookup_tables = []
+            if alt_addresses:
+                rpc_payload = {
+                    "jsonrpc": "2.0", "id": 1,
+                    "method": "getMultipleAccounts",
+                    "params": [alt_addresses, {"encoding": "base64"}]
+                }
+                rpc_response = requests.post(self.rpc_url, json=rpc_payload, timeout=15).json()
+                accounts_data = rpc_response.get('result', {}).get('value', [])
+                
+                for i, acc_data in enumerate(accounts_data):
+                    if acc_data:
+                        alt_pubkey = Pubkey.from_string(alt_addresses[i])
+                        alt_bytes = base64.b64decode(acc_data['data'][0])
+                        lookup_tables.append(AddressLookupTableAccount(alt_pubkey, alt_bytes))
+
+            # 7. Get fresh blockhash
+            blockhash_resp = requests.post(self.rpc_url, json={
+                "jsonrpc": "2.0", "id": 1,
+                "method": "getLatestBlockhash",
+                "params": [{"commitment": "confirmed"}]
+            }, timeout=10).json()
+            recent_blockhash = Hash.from_string(blockhash_resp['result']['value']['blockhash'])
+            
+            # 8. Compile MessageV0
+            message = MessageV0.compile(
+                payer=self.keypair.pubkey(),
+                instructions=instructions,
+                address_lookup_table_accounts=lookup_tables,
+                recent_blockhash=recent_blockhash
+            )
+            
+            # 9. Sign and build VersionedTransaction
             message_bytes = to_bytes_versioned(message)
+            signature = self.keypair.sign_message(message_bytes)
+            signed_tx = VersionedTransaction.populate(message, [signature])
+            signed_tx_b64 = base64.b64encode(bytes(signed_tx)).decode('utf-8')
             
-            # Sign using keypair.sign_message (same as working execute_swap)
-            try:
-                signature = self.keypair.sign_message(message_bytes)
-                print(f"🔐 Signed using Solders native method")
-            except Exception as e:
-                print(f"⚠️ Solders sign failed ({e}), using nacl fallback")
-                seed = self._raw_secret[:32] if len(self._raw_secret) >= 32 else self._raw_secret
-                signing_key = SigningKey(seed)
-                signed = signing_key.sign(message_bytes)
-                signature = Signature.from_bytes(signed.signature)
-            
-            signed_swap_tx = VersionedTransaction.populate(message, [signature])
-            signed_swap_b64 = base64.b64encode(bytes(signed_swap_tx)).decode('utf-8')
-            
-            # 4. Submit to Jito sendTransaction with bundleOnly=true
-            # This provides atomic execution - reverts if tx fails, no fees charged
+            # 10. Submit to Jito
             tx_payload = {
-                "jsonrpc": "2.0",
-                "id": 1,
+                "jsonrpc": "2.0", "id": 1,
                 "method": "sendTransaction",
-                "params": [
-                    signed_swap_b64,
-                    {"encoding": "base64"}
-                ]
+                "params": [signed_tx_b64, {"encoding": "base64"}]
             }
             
-            print(f"📤 Submitting to Jito (bundleOnly=true for atomic execution)...")
+            print(f"🔐 Built Jito TX with internal tip: {tip_sol:.6f} SOL")
+            print(f"📤 Submitting to Jito (bundleOnly=true)...")
             
             tx_signature = None
             for jito_base in JITO_BLOCK_ENGINES:
-                # Use bundleOnly=true for atomic execution
                 jito_url = f"{jito_base}/api/v1/transactions?bundleOnly=true"
                 try:
                     response = requests.post(jito_url, json=tx_payload, timeout=10)
@@ -580,40 +614,32 @@ class DexTrader:
                             print(f"⚠️ {jito_base.split('//')[1].split('.')[0]} rate limited...")
                             continue
                         print(f"❌ Jito error from {jito_base.split('//')[1].split('.')[0]}: {error_msg}")
-                        continue  # Try next endpoint
+                        continue
                     
                     tx_signature = result.get('result')
                     print(f"✅ Jito TX submitted via {jito_base.split('//')[1].split('.')[0]}!")
                     print(f"   Signature: {tx_signature}")
                     break
-                except requests.exceptions.Timeout:
-                    print(f"⚠️ {jito_base.split('//')[1].split('.')[0]} timeout...")
-                    continue
-                except Exception as e:
-                    print(f"⚠️ {jito_base.split('//')[1].split('.')[0]} error: {e}")
-                    continue
+                except Exception: continue
             
             if not tx_signature:
                 return {"error": "All Jito endpoints rate-limited or unavailable"}
             
-            # 5. Wait for confirmation
-            for i in range(12):  # 30 seconds total
+            # 11. Wait for confirmation
+            for i in range(12):
                 time.sleep(2.5)
                 try:
                     status_resp = requests.post(self.rpc_url, json={
-                        "jsonrpc": "2.0",
-                        "id": 1,
+                        "jsonrpc": "2.0", "id": 1,
                         "method": "getSignatureStatuses",
                         "params": [[tx_signature], {"searchTransactionHistory": True}]
-                    }, timeout=10)
-                    status = status_resp.json().get('result', {}).get('value', [None])[0]
+                    }, timeout=10).json()
+                    status = status_resp.get('result', {}).get('value', [None])[0]
                     
                     if status:
                         if status.get('err'):
-                            # With bundleOnly=true, failed tx should revert atomically
-                            print(f"⚡ Jito TX REVERTED (atomic - no fee): {status['err']}")
+                            print(f"⚡ Jito TX REVERTED: {status['err']}")
                             return {"error": f"TX reverted (no fee): {status['err']}"}
-                        
                         if status.get('confirmationStatus') in ['confirmed', 'finalized']:
                             print(f"🎉 JITO TX CONFIRMED! Status: {status['confirmationStatus']}")
                             return {
@@ -622,14 +648,13 @@ class DexTrader:
                                 "provider": "jito",
                                 "output_amount": quote.get('outAmount')
                             }
-                except Exception as e:
-                    pass
+                except Exception: pass
             
             print(f"⚠️ Jito TX not confirmed after 30s: {tx_signature}")
             return {"error": "Transaction confirmation timeout", "signature": tx_signature}
             
         except Exception as e:
-            print(f"❌ Jito error: {e}")
+            print(f"❌ Jito V4 error: {e}")
             import traceback
             traceback.print_exc()
             return {"error": str(e)}
