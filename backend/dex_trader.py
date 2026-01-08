@@ -550,6 +550,7 @@ class DexTrader:
             instr_data = None
             hosts = [
                 ("quote-api.jup.ag", "/v6/swap-instructions"),
+                ("jup.ag", "/api/v6/swap-instructions"), # Try jup.ag site proxy
                 ("public.jupiterapi.com", "/v6/swap-instructions")
             ]
             
@@ -570,10 +571,10 @@ class DexTrader:
                             success = True
                             break
                         else:
-                            print(f"⚠️ Jupiter {host} returned {instr_response.status_code}: {instr_response.text}")
+                            print(f"⚠️ Jupiter {host} returned {instr_response.status_code} for swap-instructions")
                     except Exception as e:
                         if "Errno -5" in str(e) or "Max retries exceeded" in str(e):
-                            print(f"📡 DNS/Connection Error reaching {host} - trying next...")
+                            print(f"📡 DNS/Connection Error reaching {host} (swap-instructions) - trying next...")
                             break 
                         print(f"⚠️ Jupiter {host} attempt {attempt+1} failed: {e}")
                     time.sleep(1)
@@ -581,7 +582,7 @@ class DexTrader:
                 if success: break
             
             if not instr_data:
-                return {"error": "Failed to fetch Jupiter swap instructions after trying multiple hosts."}
+                return {"error": "Failed to fetch Jupiter swap instructions after trying all mirrors."}
             
             # 4. Helper to parse Jupiter instructions
             def parse_instr(obj):
@@ -759,9 +760,9 @@ class DexTrader:
             print(f"🎰 Pump.fun token detected. Using JITO BUNDLE (atomic execution).")
             result = self.execute_jito_bundle(token_mint, sol_amount)
             
-            # Fallback to PumpPortal if Jito completely fails
-            if 'error' in result and ('rate-limited' in str(result['error']).lower() or 'unavailable' in str(result['error']).lower()):
-                print(f"⚠️ Jito unavailable. Falling back to PumpPortal...")
+            # Fallback to PumpPortal if Jito fails for ANY reason (connectivity, routing, instructions)
+            if 'error' in result:
+                print(f"⚠️ Jito failed ({result['error']}). Falling back to PumpPortal...")
                 result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=100, priority_fee=0.001)
         else:
             # Standard Jupiter Flow for Raydium/etc
