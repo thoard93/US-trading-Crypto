@@ -626,10 +626,22 @@ class DexTrader:
                 accounts_data = rpc_response.get('result', {}).get('value', [])
                 
                 for i, acc_data in enumerate(accounts_data):
-                    if acc_data:
+                    if acc_data and acc_data.get('data'):
                         alt_pubkey = Pubkey.from_string(alt_addresses[i])
-                        alt_bytes = base64.b64decode(acc_data['data'][0])
-                        lookup_tables.append(AddressLookupTableAccount(alt_pubkey, alt_bytes))
+                        # Decode base64 data
+                        raw_data = base64.b64decode(acc_data['data'][0])
+                        
+                        # PARSE ALT DATA: Skip 56-byte header, then 32 bytes per address
+                        # Header: 4(type)+8(deactiv)+8(last_ext)+1(index)+1(has_auth)+32(auth)+2(padding?) = 56
+                        addresses = []
+                        for j in range(56, len(raw_data), 32):
+                            addr_bytes = raw_data[j:j+32]
+                            if len(addr_bytes) == 32:
+                                addresses.append(Pubkey.from_bytes(addr_bytes))
+                        
+                        if addresses:
+                            lookup_tables.append(AddressLookupTableAccount(alt_pubkey, addresses))
+                            print(f"✅ Loaded ALT {alt_pubkey[:8]} with {len(addresses)} addresses")
 
             # 7. Get fresh blockhash
             blockhash_resp = requests.post(self.rpc_url, json={
