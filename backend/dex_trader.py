@@ -483,35 +483,34 @@ class DexTrader:
     
     def execute_jito_bundle(self, token_mint, sol_amount):
         """
-        Execute swap via Jito Bundle for atomic execution.
-        Key Benefit: If the swap fails (slippage, etc), NO FEES are charged!
+        Execute swap via Jito for MEV protection and low latency.
+        Uses Jito's sendTransaction endpoint for simplicity.
         """
         if not self.keypair:
             return {"error": "Wallet not initialized"}
         
         try:
-            # 1. Get dynamic tip amount
-            tip_sol = self.get_jito_tip_amount()
-            tip_lamports = int(tip_sol * 1e9)
-            print(f"🎯 Jito Tip: {tip_sol:.6f} SOL (75th percentile)")
-            
             amount_lamports = int(sol_amount * 1e9)
             
-            # 2. Get Jupiter quote and swap TX
+            # 1. Get Jupiter quote
             quote = self.get_jupiter_quote(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
             if not quote:
                 return {"error": "Failed to get Jupiter quote"}
             
             print(f"📊 Jito Quote: outAmount={quote.get('outAmount')}")
             
-            # 3. Get Jupiter swap transaction (we will modify it to add tip)
+            # 2. Get Jupiter swap transaction with Jito tip built-in
+            # Use higher priority fee which includes Jito tip (70/30 split)
             swap_url = "https://public.jupiterapi.com/swap"
             swap_body = {
                 "quoteResponse": quote,
                 "userPublicKey": self.wallet_address,
                 "wrapAndUnwrapSol": True,
                 "dynamicComputeUnitLimit": True,
-                "prioritizationFeeLamports": "auto",  # Let Jupiter set priority fee
+                # Higher priority fee - Jito takes 30% as tip
+                "prioritizationFeeLamports": {
+                    "jitoTipLamports": 100000  # 0.0001 SOL tip to Jito
+                },
                 "dynamicSlippage": True,
             }
             
@@ -524,11 +523,10 @@ class DexTrader:
             if not swap_tx_b64:
                 return {"error": "No swap transaction returned"}
             
-            # 4. Deserialize, sign, and prepare for bundle
+            # 3. Deserialize and sign
             tx_bytes = base64.b64decode(swap_tx_b64)
             tx = VersionedTransaction.from_bytes(tx_bytes)
             
-            # Sign the transaction
             seed = self._raw_secret[:32] if len(self._raw_secret) >= 32 else self._raw_secret
             signing_key = SigningKey(seed)
             message_bytes = bytes(tx.message)
@@ -538,125 +536,80 @@ class DexTrader:
             signed_tx = VersionedTransaction.populate(tx.message, [signature])
             signed_tx_b64 = base64.b64encode(bytes(signed_tx)).decode('utf-8')
             
-            # 5. Create tip transaction (separate TX in bundle)
-            tip_account = random.choice(JITO_TIP_ACCOUNTS)
-            print(f"💰 Tipping {tip_account[:8]}... ({tip_sol:.6f} SOL)")
-            
-            # Build tip transfer instruction
-            tip_ix = transfer(TransferParams(
-                from_pubkey=self.keypair.pubkey(),
-                to_pubkey=Pubkey.from_string(tip_account),
-                lamports=tip_lamports
-            ))
-            
-            # For tip TX, we need to build a legacy transaction
-            # Fetch recent blockhash
-            blockhash_resp = requests.post(self.rpc_url, json={
+            # 4. Submit via Jito sendTransaction (try multiple endpoints)
+            tx_payload = {
                 "jsonrpc": "2.0",
                 "id": 1,
-                "method": "getLatestBlockhash",
-                "params": [{"commitment": "finalized"}]
-            }, timeout=10)
-            blockhash_data = blockhash_resp.json()
-            recent_blockhash = blockhash_data['result']['value']['blockhash']
-            
-            from solders.transaction import Transaction
-            from solders.message import Message
-            from solders.hash import Hash
-            
-            tip_msg = Message.new_with_blockhash(
-                [tip_ix],
-                self.keypair.pubkey(),
-                Hash.from_string(recent_blockhash)
-            )
-            tip_tx = Transaction.new_unsigned(tip_msg)
-            tip_tx_signed = Transaction([self.keypair], tip_msg, Hash.from_string(recent_blockhash))
-            tip_tx_b64 = base64.b64encode(bytes(tip_tx_signed)).decode('utf-8')
-            
-            # 6. Submit bundle to Jito Block Engine
-            bundle_payload = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "sendBundle",
+                "method": "sendTransaction",
                 "params": [
-                    [signed_tx_b64, tip_tx_b64],  # Swap TX first, then tip
+                    signed_tx_b64,
                     {"encoding": "base64"}
                 ]
             }
             
-            # 6. Submit bundle to Jito Block Engine (try multiple endpoints)
-            print(f"📤 Submitting Jito Bundle (trying {len(JITO_BLOCK_ENGINES)} endpoints)...")
+            print(f"📤 Submitting via Jito sendTransaction...")
             
-            bundle_id = None
-            selected_endpoint = None
-            
+            tx_signature = None
             for jito_base in JITO_BLOCK_ENGINES:
-                jito_url = f"{jito_base}/api/v1/bundles"
+                jito_url = f"{jito_base}/api/v1/transactions"
                 try:
-                    bundle_response = requests.post(jito_url, json=bundle_payload, timeout=10)
-                    bundle_result = bundle_response.json()
+                    response = requests.post(jito_url, json=tx_payload, timeout=10)
+                    result = response.json()
                     
-                    if 'error' in bundle_result:
-                        error_msg = str(bundle_result['error'].get('message', bundle_result['error']))
-                        # Check if rate limited - try next endpoint
+                    if 'error' in result:
+                        error_msg = str(result['error'].get('message', result['error']))
                         if 'rate' in error_msg.lower() or 'congested' in error_msg.lower():
-                            print(f"⚠️ {jito_base.split('//')[1].split('.')[0]} rate limited, trying next...")
+                            print(f"⚠️ {jito_base.split('//')[1].split('.')[0]} rate limited...")
                             continue
-                        # Other error - report it
-                        print(f"❌ Jito Bundle rejected: {error_msg}")
+                        print(f"❌ Jito error: {error_msg}")
                         return {"error": f"Jito: {error_msg}"}
                     
-                    bundle_id = bundle_result.get('result')
-                    selected_endpoint = jito_url
-                    print(f"✅ Jito Bundle submitted via {jito_base.split('//')[1].split('.')[0]}! ID: {bundle_id}")
+                    tx_signature = result.get('result')
+                    print(f"✅ Jito TX submitted via {jito_base.split('//')[1].split('.')[0]}!")
+                    print(f"   Signature: {tx_signature}")
                     break
                 except requests.exceptions.Timeout:
-                    print(f"⚠️ {jito_base.split('//')[1].split('.')[0]} timeout, trying next...")
                     continue
                 except Exception as e:
-                    print(f"⚠️ {jito_base.split('//')[1].split('.')[0]} error: {e}, trying next...")
                     continue
             
-            if not bundle_id:
+            if not tx_signature:
                 return {"error": "All Jito endpoints rate-limited or unavailable"}
             
-            # 7. Wait for bundle confirmation (faster timeout for Jito)
+            # 5. Wait for confirmation
             import time
-            for i in range(6):  # 15 seconds total (6 x 2.5s)
+            for i in range(12):  # 30 seconds total
                 time.sleep(2.5)
-                
-                status_payload = {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "getBundleStatuses",
-                    "params": [[bundle_id]]
-                }
-                status_response = requests.post(selected_endpoint, json=status_payload, timeout=10)
-                status_data = status_response.json()
-                
-                statuses = status_data.get('result', {}).get('value', [])
-                if statuses and len(statuses) > 0:
-                    bundle_status = statuses[0]
-                    confirmation = bundle_status.get('confirmation_status')
+                try:
+                    status_resp = requests.post(self.rpc_url, json={
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "getSignatureStatuses",
+                        "params": [[tx_signature], {"searchTransactionHistory": True}]
+                    }, timeout=10)
+                    status = status_resp.json().get('result', {}).get('value', [None])[0]
                     
-                    if confirmation in ['confirmed', 'finalized']:
-                        print(f"🎉 JITO BUNDLE LANDED! Status: {confirmation}")
-                        return {
-                            "success": True,
-                            "signature": bundle_id,
-                            "provider": "jito_bundle",
-                            "tip_paid": tip_sol
-                        }
-                    elif bundle_status.get('err'):
-                        # Bundle failed atomically - NO FEE CHARGED!
-                        print(f"⚡ Jito Bundle REVERTED (No Fee): {bundle_status.get('err')}")
-                        return {"error": f"Bundle reverted (no fee): {bundle_status.get('err')}"}
+                    if status:
+                        if status.get('err'):
+                            print(f"❌ Jito TX FAILED on-chain: {status['err']}")
+                            return {"error": f"On-chain failure: {status['err']}"}
+                        
+                        if status.get('confirmationStatus') in ['confirmed', 'finalized']:
+                            print(f"🎉 JITO TX CONFIRMED! Status: {status['confirmationStatus']}")
+                            return {
+                                "success": True,
+                                "signature": tx_signature,
+                                "provider": "jito",
+                                "output_amount": quote.get('outAmount')
+                            }
+                except Exception as e:
+                    pass
             
-            print(f"⚠️ Jito Bundle not confirmed after 15s: {bundle_id}")
-            return {"error": "Bundle confirmation timeout", "bundle_id": bundle_id}
+            print(f"⚠️ Jito TX not confirmed after 30s: {tx_signature}")
+            return {"error": "Transaction confirmation timeout", "signature": tx_signature}
             
         except Exception as e:
-            print(f"❌ Jito Bundle error: {e}")
+            print(f"❌ Jito error: {e}")
             import traceback
             traceback.print_exc()
             return {"error": str(e)}
@@ -691,12 +644,16 @@ class DexTrader:
         user_id = getattr(self, 'user_id', 'Unknown')
         print(f"🔄 BUYING (User {user_id}) {token_mint} | SOL: {sol_amount:.4f}")
 
-        # PUMPPORTAL STRATEGY for Pump.fun tokens
-        # Jito bundles need more debugging (tip account structure issue)
-        # PumpPortal is more reliable for now
+        # JITO STRATEGY for Pump.fun tokens
+        # Uses Jito sendTransaction with tip built into Jupiter's priority fee
         if "pump" in token_mint.lower():
-            print(f"💊 Pump.fun token detected. Using PumpPortal DIRECT.")
-            result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=100, priority_fee=0.001)
+            print(f"🎰 Pump.fun token detected. Using JITO sendTransaction (MEV protection).")
+            result = self.execute_jito_bundle(token_mint, sol_amount)
+            
+            # Fallback to PumpPortal if Jito fails completely
+            if 'error' in result and 'rate-limited' in str(result['error']).lower():
+                print(f"⚠️ All Jito endpoints busy. Falling back to PumpPortal...")
+                result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=100, priority_fee=0.001)
         else:
             # Standard Jupiter Flow for Raydium/etc
             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
