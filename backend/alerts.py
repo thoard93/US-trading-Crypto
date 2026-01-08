@@ -1592,6 +1592,10 @@ class AlertSystem(commands.Cog):
             # 3. Build Analysis Embed
             liq_pass = liquidity >= self.dex_min_liquidity
             safety_pass = safety_score >= 50  # Lowered from 60 - whales provide extra confidence
+            # Get price change data FIRST (needed for volatility filter)
+            price_change_24h = float(pair.get('priceChange', {}).get('h24', 0) or 0)
+            change_emoji = "📈" if price_change_24h >= 0 else "📉"
+            change_color = "+" if price_change_24h >= 0 else ""
             
             # VOLATILITY FILTER: Skip tokens moving too fast (>250% in 24h = likely untradeable)
             volatility_pass = abs(price_change_24h) < 250
@@ -1602,11 +1606,6 @@ class AlertSystem(commands.Cog):
             
             embed_color = discord.Color.green() if all_pass else discord.Color.red()
             decision = "✅ EXECUTING BUY" if all_pass else "🚫 SKIPPED"
-            
-            # Get price change data
-            price_change_24h = float(pair.get('priceChange', {}).get('h24', 0) or 0)
-            change_emoji = "📈" if price_change_24h >= 0 else "📉"
-            change_color = "+" if price_change_24h >= 0 else ""
             
             embed = discord.Embed(
                 title=f"🐋 Swarm Analysis: {symbol}",
