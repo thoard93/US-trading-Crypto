@@ -516,18 +516,14 @@ class DexTrader:
         
         print(f"🔄 SELLING {token_mint} | Amount: {sell_amount}")
 
-        result = self.execute_swap(token_mint, self.SOL_MINT, sell_amount)
+        # Aggressive Sell: Use 100% Slippage immediately to ensure exit
+        result = self.execute_swap(token_mint, self.SOL_MINT, sell_amount, override_slippage=10000)
         
-        # Retry logic for Slippage (0x177e) on SELLS - Force Exit
-        if 'error' in result and '0x177e' in str(result['error']):
-             print("⚠️ Sell Slippage exceeded (15%). Retrying with 50% (Force Exit)...")
-             result = self.execute_swap(token_mint, self.SOL_MINT, sell_amount, override_slippage=5000)
-        
-        # PUMPPORTAL FALLBACK for pump.fun tokens
+        # PUMPPORTAL FALLBACK for pump.fun tokens if Jupiter fails (including 6014/177e)
         if 'error' in result and token_mint.lower().endswith('pump'):
-            print("🎰 Jupiter sell failed on pump.fun token. Trying PumpPortal...")
-            # For sells, we use percentage mode
-            result = self.execute_pumpportal_swap(token_mint, "sell", "100%", slippage=50)
+            print(f"🎰 Jupiter sell failed ({result.get('error')}). Trying PumpPortal Direct...")
+            # For sells, we use percentage mode with 100% slippage
+            result = self.execute_pumpportal_swap(token_mint, "sell", "100%", slippage=100)
         
         if result.get('success') and percentage == 100:
             # Remove from positions
