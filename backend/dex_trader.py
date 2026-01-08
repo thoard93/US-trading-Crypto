@@ -34,6 +34,9 @@ class DexTrader:
         else:
             print("⚠️ Using Slow Public RPC (High risk of slippage failure)")
             self.rpc_url = 'https://api.mainnet-beta.solana.com'
+            
+        print(f"DEBUG: Final RPC URL: {self.rpc_url}")
+        print(f"DEBUG: Helius Key Present: {bool(helius_key)}")
         self._raw_secret = None  # Store raw secret for signing
         
         if private_key:
