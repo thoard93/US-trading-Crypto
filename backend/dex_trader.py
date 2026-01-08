@@ -458,10 +458,11 @@ class DexTrader:
         
         # Retry logic if slippage exceeded
         if 'error' in result and ('0x177e' in str(result['error']) or '6014' in str(result['error'])):
-            print("⚠️ Slippage exceeded. Retrying in 2s...")
+            print("⚠️ Slippage exceeded. Retrying with DYNAMIC SLIPPAGE...")
             import time
-            time.sleep(2)
-            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
+            time.sleep(1)
+            # Retry WITHOUT override (let Jupiter Dynamic Slippage handle it fully)
+            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=None)
         
         if result.get('success'):
             # Track position
