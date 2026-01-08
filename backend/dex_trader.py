@@ -20,11 +20,17 @@ class DexTrader:
         env_rpc = os.getenv('SOLANA_RPC_URL')
         helius_key = os.getenv('HELIUS_API_KEY')
         
-        if env_rpc:
-            self.rpc_url = env_rpc
-        elif helius_key:
+        # Check if env_rpc is the slow public one
+        is_slow_rpc = env_rpc and "api.mainnet-beta.solana.com" in env_rpc
+        
+        if helius_key and (not env_rpc or is_slow_rpc):
             print("🚀 Upgrading to High-Speed Helius RPC (Auto-detected key)")
+            # If user had slow RPC set, we are overriding it
+            if is_slow_rpc:
+                print("⚠️ Overriding slow 'api.mainnet-beta' config with Helius!")
             self.rpc_url = f"https://mainnet.helius-rpc.com/?api-key={helius_key}"
+        elif env_rpc:
+            self.rpc_url = env_rpc
         else:
             print("⚠️ Using Slow Public RPC (High risk of slippage failure)")
             self.rpc_url = 'https://api.mainnet-beta.solana.com'
