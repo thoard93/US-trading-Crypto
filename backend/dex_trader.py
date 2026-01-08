@@ -644,16 +644,12 @@ class DexTrader:
         user_id = getattr(self, 'user_id', 'Unknown')
         print(f"🔄 BUYING (User {user_id}) {token_mint} | SOL: {sol_amount:.4f}")
 
-        # JITO STRATEGY for Pump.fun tokens
-        # Uses Jito sendTransaction with tip built into Jupiter's priority fee
+        # PUMPPORTAL STRATEGY for Pump.fun tokens
+        # Jito integration broken (verification failed) - needs more research
+        # PumpPortal is the working method for pump.fun
         if "pump" in token_mint.lower():
-            print(f"🎰 Pump.fun token detected. Using JITO sendTransaction (MEV protection).")
-            result = self.execute_jito_bundle(token_mint, sol_amount)
-            
-            # Fallback to PumpPortal if Jito fails completely
-            if 'error' in result and 'rate-limited' in str(result['error']).lower():
-                print(f"⚠️ All Jito endpoints busy. Falling back to PumpPortal...")
-                result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=100, priority_fee=0.001)
+            print(f"💊 Pump.fun token detected. Using PumpPortal DIRECT.")
+            result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=100, priority_fee=0.001)
         else:
             # Standard Jupiter Flow for Raydium/etc
             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
