@@ -105,10 +105,9 @@ class DexTrader:
         try:
             slippage_bps = override_slippage if override_slippage else self.slippage_bps
             
-            # Using public Jupiter API v6
-            # onlyDirectRoutes: Avoid multi-hop routing which accumulates slippage
-            # restrictIntermediateTokens: Don't route through low-liquidity pools
-            url = f"https://public.jupiterapi.com/quote?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}&onlyDirectRoutes=true&restrictIntermediateTokens=true"
+            # Using public Jupiter API v6 - STANDARD ROUTING (Smart Router)
+            # Reverted 'onlyDirectRoutes' and 'restrictIntermediateTokens' to let Jupiter find best path
+            url = f"https://public.jupiterapi.com/quote?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}"
             
             response = requests.get(url)
             
@@ -181,7 +180,8 @@ class DexTrader:
                 "dynamicComputeUnitLimit": True,
                 "prioritizationFeeLamports": "auto",  # REVERT: 0.05 SOL was burning wallet on failed TXs
                 # Disable dynamic slippage if we are providing a specific override (manual override takes precedence)
-                "dynamicSlippage": not bool(override_slippage), 
+                # Enable Dynamic Slippage (let Jupiter manage volatility)
+                "dynamicSlippage": True, 
                 # Also specify max slippage BPS as fallback (Capped at 100% since API rejects > 10000)
                 "autoSlippageCollisionUsdValue": 1000,
             }
