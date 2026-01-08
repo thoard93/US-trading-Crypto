@@ -507,17 +507,34 @@ class DexTrader:
                 return {"error": "Failed to get Jupiter quote"}
             
             # 3. Get swap instructions from Jupiter
-            instr_url = "https://quote-api.jup.ag/v6/swap-instructions"
-            instr_body = {
-                "quoteResponse": quote,
-                "userPublicKey": self.wallet_address,
-                "wrapAndUnwrapSol": True,
-            }
-            instr_response = requests.post(instr_url, json=instr_body, timeout=15)
-            if instr_response.status_code != 200:
-                return {"error": f"Jupiter instructions API error: {instr_response.text}"}
+            # Try multiple hosts and add retries to handle DNS/connection issues on Render
+            instr_data = None
+            for host in ["quote-api.jup.ag", "api.jup.ag"]:
+                instr_url = f"https://{host}/v6/swap-instructions"
+                instr_body = {
+                    "quoteResponse": quote,
+                    "userPublicKey": self.wallet_address,
+                    "wrapAndUnwrapSol": True,
+                }
+                
+                success = False
+                for attempt in range(2):
+                    try:
+                        instr_response = requests.post(instr_url, json=instr_body, timeout=10)
+                        if instr_response.status_code == 200:
+                            instr_data = instr_response.json()
+                            success = True
+                            break
+                        else:
+                            print(f"⚠️ Jupiter {host} returned {instr_response.status_code}: {instr_response.text}")
+                    except Exception as e:
+                        print(f"⚠️ Jupiter {host} attempt {attempt+1} failed: {e}")
+                    time.sleep(1)
+                
+                if success: break
             
-            instr_data = instr_response.json()
+            if not instr_data:
+                return {"error": "Failed to fetch Jupiter swap instructions after trying multiple hosts."}
             
             # 4. Helper to parse Jupiter instructions
             def parse_instr(obj):
