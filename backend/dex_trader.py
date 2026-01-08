@@ -389,10 +389,10 @@ class DexTrader:
             print(f"❌ Swap execution error: {e}")
             return {"error": str(e)}
     
-    def execute_pumpportal_swap(self, token_mint, action, amount_sol, slippage=25, priority_fee=0.02):
+    def execute_pumpportal_swap(self, token_mint, action, amount_sol, slippage=50, priority_fee=0.005):
         """
         Execute a swap via PumpPortal API for pump.fun tokens.
-        This has higher success rate than Jupiter for pump.fun tokens.
+        Default priority fee increased to 0.005 SOL for faster landing.
         """
         if not self.keypair:
             return {"error": "Wallet not initialized"}
@@ -503,22 +503,6 @@ class DexTrader:
         except Exception as e:
             print(f"❌ PumpPortal swap error: {e}")
             return {"error": str(e)}
-
-    def execute_pumpportal_swap(self, token_mint, action, sol_amount, slippage=10, priority_fee=0.005):
-        """Execute swap via PumpPortal API as a fallback. Priority fee increased to 0.005 SOL."""
-        try:
-            url = "https://pumpportal.fun/api/trade-local"
-            payload = {
-                "publicKey": self.wallet_address,
-                "action": action,
-                "mint": token_mint,
-                "denominatedInSol": "true",
-                "amount": sol_amount,
-                "slippage": slippage,
-                "priorityFee": priority_fee,
-                "pool": "pump"
-            }
-    
     def get_jito_tip_amount(self):
         """Fetch dynamic tip amount from Jito API (75th percentile)."""
         try:
@@ -776,7 +760,7 @@ class DexTrader:
             # Fallback to PumpPortal if Jito fails for ANY reason (connectivity, routing, instructions)
             if 'error' in result:
                 print(f"⚠️ Jito failed ({result['error']}). Falling back to PumpPortal...")
-                result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=100, priority_fee=0.001)
+                result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=100, priority_fee=0.005)
         else:
             # Standard Jupiter Flow for Raydium/etc
             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
@@ -824,7 +808,7 @@ class DexTrader:
         if 'error' in result and token_mint.lower().endswith('pump'):
             print(f"🎰 Jupiter sell failed ({result.get('error')}). Trying PumpPortal Direct...")
             # For sells, we use percentage mode with 100% slippage
-            result = self.execute_pumpportal_swap(token_mint, "sell", "100%", slippage=100)
+            result = self.execute_pumpportal_swap(token_mint, "sell", "100%", slippage=100, priority_fee=0.005)
         
         if result.get('success') and percentage == 100:
             # Remove from positions
