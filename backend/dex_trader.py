@@ -151,24 +151,27 @@ class DexTrader:
             return 0
     
     def get_jupiter_quote(self, input_mint, output_mint, amount_lamports, override_slippage=None):
-        """Get a quote from Jupiter Aggregator with retries."""
+        """Get a quote from Jupiter Aggregator with retries and dual-host fallback."""
         try:
             # Determine slippage
             slippage_bps = override_slippage if override_slippage else self.slippage_bps
             
             import time
-            for attempt in range(3):
-                try:
-                    url = f"https://quote-api.jup.ag/v6/quote?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}&onlyDirectRoute=false"
-                    response = requests.get(url, timeout=10)
-                    if response.status_code == 200:
-                        return response.json()
-                    else:
-                        print(f"⚠️ Jupiter Quote attempt {attempt+1} failed ({response.status_code}): {response.text}")
-                except Exception as e:
-                    print(f"⚠️ Jupiter Quote attempt {attempt+1} error: {e}")
+            for host in ["quote-api.jup.ag", "api.jup.ag"]:
+                for attempt in range(2):
+                    try:
+                        url = f"https://{host}/v6/quote?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}&onlyDirectRoute=false"
+                        response = requests.get(url, timeout=10)
+                        if response.status_code == 200:
+                            return response.json()
+                        else:
+                            print(f"⚠️ Jupiter {host} Quote attempt {attempt+1} failed ({response.status_code})")
+                    except Exception as e:
+                        print(f"⚠️ Jupiter {host} Quote attempt {attempt+1} error: {e}")
+                    
+                    if attempt < 1: time.sleep(1)
                 
-                if attempt < 2: time.sleep(1)
+                # If we got here, start next host loop
             
             return None
         except Exception as e:
