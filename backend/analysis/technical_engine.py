@@ -171,5 +171,6 @@ class TechnicalAnalysis:
             "rsi": round(rsi, 2),
             "signal": signal,
             "reason": reason,
+            "confidence": confidence,  # NEW: For high-conviction filtering
             "ema_status": "Above" if close > ema_20 else "Below"
         }

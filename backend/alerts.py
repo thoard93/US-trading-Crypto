@@ -926,8 +926,24 @@ class AlertSystem(commands.Cog):
             is_scalping = asset_type in ["Crypto", "Meme"]
             result = self.analyzer.analyze_trend(data, aggressive_mode=is_scalping)
             
+            # Get confidence score (default 0 for backward compatibility)
+            confidence = result.get('confidence', 0)
+            
+            # HIGH CONVICTION FILTER: Only process signals with confidence >= 75
+            # This filters to: SMC FVG (90), Sniper (85), Pullback+MACD (75)
+            MIN_CONVICTION = 75
+            
             # Trigger on BUY, SELL, BULLISH, or BEARISH
             if 'signal' in result and result['signal'] != 'NEUTRAL':
+                
+                # Skip low-conviction signals entirely (no alert, no trade)
+                if asset_type in ["Crypto", "Meme"] and result['signal'] in ['BUY', 'SELL']:
+                    if confidence < MIN_CONVICTION:
+                        print(f"ℹ️ Analysis for {symbol}: {result['signal']} - Low conviction ({confidence}), skipping")
+                        return
+                    else:
+                        print(f"🔥 HIGH CONVICTION: {symbol} RSI={result.get('rsi', 0):.0f} ({result['reason']})")
+                
                 # Time-of-Day Filter REMOVED by user request
                 # was: if 0 <= hour < 8: skip buy
 
