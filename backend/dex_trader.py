@@ -443,6 +443,10 @@ class DexTrader:
             # Reconstruct signed transaction
             signed_tx = VersionedTransaction.populate(message, [signature])
             
+            # Encode for sending
+            signed_tx_bytes = bytes(signed_tx)
+            signed_tx_base64 = base64.b64encode(signed_tx_bytes).decode('utf-8')
+            
             # 3. AGGRESSIVE RETRY LOOP - Keep resubmitting until confirm or blockhash expires (~60s)
             # This is the key to landing trades during pump.fun congestion
             import time
