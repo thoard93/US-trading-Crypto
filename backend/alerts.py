@@ -1739,14 +1739,6 @@ class AlertSystem(commands.Cog):
             print(f"🐋 Polymarket: Found {len(swarm_signals)} swarm signals")
             
             for signal in swarm_signals:
-                # 2. Evaluate signal
-                evaluation = await self.polymarket_trader.evaluate_swarm_signal(signal)
-                
-                if not evaluation:
-                    continue
-                    
-                if evaluation.get("action") == "BUY":
-                    # 3. Execute (Paper mode by default)
 
                 try:
                     evaluation = await self.polymarket_trader.evaluate_swarm_signal(signal)
