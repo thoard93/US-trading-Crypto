@@ -1,4 +1,5 @@
 import discord
+import json
 from discord.ext import tasks, commands
 import asyncio
 import datetime
@@ -157,6 +158,10 @@ class AlertSystem(commands.Cog):
         self.last_alert_times = {} # {symbol: timestamp} to prevent discord spam
         self.dex_exit_cooldowns = {} # {token_address: timestamp} - prevents re-buying after SL
 
+        # Load failed tokens blacklist
+        self._failed_tokens = {}
+        self.load_failed_tokens()
+
         self.monitor_market.start()
         # self.dex_monitor.start() # PAUSED: Copy-trading only (No "Dex Gem" alerts)
         self.discovery_loop.start() # ACTIVE: Running in "Whale Hunter Mode" (Silent)
@@ -197,6 +202,21 @@ class AlertSystem(commands.Cog):
                 print(f"⚠️ Failed to sync Alpaca positions: {e}")
 
 
+
+    def load_failed_tokens(self):
+        try:
+            with open('failed_tokens.json', 'r') as f:
+                self._failed_tokens = json.load(f)
+            print(f"🛑 Loaded {len(self._failed_tokens)} failed tokens from disk.")
+        except:
+            self._failed_tokens = {}
+
+    def save_failed_tokens(self):
+        try:
+            with open('failed_tokens.json', 'w') as f:
+                json.dump(self._failed_tokens, f)
+        except Exception as e:
+            print(f"⚠️ Failed to save token blacklist: {e}")
 
     def cog_unload(self):
         self.monitor_market.cancel()
@@ -1676,6 +1696,7 @@ class AlertSystem(commands.Cog):
                     
                     # Add to cooldown to prevent infinite retries
                     self._failed_tokens[mint] = datetime.datetime.now().timestamp()
+                    self.save_failed_tokens()
                     
                     if channel_memes:
                         await channel_memes.send(f"❌ **Swarm Buy Failed:** `{symbol}` - {error_msg[:50]}... (5min cooldown)")

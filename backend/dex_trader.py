@@ -473,12 +473,16 @@ class DexTrader:
         user_id = getattr(self, 'user_id', 'Unknown')
         print(f"🔄 BUYING (User {user_id}) {token_mint} | SOL: {sol_amount:.4f}")
 
-        # UNIFIED JUPITER-ONLY FLOW (PumpPortal removed - was timing out and wasting 30s)
-        # All tokens now use Jupiter with MAX SLIPPAGE (100%) and HIGH PRIORITY FEE
+        # PUMP.FUN STRATEGY: Use PumpPortal Direct Execution
+        # Jupiter fails significantly (6014 errors) on fresh bonding curve volatility.
+        # PumpPortal builds TX directly against the curve program.
         if "pump" in token_mint.lower():
-            print(f"💊 Pump.fun token detected. Using Jupiter DIRECT (PumpPortal bypass).")
-        
-        result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
+            print(f"💊 Pump.fun token detected. Using PumpPortal DIRECT (Bypassing Jupiter).")
+            # Slippage: 100%, Priority Fee: 0.001 SOL (Cheap Fails)
+            result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=100, priority_fee=0.001)
+        else:
+            # Standard Jupiter Flow for Raydium/etc
+            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
         
         # Retry logic if slippage exceeded
         if 'error' in result and ('0x177e' in str(result['error']) or '6014' in str(result['error'])):
