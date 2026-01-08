@@ -16,9 +16,14 @@ class DexTrader:
     def __init__(self, private_key=None):
         # Load wallet from environment or argument
         private_key = private_key or os.getenv('SOLANA_PRIVATE_KEY')
+        if private_key: private_key = private_key.strip()
+
         # RPC Auto-Configuration
         env_rpc = os.getenv('SOLANA_RPC_URL')
+        if env_rpc: env_rpc = env_rpc.strip()
+        
         helius_key = os.getenv('HELIUS_API_KEY')
+        if helius_key: helius_key = helius_key.strip()
         
         # Check if env_rpc is the slow public one
         is_slow_rpc = env_rpc and "api.mainnet-beta.solana.com" in env_rpc
@@ -198,7 +203,7 @@ class DexTrader:
                 "userPublicKey": self.wallet_address,
                 "wrapAndUnwrapSol": True,
                 "dynamicComputeUnitLimit": True,
-                "prioritizationFeeLamports": "auto",  # REVERT: 0.05 SOL was burning wallet on failed TXs
+                "prioritizationFeeLamports": 1000000,  # 0.001 SOL - Moderate Fast Fee (Worth $0.15 risk)
                 # Disable dynamic slippage if we are providing a specific override (manual override takes precedence)
                 # Enable Dynamic Slippage (let Jupiter manage volatility)
                 "dynamicSlippage": True, 
