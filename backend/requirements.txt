@@ -18,3 +18,4 @@ solders
 base58
 pynacl
 py-clob-client
+jito-py-rpc

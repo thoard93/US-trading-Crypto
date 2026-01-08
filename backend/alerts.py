@@ -1622,12 +1622,10 @@ class AlertSystem(commands.Cog):
             if not volatility_pass:
                 print(f"🌋 VOLATILITY BLOCK: {symbol} moved {price_change_24h:.0f}% in 24h (limit: 250%)")
             
-            # PUMP.FUN FILTER: Skip all pump.fun tokens (too volatile, causing constant failures)
-            pump_pass = not mint.lower().endswith("pump")
-            if not pump_pass:
-                print(f"🚫 PUMP.FUN BLOCK: {symbol} is a Pump.fun token - Skipping (too volatile for reliable execution)")
+            # NOTE: Pump.fun tokens now use JITO BUNDLES (atomic - zero fee on failure)
+            # No longer blocking pump.fun tokens since Jito handles them properly
             
-            all_pass = liq_pass and safety_pass and volatility_pass and pump_pass
+            all_pass = liq_pass and safety_pass and volatility_pass
             
             embed_color = discord.Color.green() if all_pass else discord.Color.red()
             decision = "✅ EXECUTING BUY" if all_pass else "🚫 SKIPPED"
