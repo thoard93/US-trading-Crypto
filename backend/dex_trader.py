@@ -449,28 +449,19 @@ class DexTrader:
         user_id = getattr(self, 'user_id', 'Unknown')
         print(f"🔄 BUYING (User {user_id}) {token_mint} | SOL: {sol_amount:.4f}")
 
+        # UNIFIED JUPITER-ONLY FLOW (PumpPortal removed - was timing out and wasting 30s)
+        # All tokens now use Jupiter with MAX SLIPPAGE (100%) and HIGH PRIORITY FEE
         if "pump" in token_mint.lower():
-            # Use HIGH priority fee (0.05 SOL) and MAX SLIPPAGE (100%) for swarm snipes
-            result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=100, priority_fee=0.05)   
-            if not result.get('error'):
-                return result
-            print(f"⚠️ PumpPortal failed ({result.get('error')}). Fallback to Jupiter...")
-            
-            # Fallback: Jupiter with MAX SLIPPAGE (100%) for pump tokens
-            # NOTE: Jupiter API rejects slippage > 10000 bps (100%). Capped at 100%.
-            amount_lamports = int(sol_amount * 1e9)
+            print(f"💊 Pump.fun token detected. Using Jupiter DIRECT (PumpPortal bypass).")
+        
+        result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
+        
+        # Retry logic if slippage exceeded
+        if 'error' in result and ('0x177e' in str(result['error']) or '6014' in str(result['error'])):
+            print("⚠️ Slippage exceeded. Retrying in 2s...")
+            import time
+            time.sleep(2)
             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
-        else:
-            # 1. Standard Jupiter route for non-pump tokens
-            # Use 100% slippage (MAX) for blind send (was 4000)
-            amount_lamports = int(sol_amount * 1e9)
-            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
-            
-            # Retry logic... (Simplified for non-pump tokens)
-            if 'error' in result and '0x177e' in str(result['error']):
-                 print("⚠️ Buy Slippage exceeded. Retrying with 50%...")
-                 import time; time.sleep(1)
-                 result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=5000)
         
         if result.get('success'):
             # Track position

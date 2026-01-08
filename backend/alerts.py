@@ -1592,7 +1592,13 @@ class AlertSystem(commands.Cog):
             # 3. Build Analysis Embed
             liq_pass = liquidity >= self.dex_min_liquidity
             safety_pass = safety_score >= 50  # Lowered from 60 - whales provide extra confidence
-            all_pass = liq_pass and safety_pass
+            
+            # VOLATILITY FILTER: Skip tokens moving too fast (>250% in 24h = likely untradeable)
+            volatility_pass = abs(price_change_24h) < 250
+            if not volatility_pass:
+                print(f"🌋 VOLATILITY BLOCK: {symbol} moved {price_change_24h:.0f}% in 24h (limit: 250%)")
+            
+            all_pass = liq_pass and safety_pass and volatility_pass
             
             embed_color = discord.Color.green() if all_pass else discord.Color.red()
             decision = "✅ EXECUTING BUY" if all_pass else "🚫 SKIPPED"
