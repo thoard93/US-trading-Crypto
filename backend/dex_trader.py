@@ -763,16 +763,11 @@ class DexTrader:
         user_id = getattr(self, 'user_id', 'Unknown')
         print(f"🔄 BUYING (User {user_id}) {token_mint} | SOL: {sol_amount:.4f}")
 
-        # JITO BUNDLE STRATEGY for Pump.fun tokens
-        # Atomic execution: all succeed or none run
+        # PUMPPORTAL DIRECT for Pump.fun tokens (Jito V4 disabled due to solders library issues)
+        # Higher priority fee (0.01 SOL) ensures faster confirmation on congested network
         if "pump" in token_mint.lower():
-            print(f"🎰 Pump.fun token detected. Using JITO BUNDLE (atomic execution).")
-            result = self.execute_jito_bundle(token_mint, sol_amount)
-            
-            # Fallback to PumpPortal if Jito fails for ANY reason (connectivity, routing, instructions)
-            if 'error' in result:
-                print(f"⚠️ Jito failed ({result['error']}). Falling back to PumpPortal...")
-                result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=100, priority_fee=0.005)
+            print(f"🎰 Pump.fun token detected. Using PUMPPORTAL DIRECT (high priority).")
+            result = self.execute_pumpportal_swap(token_mint, "buy", sol_amount, slippage=100, priority_fee=0.01)
         else:
             # Standard Jupiter Flow for Raydium/etc
             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
