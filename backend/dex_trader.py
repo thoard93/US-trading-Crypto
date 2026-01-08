@@ -151,27 +151,35 @@ class DexTrader:
             return 0
     
     def get_jupiter_quote(self, input_mint, output_mint, amount_lamports, override_slippage=None):
-        """Get a quote from Jupiter Aggregator with retries and dual-host fallback."""
+        """Get a quote from Jupiter Aggregator with retries and reliable fallbacks."""
         try:
             # Determine slippage
             slippage_bps = override_slippage if override_slippage else self.slippage_bps
             
             import time
-            for host in ["quote-api.jup.ag", "api.jup.ag"]:
+            # We try standard V6 first, then the reliable public proxy used in execute_swap
+            hosts = [
+                ("quote-api.jup.ag", "/v6/quote"),
+                ("public.jupiterapi.com", "/quote")
+            ]
+            
+            for host, path in hosts:
                 for attempt in range(2):
                     try:
-                        url = f"https://{host}/v6/quote?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}&onlyDirectRoute=false"
+                        url = f"https://{host}{path}?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}&onlyDirectRoute=false"
                         response = requests.get(url, timeout=10)
                         if response.status_code == 200:
                             return response.json()
                         else:
                             print(f"⚠️ Jupiter {host} Quote attempt {attempt+1} failed ({response.status_code})")
                     except Exception as e:
+                        # Log DNS/Connection errors specifically for debugging
+                        if "Errno -5" in str(e) or "Max retries exceeded" in str(e):
+                            print(f"📡 DNS/Connection Error reaching {host} - trying next...")
+                            break # Skip to next host immediately on DNS fail
                         print(f"⚠️ Jupiter {host} Quote attempt {attempt+1} error: {e}")
                     
                     if attempt < 1: time.sleep(1)
-                
-                # If we got here, start next host loop
             
             return None
         except Exception as e:
@@ -229,32 +237,55 @@ class DexTrader:
             
             print(f"🔄 Jupiter Quote: slippage={slippage_bps}bps, outAmount={quote.get('outAmount')}")
             
-            # 2. Get swap transaction
-            swap_url = "https://public.jupiterapi.com/swap" 
-            swap_body = {
-                "quoteResponse": quote,
-                "userPublicKey": self.wallet_address,
-                "wrapAndUnwrapSol": True,
-                "dynamicComputeUnitLimit": True,
-                "prioritizationFeeLamports": "auto",  # REVERTED: Let Jupiter calculate optimal fee
-                "dynamicSlippage": True,  # REVERTED: Let Jupiter adjust slippage in real-time
-                "autoSlippageCollisionUsdValue": 1000,
-            }
+            # 2. Get swap transaction with retries and fallback
+            swap_data = None
+            hosts = [
+                ("quote-api.jup.ag", "/v6/swap"),
+                ("public.jupiterapi.com", "/swap")
+            ]
             
             # Low Balance Fee Protection (Ensure we can SELL even if poor)
+            initial_fee = "auto"
             try:
                  bal = self.get_sol_balance()
                  if bal < 0.005: 
-                     # Cap fee to 50000 lamports (0.00005 SOL) to prevent failure
-                     swap_body["prioritizationFeeLamports"] = 50000
+                     initial_fee = 50000
                      print(f"⚠️ Critical Sol ({bal:.5f}). Capped Priority Fee.")
             except: pass
+
+            for host, path in hosts:
+                swap_url = f"https://{host}{path}"
+                swap_body = {
+                    "quoteResponse": quote,
+                    "userPublicKey": self.wallet_address,
+                    "wrapAndUnwrapSol": True,
+                    "dynamicComputeUnitLimit": True,
+                    "prioritizationFeeLamports": initial_fee,
+                    "dynamicSlippage": True,
+                }
+                
+                success = False
+                for attempt in range(2):
+                    try:
+                        swap_response = requests.post(swap_url, json=swap_body, timeout=15)
+                        if swap_response.status_code == 200:
+                            swap_data = swap_response.json()
+                            success = True
+                            break
+                        else:
+                            print(f"⚠️ Jupiter {host} Swap attempt {attempt+1} failed ({swap_response.status_code})")
+                    except Exception as e:
+                        if "Errno -5" in str(e) or "Max retries exceeded" in str(e):
+                            print(f"📡 DNS/Connection Error reaching {host} - trying next...")
+                            break
+                        print(f"⚠️ Jupiter {host} Swap attempt {attempt+1} error: {e}")
+                    
+                    if attempt < 1: time.sleep(1)
+                
+                if success: break
             
-            swap_response = requests.post(swap_url, json=swap_body)
-            if swap_response.status_code != 200:
-                return {"error": f"Swap request failed: {swap_response.text}"}
-            
-            swap_data = swap_response.json()
+            if not swap_data:
+                return {"error": "Failed to get swap transaction after trying multiple hosts"}
             swap_tx_base64 = swap_data.get('swapTransaction')
             
             if not swap_tx_base64:
@@ -517,8 +548,13 @@ class DexTrader:
             # 3. Get swap instructions from Jupiter
             # Try multiple hosts and add retries to handle DNS/connection issues on Render
             instr_data = None
-            for host in ["quote-api.jup.ag", "api.jup.ag"]:
-                instr_url = f"https://{host}/v6/swap-instructions"
+            hosts = [
+                ("quote-api.jup.ag", "/v6/swap-instructions"),
+                ("public.jupiterapi.com", "/v6/swap-instructions")
+            ]
+            
+            for host, path in hosts:
+                instr_url = f"https://{host}{path}"
                 instr_body = {
                     "quoteResponse": quote,
                     "userPublicKey": self.wallet_address,
@@ -536,6 +572,9 @@ class DexTrader:
                         else:
                             print(f"⚠️ Jupiter {host} returned {instr_response.status_code}: {instr_response.text}")
                     except Exception as e:
+                        if "Errno -5" in str(e) or "Max retries exceeded" in str(e):
+                            print(f"📡 DNS/Connection Error reaching {host} - trying next...")
+                            break 
                         print(f"⚠️ Jupiter {host} attempt {attempt+1} failed: {e}")
                     time.sleep(1)
                 
