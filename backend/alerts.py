@@ -1747,11 +1747,7 @@ class AlertSystem(commands.Cog):
                     
                 if evaluation.get("action") == "BUY":
                     # 3. Execute (Paper mode by default)
-                    result = await self.polymarket_trader.execute_buy(
-                        token_id=signal.get("token_id"),
-                        amount_usdc=evaluation.get("bet_size", 0),
-                        whale_count=signal.get("whale_count", 0)
-                    )
+
                 try:
                     evaluation = await self.polymarket_trader.evaluate_swarm_signal(signal)
                     
@@ -1792,9 +1788,9 @@ class AlertSystem(commands.Cog):
             for exit_data in exits:
                 result = await self.polymarket_trader.execute_sell(exit_data.get("token_id"))
                 if result and result.get("success"):
-                    pnl = result.get('pnl', 0) or 0
+                    pnl_val = float(result.get('pnl', 0) or 0)
                     reason = exit_data.get('reason', 'Exit')
-                    print(f"🎲 Polymarket EXIT: {reason} (PNL: ${pnl:.2f})")
+                    print(f"🎲 Polymarket EXIT: {reason} (PNL: ${pnl_val:.2f})")
                     
         except Exception as e:
             print(f"❌ Polymarket Monitor Error: {e}")
