@@ -1808,10 +1808,12 @@ class AlertSystem(commands.Cog):
             change_emoji = "📈" if price_change_24h >= 0 else "📉"
             change_color = "+" if price_change_24h >= 0 else ""
             
-            # VOLATILITY FILTER: Skip tokens moving too fast (>500% in 24h = likely untradeable or extreme rug risk)
-            volatility_pass = abs(price_change_24h) < 500
+            # VOLATILITY FILTER: Skip tokens moving EXTREMELY fast (>1500% in 24h)
+            # Raised from 500% to 1500% because we trust whale judgment
+            volatility_pass = abs(price_change_24h) < 1500
             if not volatility_pass:
-                print(f"🌋 VOLATILITY BLOCK: {symbol} moved {price_change_24h:.0f}% in 24h (limit: 500%)")
+                print(f"🌋 VOLATILITY BLOCK: {symbol} moved {price_change_24h:.0f}% in 24h (limit: 1500%)")
+
             
             # NOTE: Pump.fun tokens now use JITO BUNDLES (atomic - zero fee on failure)
             # No longer blocking pump.fun tokens since Jito handles them properly
@@ -1837,7 +1839,8 @@ class AlertSystem(commands.Cog):
             elif not safety_pass:
                 embed.add_field(name="❌ Blocked By", value=f"Safety {safety_score} < 50", inline=False)
             elif not volatility_pass:
-                embed.add_field(name="🌋 Blocked By", value=f"Volatility {abs(price_change_24h):.0f}% > 500% (too risky)", inline=False)
+                embed.add_field(name="🌋 Blocked By", value=f"Volatility {abs(price_change_24h):.0f}% > 1500% (extreme)", inline=False)
+
 
             
             embed.add_field(name="🔗 DEX", value=f"[View on DexScreener]({dex_url})", inline=False)
