@@ -222,17 +222,23 @@ class AlertSystem(commands.Cog):
 
         # Get whale addresses
         whales = list(self.copy_trader.qualified_wallets.keys())
+        
+        # If no whales, use the bot's own wallet as a placeholder to ensure the URL is registered in Helius
         if not whales:
-            print("⚠️ No whales tracked yet. Skipping webhook registration.")
-            return
+            print("⚠️ No whales tracked yet. Using bot wallet as placeholder for registration.")
+            if self.dex_trader and self.dex_trader.wallet_address:
+                whales = [self.dex_trader.wallet_address]
+            else:
+                # Last resort fallback (System address)
+                whales = ["11111111111111111111111111111111"]
 
-        print(f"📡 Registering {len(whales)} whales with Helius Webhook at {webhook_url}...")
+        print(f"📡 Registering Helius Webhook at {webhook_url} (Monitoring {len(whales)} addresses)...")
         result = self.copy_trader.collector.upsert_helius_webhook(webhook_url, whales)
         
         if result:
             print(f"✅ Helius Webhook Setup SUCCESS: {result.get('webhookID', 'Unknown ID')}")
         else:
-            print("❌ Helius Webhook Setup FAILED.")
+            print("❌ Helius Webhook Setup FAILED. Check your HELIUS_API_KEY.")
 
 
 
