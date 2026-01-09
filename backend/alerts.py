@@ -1538,9 +1538,6 @@ class AlertSystem(commands.Cog):
         """Polls for Swarm Signals (Copy Trading)."""
         # Set heartbeat FIRST so we know loop is alive
         self.last_swarm_scan = datetime.datetime.now()
-        
-        if not self.dex_traders:
-            return
             
         try:
             # DIAGNOSTIC: Show cache size every cycle
@@ -1570,9 +1567,22 @@ class AlertSystem(commands.Cog):
                 
                 if already_holding:
                     continue
-                    
-                print(f"🚨 EXECUTING SWARM BUY: {mint}")
-                await self.execute_swarm_trade(mint)
+                
+                # ALERT MODE: Always send Discord alert for swarms
+                if channel_memes:
+                    await channel_memes.send(
+                        f"🐋🐋🐋 **WHALE SWARM DETECTED!** 🐋🐋🐋\n"
+                        f"Token: `{mint[:16]}...`\n"
+                        f"3+ Whales are buying! Check DEXScreener: https://dexscreener.com/solana/{mint}"
+                    )
+                
+                # Only execute trade if we have a valid DEX wallet
+                if self.dex_traders:
+                    print(f"🚨 EXECUTING SWARM BUY: {mint}")
+                    await self.execute_swarm_trade(mint)
+                else:
+                    print(f"⚠️ SWARM DETECTED but no DEX wallet loaded - Alert only mode")
+
             
             # 📉 EXIT HANDLING: Now handled by webhooks (see trigger_instant_exit)
                 
