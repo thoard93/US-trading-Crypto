@@ -27,23 +27,30 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
-    from migrate import run_migrations
-    run_migrations()
-    Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
+    print("🛠️ Initializing Database Connection...")
     try:
-        # Check if Demo User exists
-        demo_user = db.query(User).filter(User.id == 1).first()
-        if not demo_user:
-            user = User(id=1, username="demo_trader", hashed_password="not_needed_for_now")
-            db.add(user)
-            db.commit()
-            print("👤 Demo User created.")
+        from migrate import run_migrations
+        run_migrations()
+        Base.metadata.create_all(bind=engine)
+        db = SessionLocal()
+        try:
+            # Check if Demo User exists
+            demo_user = db.query(User).filter(User.id == 1).first()
+            if not demo_user:
+                user = User(id=1, username="demo_trader", hashed_password="not_needed_for_now")
+                db.add(user)
+                db.commit()
+                print("👤 Demo User created.")
+            print("✅ Database Connection: STABLE")
+        except Exception as e:
+            print(f"⚠️ Error seeding DB: {e}")
+        finally:
+            db.close()
     except Exception as e:
-        print(f"Error seeding DB: {e}")
-    finally:
-        db.close()
-    print(f"Database initialized with: {SQLALCHEMY_DATABASE_URL.split(':')[0]}")
+        print(f"❌ CRITICAL DATABASE ERROR: {e}")
+        print("💡 TIP: Verify your DATABASE_URL in Render. If you recently reset the DB password, you must update the environment variable.")
+        # We don't raise here so the bot can at least keep the Webhook Listener alive for health checks
+        # But most functions will fail.
 
 if __name__ == "__main__":
     init_db()
