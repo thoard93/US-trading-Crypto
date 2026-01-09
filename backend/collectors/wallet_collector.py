@@ -98,6 +98,26 @@ class WalletCollector:
             self.logger.error(f"Helius Async Error: {e}")
             return None
 
+    async def get_latest_signature_async(self, address):
+        """Standard RPC call to get only the latest signature (very cheap)."""
+        import aiohttp
+        payload = {
+            "jsonrpc": "2.0", "id": 1,
+            "method": "getSignaturesForAddress",
+            "params": [address, {"limit": 1}]
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(self.rpc_url, json=payload, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        res = data.get('result', [])
+                        if res and len(res) > 0:
+                            return res[0].get('signature')
+                    return None
+        except:
+            return None
+
     def batch_fetch_parsed_txs(self, signatures):
         """
         Fetches parsed details for a batch of signatures (Max 100).

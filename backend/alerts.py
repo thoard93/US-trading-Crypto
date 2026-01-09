@@ -1494,7 +1494,7 @@ class AlertSystem(commands.Cog):
         else:
             await ctx.send("📭 No DEX tokens found to sell.")
 
-    @tasks.loop(minutes=3)  # EMERGENCY CREDIT SAVER: Was 20s (Saves 90% on Helius costs)
+    @tasks.loop(seconds=30)  # RESTORED SPEED: Signature-First scanning makes 30s cost-effective
     async def swarm_monitor(self):
         """Polls for Swarm Signals (Copy Trading)."""
         # Set heartbeat FIRST so we know loop is alive
@@ -1540,10 +1540,10 @@ class AlertSystem(commands.Cog):
                 # Check each position we hold that came from a swarm
                 for mint in list(trader.positions.keys()):
                     if mint in self.copy_trader.active_swarms:
-                        # EMERGENCY: Only check exit status every 5 minutes to save credits
+                        # OPTIMIZED EXIT CHECK: Check every 1 minute (Fast but cheap)
                         if not hasattr(self, '_last_exit_check'): self._last_exit_check = {}
                         last_check = self._last_exit_check.get(mint, 0)
-                        if (datetime.datetime.now().timestamp() - last_check) < 300: # 5 min
+                        if (datetime.datetime.now().timestamp() - last_check) < 60: # 1 min
                             continue
                             
                         self._last_exit_check[mint] = datetime.datetime.now().timestamp()

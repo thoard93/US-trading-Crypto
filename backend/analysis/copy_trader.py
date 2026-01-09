@@ -23,6 +23,7 @@ class SmartCopyTrader:
         # DB Persistence
         self.qualified_wallets = self._load_wallets()
         self.active_swarms = self._load_swarms() # Restore active swarms
+        self._last_signatures = {} # Cache for {wallet: signature}
 
     def _load_swarms(self):
         """Restore active swarm participants from DB."""
@@ -333,7 +334,7 @@ class SmartCopyTrader:
         if not hasattr(self, '_scan_index'): self._scan_index = 0
         
         all_wallets = list(self.qualified_wallets.keys())
-        batch_size = 2 # EMERGENCY REDUCTION: Was 10 (Saves 80% on Helius costs)
+        batch_size = 15 # Restore Coverage: Batch size increased because checks are now 90% cheaper
         total_wallets = len(all_wallets)
         
         if total_wallets == 0: return []
@@ -351,7 +352,17 @@ class SmartCopyTrader:
         
         # 1. Check batch wallets for recent activity
         for wallet in batch:
-            # Fetch last 10 txs (ASYNC to not block Discord heartbeat)
+            # CHEAP CHECK: Get latest signature first (1 credit)
+            latest_sig = await self.collector.get_latest_signature_async(wallet)
+            
+            if latest_sig:
+                if self._last_signatures.get(wallet) == latest_sig:
+                    # self.logger.debug(f"⏭️ Skipping {wallet[:8]} (No new activity)")
+                    continue
+                # Update cache
+                self._last_signatures[wallet] = latest_sig
+            
+            # EXPENSIVE CHECK: Fetch last 10 txs ONLY if signature changed (100 credits)
             txs = await self.collector.fetch_helius_history_async(wallet, limit=10)
             if not txs: continue
             
