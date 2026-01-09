@@ -1671,6 +1671,8 @@ class AlertSystem(commands.Cog):
                     await channel_memes.send(f"🚫 **Swarm Token:** `{mint[:20]}...` - No DEX data found")
                 return
             
+            print(f"✅ Found DexScreener data for {mint[:16]}!")
+            
             symbol = pair.get('baseToken', {}).get('symbol', 'UNKNOWN')
             liquidity = float(pair.get('liquidity', {}).get('usd', 0))
             price = float(pair.get('priceUsd', 0))
