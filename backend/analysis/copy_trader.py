@@ -25,6 +25,7 @@ class SmartCopyTrader:
         self.active_swarms = self._load_swarms() # Restore active swarms
         self._last_signatures = {} # Cache for {wallet: signature}
         self._recent_whale_activity = [] # List of {wallet, mint, timestamp, signature}
+        self._processed_signatures = set() # O(1) duplicate checking
         self._scan_index = 0
 
     def _load_swarms(self):
@@ -402,21 +403,18 @@ class SmartCopyTrader:
                 if mint in STABLE_MINTS: continue
                 
                 tx_sig = tx.get('signature', '')
-                is_new = True
-                for entry in self._recent_whale_activity:
-                    if entry['wallet'] == wallet and entry['mint'] == mint and entry['signature'] == tx_sig:
-                        is_new = False
-                        break
+                if tx_sig in self._processed_signatures:
+                    continue
                 
-                if is_new:
-                    self.logger.info(f"    👉 Activity: {mint[:8]} bought by {wallet[:8]}")
-                    self._recent_whale_activity.append({
-                        'wallet': wallet,
-                        'mint': mint,
-                        'timestamp': tx_time,
-                        'signature': tx_sig
-                    })
-                    added_count += 1
+                # self.logger.debug(f"    👉 Activity: {mint[:8]} bought by {wallet[:8]}")
+                self._recent_whale_activity.append({
+                    'wallet': wallet,
+                    'mint': mint,
+                    'timestamp': tx_time,
+                    'signature': tx_sig
+                })
+                self._processed_signatures.add(tx_sig)
+                added_count += 1
         return added_count
 
     def analyze_swarms(self, min_buyers=3, window_minutes=60):
@@ -429,6 +427,9 @@ class SmartCopyTrader:
             x for x in self._recent_whale_activity 
             if (now - x['timestamp']).total_seconds() / 60 <= window_minutes
         ]
+        
+        # Sync signatures set with pruned list
+        self._processed_signatures = {x['signature'] for x in self._recent_whale_activity}
         
         # 2. CLUSTER
         cluster = defaultdict(set)

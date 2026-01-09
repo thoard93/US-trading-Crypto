@@ -34,7 +34,7 @@ async def helius_webhook(request: Request, background_tasks: BackgroundTasks):
             # Helius sometimes sends a single object or a different format
             payload = [payload]
             
-        logger.info(f"📥 Received Helius Webhook: {len(payload)} transactions")
+        # logger.info(f"📥 Received Helius Webhook: {len(payload)} transactions")
         
         # 2. Process in background to avoid blocking Helius (Must respond < 5s)
         background_tasks.add_task(process_helius_data, payload)
