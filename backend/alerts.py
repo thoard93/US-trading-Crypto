@@ -1725,12 +1725,14 @@ class AlertSystem(commands.Cog):
             
             embed.add_field(name="🔗 DEX", value=f"[View on DexScreener]({dex_url})", inline=False)
             
-            if channel_memes:
-                await channel_memes.send(embed=embed)
-            
             # 4. Return if blocked
             if not all_pass:
+                # print(f"🚫 Swarm analysis skipped for {symbol}: Liq/Safety/Vol failed.")
                 return
+            
+            # Send Analysis Embed ONLY for successful trades to prevent Discord Rate Limits
+            if channel_memes:
+                await channel_memes.send(embed=embed)
                 
             # 5. Sizing (Reduced to 0.05 SOL for less price impact)
             amount_sol = 0.05

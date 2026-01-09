@@ -8,6 +8,9 @@ from typing import List, Optional
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("WebhookListener")
 
+# SILENCE Uvicorn Access Logs (They spam every single transaction)
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
 app = FastAPI(title="Helius Webhook Listener")
 
 # Global reference to the bot/cog - will be set during bot startup
