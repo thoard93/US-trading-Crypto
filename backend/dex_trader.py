@@ -221,14 +221,19 @@ class DexTrader:
             print(f"❌ Error fetching wallet holdings: {e}")
             return {}
     
-    def execute_swap(self, input_mint, output_mint, amount_lamports, override_slippage=None):
-        """Execute a swap via Jupiter."""
+    def execute_swap(self, input_mint, output_mint, amount_lamports, override_slippage=None, use_jito=False):
+        """Execute a swap via Jupiter with optional Jito bundle support."""
         if not self.keypair:
             return {"error": "Wallet not initialized"}
         
         try:
             # Determine slippage for this trade
             slippage_bps = override_slippage if override_slippage else self.slippage_bps
+            
+            # Dynamic Jito Tip Floor
+            jito_tip = 0
+            if use_jito:
+                jito_tip = self.get_jito_tip_amount() or 100000 # Default to 0.0001 SOL if failed
             
             # 1. Get quote
             quote = self.get_jupiter_quote(input_mint, output_mint, amount_lamports, override_slippage)
@@ -260,8 +265,9 @@ class DexTrader:
                     "userPublicKey": self.wallet_address,
                     "wrapAndUnwrapSol": True,
                     "dynamicComputeUnitLimit": True,
-                    "prioritizationFeeLamports": initial_fee,
-                    "dynamicSlippage": True,
+                    "prioritizationFeeLamports": initial_fee if not use_jito else None, # Skip priority fee if using Jito Tip
+                    "jitoTipLamports": jito_tip if use_jito else None,
+                    "dynamicSlippage": False, # FORCE FIXED SLIPPAGE
                 }
                 
                 success = False
@@ -328,33 +334,61 @@ class DexTrader:
             signed_tx_bytes = bytes(signed_tx)
             signed_tx_base64 = base64.b64encode(signed_tx_bytes).decode('utf-8')
             
-            send_response = requests.post(self.rpc_url, json={
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "sendTransaction",
-                "params": [
-                    signed_tx_base64,
-                    {"encoding": "base64", "skipPreflight": True, "preflightCommitment": "confirmed", "maxRetries": 5}
-                ]
-            }, timeout=15)
-            
-            result = send_response.json()
-            
-            # DEBUG: Full RPC response
-            print(f"📋 DEBUG: RPC sendTransaction response: {result}")
-            
-            if 'error' in result:
-                msg = result['error'].get('message', str(result['error']))
-                code = result['error'].get('code', 'unknown')
-                print(f"❌ Swap Failed [code={code}]: {msg}")
-                if '0x177e' in str(msg) or '6014' in str(msg):
-                    msg += " (Slippage Tolerance Exceeded)"
-                elif '0x1' in str(msg):
-                    msg += " (Likely Insufficient SOL for Rent/Fees)"
-                return {"error": msg}
-            
-            tx_signature = result.get('result')
-            print(f"📤 sentTransaction: {tx_signature}. Waiting for confirmation...")
+            if use_jito:
+                # Submit to Jito Block Engines
+                tx_payload = {
+                    "jsonrpc": "2.0", "id": 1,
+                    "method": "sendTransaction",
+                    "params": [signed_tx_base64, {"encoding": "base64"}]
+                }
+                
+                print(f"🔐 Submitting Jito Bundle (Tip: {jito_tip/1e9:.6f} SOL)")
+                success_jito = False
+                for jito_base in JITO_BLOCK_ENGINES:
+                    try:
+                        jito_url = f"{jito_base}/api/v1/transactions?bundleOnly=true"
+                        resp = requests.post(jito_url, json=tx_payload, timeout=10)
+                        if resp.status_code == 200:
+                            result = resp.json()
+                            tx_signature = result.get('result')
+                            if tx_signature:
+                                success_jito = True
+                                break
+                    except: continue
+                
+                if not success_jito:
+                    return {"error": "Failed to submit bundle to Jito Block Engines"}
+                
+                print(f"📤 sentJitoBundle: {tx_signature}. Waiting for confirmation...")
+            else:
+                # Standard Helius Send
+                send_response = requests.post(self.rpc_url, json={
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "sendTransaction",
+                    "params": [
+                        signed_tx_base64,
+                        {"encoding": "base64", "skipPreflight": True, "preflightCommitment": "confirmed", "maxRetries": 5}
+                    ]
+                }, timeout=15)
+                
+                result = send_response.json()
+                
+                # DEBUG: Full RPC response
+                print(f"📋 DEBUG: RPC sendTransaction response: {result}")
+                
+                if 'error' in result:
+                    msg = result['error'].get('message', str(result['error']))
+                    code = result['error'].get('code', 'unknown')
+                    print(f"❌ Swap Failed [code={code}]: {msg}")
+                    if '0x177e' in str(msg) or '6014' in str(msg):
+                        msg += " (Slippage Tolerance Exceeded)"
+                    elif '0x1' in str(msg):
+                        msg += " (Likely Insufficient SOL for Rent/Fees)"
+                    return {"error": msg}
+                
+                tx_signature = result.get('result')
+                print(f"📤 sentTransaction: {tx_signature}. Waiting for confirmation...")
             
             # Wait for confirmation (up to 60 seconds)
             import time
@@ -393,142 +427,6 @@ class DexTrader:
             print(f"❌ Swap execution error: {e}")
             return {"error": str(e)}
     
-    def execute_pumpportal_swap(self, token_mint, action, amount_sol, slippage=50, priority_fee=0.005):
-        """
-        Execute a swap via PumpPortal API for pump.fun tokens.
-        Default priority fee increased to 0.005 SOL for faster landing.
-        """
-        if not self.keypair:
-            return {"error": "Wallet not initialized"}
-        
-        try:
-            print(f"🎰 PumpPortal {action.upper()}: {token_mint[:16]}... | {amount_sol} SOL | Fee: {priority_fee}")
-            
-            # 1. Get transaction from PumpPortal
-            response = requests.post(
-                url="https://pumpportal.fun/api/trade-local",
-                data={
-                    "publicKey": self.wallet_address,
-                    "action": action,  # "buy" or "sell"
-                    "mint": token_mint,
-                    "amount": amount_sol,
-                    "denominatedInSol": "true",
-                    "slippage": slippage,
-                    "priorityFee": priority_fee,  # Dynamic Priority Fee
-                    "pool": "auto",  # Auto-select pump or raydium
-                    "skipPreflight": "false"  # Validate before sending
-                },
-                timeout=15
-            )
-            
-            if response.status_code != 200:
-                return {"error": f"PumpPortal API error: {response.text}"}
-            
-            # 2. Sign the transaction
-            tx_bytes = response.content
-            tx = VersionedTransaction.from_bytes(tx_bytes)
-            message = tx.message
-            
-            # Sign using solders native method
-            print("🔐 Signing PumpPortal transaction...")
-            from nacl.signing import SigningKey
-            
-            # Get the seed (first 32 bytes) for signing
-            seed = self._raw_secret[:32] if len(self._raw_secret) >= 32 else self._raw_secret
-            signing_key = SigningKey(seed)
-            
-            message_bytes = bytes(message)
-            signed = signing_key.sign(message_bytes)
-            signature_bytes = signed.signature
-            
-            from solders.signature import Signature
-            signature = Signature.from_bytes(signature_bytes)
-            
-            # Reconstruct signed transaction
-            signed_tx = VersionedTransaction.populate(message, [signature])
-            
-            # Encode for sending
-            signed_tx_bytes = bytes(signed_tx)
-            signed_tx_base64 = base64.b64encode(signed_tx_bytes).decode('utf-8')
-            
-            # 3. AGGRESSIVE RETRY LOOP - Keep resubmitting until confirm or blockhash expires (~60s)
-            # This is the key to landing trades during pump.fun congestion
-            import time
-            tx_signature = None
-            max_attempts = 20  # 3s * 20 = 60s total
-            
-            for attempt in range(1, max_attempts + 1):
-                try:
-                    # Send (or resend) the transaction
-                    send_response = requests.post(self.rpc_url, json={
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "sendTransaction",
-                        "params": [
-                            signed_tx_base64,
-                            {
-                                "encoding": "base64", 
-                                "skipPreflight": True,
-                                "preflightCommitment": "confirmed",
-                                "maxRetries": 0  # We handle retries ourselves
-                            }
-                        ]
-                    }, timeout=10)
-                    
-                    result = send_response.json()
-                    
-                    # Capture signature on first successful send
-                    if 'result' in result and not tx_signature:
-                        tx_signature = result.get('result')
-                        print(f"📤 PumpPortal TX sent (attempt {attempt}/{max_attempts}): {tx_signature[:16]}...")
-                    
-                    # Check if we have a signature to poll
-                    if tx_signature:
-                        confirm_response = requests.post(self.rpc_url, json={
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "getSignatureStatuses",
-                            "params": [[tx_signature], {"searchTransactionHistory": True}]
-                        }, timeout=10)
-                        
-                        confirm_result = confirm_response.json()
-                        status = confirm_result.get('result', {}).get('value', [{}])[0]
-                        
-                        if status and status.get('confirmationStatus') in ['confirmed', 'finalized']:
-                            if status.get('err'):
-                                print(f"❌ PumpPortal TX FAILED on-chain: {status.get('err')}")
-                                return {"error": f"TX failed on-chain: {status.get('err')}"}
-                            print(f"✅ PumpPortal swap CONFIRMED on attempt {attempt}! TX: {tx_signature}")
-                            return {
-                                "success": True,
-                                "signature": tx_signature,
-                                "provider": "pumpportal"
-                            }
-                    
-                    # Check for blockhash expiry error
-                    if 'error' in result:
-                        error_msg = str(result['error'])
-                        if 'Blockhash not found' in error_msg or 'expired' in error_msg.lower():
-                            print(f"⏰ Blockhash expired on attempt {attempt}. TX cannot land.")
-                            return {"error": "Blockhash expired", "signature": tx_signature}
-                        # Other errors - log but continue retrying
-                        if attempt == 1:
-                            print(f"⚠️ Send error (will retry): {error_msg[:50]}...")
-                    
-                except requests.exceptions.Timeout:
-                    print(f"⏱️ RPC timeout on attempt {attempt}, retrying...")
-                except Exception as e:
-                    print(f"⚠️ Attempt {attempt} error: {str(e)[:50]}...")
-                
-                # Wait before next resubmission
-                time.sleep(3)
-            
-            # If we get here, all attempts exhausted
-            print(f"⚠️ PumpPortal TX not confirmed after {max_attempts} attempts: {tx_signature}")
-            return {"error": "Transaction not confirmed after max retries", "signature": tx_signature}
-        except Exception as e:
-            print(f"❌ PumpPortal swap error: {e}")
-            return {"error": str(e)}
     def get_jito_tip_amount(self):
         """Fetch dynamic tip amount from Jito API (75th percentile)."""
         try:
@@ -793,19 +691,20 @@ class DexTrader:
         # Jupiter TXs actually reach the chain (proven with Kaiju trade)
         # Using maximum slippage (100%) for pump.fun tokens due to volatility
         if "pump" in token_mint.lower():
-            print(f"🎰 Pump.fun token detected. Routing via JUPITER (100% slippage).")
-            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
+            print(f"🎰 Pump.fun token detected. Routing via JUPITER + JITO (100% slippage, atomic).")
+            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000, use_jito=True)
         else:
-            # Standard Jupiter Flow for Raydium/etc
-            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000)
+            # Standard Jupiter Flow for Raydium/etc - also using Jito for atomic safety
+            print(f"🚀 Routing via JUPITER + JITO (atomic execution).")
+            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000, use_jito=True)
         
         # Retry logic if slippage exceeded
         if 'error' in result and ('0x177e' in str(result['error']) or '6014' in str(result['error'])):
             print("⚠️ Slippage exceeded. Retrying with 50% SLIPPAGE...")
             import time
             time.sleep(1)
-            # Retry with 50% (gives more room than 15% default, but less likely to fail API than 100%)
-            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=5000)
+            # Retry with 50% and Jito for safety
+            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=5000, use_jito=True)
         
         if result.get('success'):
             # Track position
@@ -835,14 +734,8 @@ class DexTrader:
         
         print(f"🔄 SELLING {token_mint} | Amount: {sell_amount}")
 
-        # Aggressive Sell: Use 100% Slippage immediately to ensure exit
-        result = self.execute_swap(token_mint, self.SOL_MINT, sell_amount, override_slippage=10000)
-        
-        # PUMPPORTAL FALLBACK for pump.fun tokens if Jupiter fails (including 6014/177e)
-        if 'error' in result and token_mint.lower().endswith('pump'):
-            print(f"🎰 Jupiter sell failed ({result.get('error')}). Trying PumpPortal Direct...")
-            # For sells, we use percentage mode with 100% slippage
-            result = self.execute_pumpportal_swap(token_mint, "sell", "100%", slippage=100, priority_fee=0.005)
+        # Aggressive Sell: Use 100% Slippage + Jito for atomic exit (no fee on fail)
+        result = self.execute_swap(token_mint, self.SOL_MINT, sell_amount, override_slippage=10000, use_jito=True)
         
         if result.get('success') and percentage == 100:
             # Remove from positions
