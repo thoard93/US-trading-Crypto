@@ -20,11 +20,65 @@ class SmartCopyTrader:
         self.dex_scout = DexScout()
         self.collector = WalletCollector()
         self.logger = logging.getLogger(__name__)
-        self.collector = WalletCollector()
-        self.logger = logging.getLogger(__name__)
         # DB Persistence
         self.qualified_wallets = self._load_wallets()
-        self.active_swarms = {} # token_mint -> set(wallet_addresses)
+        self.active_swarms = self._load_swarms() # Restore active swarms
+
+    def _load_swarms(self):
+        """Restore active swarm participants from DB."""
+        try:
+            from database import SessionLocal
+            from models import ActiveSwarm
+            
+            db = SessionLocal()
+            swarms_db = db.query(ActiveSwarm).all()
+            
+            result = defaultdict(set)
+            for s in swarms_db:
+                result[s.token_address].add(s.whale_address)
+            
+            db.close()
+            if result:
+                 self.logger.info(f"🔓 Restored {len(result)} active swarms from DB.")
+            return result
+        except Exception as e:
+            self.logger.error(f"Error loading swarms from DB: {e}")
+            return defaultdict(set)
+
+    def _save_swarm_participant(self, token_address, whale_address):
+        """Persist a single swarm participant mapping."""
+        try:
+            from database import SessionLocal
+            from models import ActiveSwarm
+            
+            db = SessionLocal()
+            # Check if exists
+            exists = db.query(ActiveSwarm).filter(
+                ActiveSwarm.token_address == token_address,
+                ActiveSwarm.whale_address == whale_address
+            ).first()
+            
+            if not exists:
+                new_entry = ActiveSwarm(token_address=token_address, whale_address=whale_address)
+                db.add(new_entry)
+                db.commit()
+            
+            db.close()
+        except Exception as e:
+            self.logger.error(f"Error saving swarm participant: {e}")
+
+    def _delete_swarm_from_db(self, token_address):
+        """Remove all participants for a token from DB (on exit)."""
+        try:
+            from database import SessionLocal
+            from models import ActiveSwarm
+            
+            db = SessionLocal()
+            db.query(ActiveSwarm).filter(ActiveSwarm.token_address == token_address).delete()
+            db.commit()
+            db.close()
+        except Exception as e:
+            self.logger.error(f"Error deleting swarm from DB: {e}")
 
     def _load_wallets(self):
         """Load wallets from Database."""
@@ -367,6 +421,9 @@ class SmartCopyTrader:
                 self.logger.info(f"🚀 SWARM DETECTED: {len(buyers)} whales bought {mint}")
                 signals.append(mint)
                 self.active_swarms[mint] = buyers
+                # PERSIST participants to DB
+                for whale in buyers:
+                    self._save_swarm_participant(mint, whale)
                 
         return signals
 
@@ -410,6 +467,57 @@ class SmartCopyTrader:
         dump_ratio = sold_count / total
         if dump_ratio >= 0.5:
             self.logger.warning(f"📉 SWARM DUMP DETECTED for {token_mint}: {sold_count}/{total} sold.")
+            # CLEANUP DB
+            self._delete_swarm_from_db(token_mint)
+            if token_mint in self.active_swarms:
+                del self.active_swarms[token_mint]
             return True
             
         return False
+
+    async def search_participants_for_token(self, token_mint, window_minutes=360):
+        """
+        Heuristic: Search through ALL qualified wallets to see who bought this token recently.
+        Used to 'heal' positions after a restart if the swarm was lost.
+        window_minutes: default 6 hours.
+        """
+        if not self.qualified_wallets: return set()
+        
+        self.logger.info(f"🩹 Healing: Searching participants for {token_mint[:8]}...")
+        found_whales = set()
+        
+        # We don't want to scan ALL 100+ whales in one go if we can help it,
+        # but for a ONE-TIME startup healing, it's worth the credits.
+        # We'll batch them to avoid hitting Helius too hard.
+        all_wallets = list(self.qualified_wallets.keys())
+        
+        for i in range(0, len(all_wallets), 10):
+            batch = all_wallets[i:i+10]
+            tasks = []
+            for wallet in batch:
+                tasks.append(self.collector.fetch_helius_history_async(wallet, limit=10))
+            
+            results = await asyncio.gather(*tasks)
+            
+            now = datetime.utcnow()
+            for wallet, txs in zip(batch, results):
+                if not txs: continue
+                for tx in txs:
+                    ts = tx.get('timestamp', 0)
+                    if not ts: continue
+                    tx_time = datetime.utcfromtimestamp(ts)
+                    if (now - tx_time).total_seconds() / 60 > window_minutes:
+                        continue
+                        
+                    # Check if BUY
+                    transfers = tx.get('tokenTransfers', [])
+                    for t in transfers:
+                        if t.get('toUserAccount') == wallet and t.get('mint') == token_mint:
+                            found_whales.add(wallet)
+                            break
+            
+            await asyncio.sleep(0.5) # Tiny breather between batches
+            
+        if found_whales:
+            self.logger.info(f"🩹 Healed: Found {len(found_whales)} whales for {token_mint[:8]}")
+        return found_whales

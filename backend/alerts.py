@@ -329,6 +329,18 @@ class AlertSystem(commands.Cog):
                                     'symbol': symbol
                                 }
                                 
+                                # --- SWARM HEALING (NEW) ---
+                                # Check if we have swarm participants for this token.
+                                # If not, try to 'heal' by searching whale history.
+                                if mint not in self.copy_trader.active_swarms:
+                                    participants = await self.copy_trader.search_participants_for_token(mint)
+                                    if participants:
+                                        self.copy_trader.active_swarms[mint] = participants
+                                        # Persist to DB so it survives future restarts too
+                                        for p in participants:
+                                            self.copy_trader._save_swarm_participant(mint, p)
+                                        print(f"🩹 Position Healed: Restored {len(participants)} whales for {symbol}")
+                                
                                 # Add to tracking list if not there
                                 found = False
                                 for t in self.trending_dex_gems:

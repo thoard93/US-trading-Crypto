@@ -71,3 +71,10 @@ class WhaleWallet(Base):
     discovered_on = Column(String)  # Symbol or source
     discovered_at = Column(DateTime, default=datetime.datetime.utcnow)
     stats = Column(JSON, nullable=True) # Full analysis data
+
+class ActiveSwarm(Base):
+    """Persisted swarm mappings (token -> [wallets]) for copy-trading exits."""
+    __tablename__ = "active_swarms"
+    id = Column(Integer, primary_key=True, index=True)
+    token_address = Column(String, index=True)
+    whale_address = Column(String, index=True)
