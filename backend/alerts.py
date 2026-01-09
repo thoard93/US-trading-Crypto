@@ -1567,17 +1567,18 @@ class AlertSystem(commands.Cog):
             
             # 📉 EXIT HANDLING: Now handled by webhooks (see trigger_instant_exit)
                 
-            # 3. Periodically run the Hunter (every 4 hours = 1440 ticks of 10s)
-            if not hasattr(self, 'swarm_tick'): self.swarm_tick = 0
-            self.swarm_tick += 1
-            
-            if self.swarm_tick % 1440 == 0:
-                print("🦈 Auto-Hunter: Scanning for fresh whales...")
-                new_wallets = await self.copy_trader.scan_market_for_whales(max_pairs=5, max_traders_per_pair=3)
-                if new_wallets > 0:
-                    print(f"✅ Auto-Hunter found {new_wallets} new wallets! List updated.")
-                    if channel_memes:
-                        await channel_memes.send(f"🦈 **Auto-Hunter** found {new_wallets} new profitable wallets to track!")
+            # 3. AUTO-HUNTER DISABLED: Consumes too many credits. Use !hunt manually instead.
+            # To re-enable, uncomment the code below after upgrading your Helius plan.
+            # if not hasattr(self, 'swarm_tick'): self.swarm_tick = 0
+            # self.swarm_tick += 1
+            # if self.swarm_tick % 1440 == 0:
+            #     print("🦈 Auto-Hunter: Scanning for fresh whales...")
+            #     new_wallets = await self.copy_trader.scan_market_for_whales(max_pairs=5, max_traders_per_pair=3)
+            #     if new_wallets > 0:
+            #         print(f"✅ Auto-Hunter found {new_wallets} new wallets! List updated.")
+            #         if channel_memes:
+            #             await channel_memes.send(f"🦈 **Auto-Hunter** found {new_wallets} new profitable wallets to track!")
+
                 
         except Exception as e:
             import traceback
