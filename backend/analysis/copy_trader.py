@@ -357,86 +357,100 @@ class SmartCopyTrader:
             
             if latest_sig:
                 if self._last_signatures.get(wallet) == latest_sig:
-                    # self.logger.debug(f"⏭️ Skipping {wallet[:8]} (No new activity)")
                     continue
-                # Update cache
                 self._last_signatures[wallet] = latest_sig
             
-            # EXPENSIVE CHECK: Fetch last 10 txs ONLY if signature changed (100 credits)
+            # EXPENSIVE CHECK: Fetch last 10 txs ONLY if signature changed
             txs = await self.collector.fetch_helius_history_async(wallet, limit=10)
-            if not txs: continue
-            
-            now = datetime.utcnow()
-            
-            for tx in txs:
-                ts = tx.get('timestamp', 0)
-                if not ts: continue
-                
-                # Check Time Window
-                tx_time = datetime.utcfromtimestamp(ts)
-                age_min = (now - tx_time).total_seconds() / 60
-                
-                if age_min > window_minutes:
-                    continue # Too old
-                
-                # Check if it was a BUY (Swap In)
-                # Parse direction
-                transfers = tx.get('tokenTransfers', [])
-                tokens_in = [t.get('mint') for t in transfers if t.get('toUserAccount') == wallet]
-                
-                # Filter out SOL/USDC imports
-                SOL_MINT = "So11111111111111111111111111111111111111112"
-                USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
-                STABLE_MINTS = {SOL_MINT, USDC_MINT, "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB"}
+            if txs:
+                self.process_transactions(txs, window_minutes=window_minutes)
 
-                for mint in tokens_in:
-                    if mint in STABLE_MINTS: continue
-                    
-                    # Store this activity
-                    tx_sig = tx.get('signature', '')
-                    is_new = True
-                    for entry in self._recent_whale_activity:
-                        if entry['wallet'] == wallet and entry['mint'] == mint and entry['signature'] == tx_sig:
-                            is_new = False
-                            break
-                    
-                    if is_new:
-                        self.logger.info(f"    👉 Found new BUY: {mint[:8]} by {wallet[:8]} ({age_min:.1f}m ago)")
-                        self._recent_whale_activity.append({
-                            'wallet': wallet,
-                            'mint': mint,
-                            'timestamp': tx_time,
-                            'signature': tx_sig
-                        })
+        # 2. ANALYZE cache for swarms
+        return self.analyze_swarms(min_buyers=min_buyers, window_minutes=window_minutes)
 
-        # 2. PRUNE: Remove old activity from cache
+    def process_transactions(self, transactions, window_minutes=60):
+        """Processes a list of transactions and updates the recent activity cache."""
         now = datetime.utcnow()
+        added_count = 0
+        
+        for tx in transactions:
+            ts = tx.get('timestamp', 0)
+            if not ts: continue
+            
+            tx_time = datetime.utcfromtimestamp(ts)
+            age_min = (now - tx_time).total_seconds() / 60
+            
+            if age_min > window_minutes:
+                continue
+            
+            # Identify the wallet (signer)
+            wallet = tx.get('feePayer')
+            if not wallet:
+                # Fallback: Find the user account in transfers
+                transfers = tx.get('tokenTransfers', [])
+                if transfers:
+                    wallet = transfers[0].get('fromUserAccount')
+
+            if not wallet: continue
+
+            transfers = tx.get('tokenTransfers', [])
+            tokens_in = [t.get('mint') for t in transfers if t.get('toUserAccount') == wallet]
+            
+            SOL_MINT = "So11111111111111111111111111111111111111112"
+            USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+            STABLE_MINTS = {SOL_MINT, USDC_MINT, "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "USD1ttGY1N17NEEHLmELoaybftRBUSErhqYiQzvEmuB"}
+
+            for mint in tokens_in:
+                if mint in STABLE_MINTS: continue
+                
+                tx_sig = tx.get('signature', '')
+                is_new = True
+                for entry in self._recent_whale_activity:
+                    if entry['wallet'] == wallet and entry['mint'] == mint and entry['signature'] == tx_sig:
+                        is_new = False
+                        break
+                
+                if is_new:
+                    self.logger.info(f"    👉 Activity: {mint[:8]} bought by {wallet[:8]}")
+                    self._recent_whale_activity.append({
+                        'wallet': wallet,
+                        'mint': mint,
+                        'timestamp': tx_time,
+                        'signature': tx_sig
+                    })
+                    added_count += 1
+        return added_count
+
+    def analyze_swarms(self, min_buyers=3, window_minutes=60):
+        """Analyzes recent activity for swarms."""
+        signals = []
+        now = datetime.utcnow()
+        
+        # 1. PRUNE
         self._recent_whale_activity = [
             x for x in self._recent_whale_activity 
             if (now - x['timestamp']).total_seconds() / 60 <= window_minutes
         ]
         
-        # 3. ANALYZE entire cache for swarms
-        cluster = defaultdict(set) # token_mint -> {wallet_addresses}
-        
+        # 2. CLUSTER
+        cluster = defaultdict(set)
         for entry in self._recent_whale_activity:
             cluster[entry['mint']].add(entry['wallet'])
             
-        # 4. Filter for Swarms (Min 3 Buyers)
+        # 3. FILTER
         for mint, buyers in cluster.items():
             if len(buyers) >= min_buyers:
-                # Found a swarm!
                 if mint in self.active_swarms:
-                    continue # Already tracking
+                    continue
                     
                 self.logger.info(f"🚀 SWARM DETECTED: {len(buyers)} whales bought {mint}")
                 signals.append(mint)
                 self.active_swarms[mint] = buyers
-                # PERSIST participants to DB
                 for whale in buyers:
                     self._save_swarm_participant(mint, whale)
-                
+                    
         return signals
+
 
     async def check_swarm_exit(self, token_mint):
         """

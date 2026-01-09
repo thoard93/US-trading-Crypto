@@ -20,6 +20,47 @@ class WalletCollector:
         if self.helius_key:
             self.rpc_url = f"https://mainnet.helius-rpc.com/?api-key={self.helius_key}"
         
+    def upsert_helius_webhook(self, webhook_url, account_addresses):
+        """Creates or updates a Helius webhook to monitor whale wallets."""
+        if not self.helius_key: return None
+        
+        endpoint = f"https://api.helius.xyz/v0/webhooks?api-key={self.helius_key}"
+        
+        # 1. Fetch existing webhooks to see if we have one
+        try:
+            resp = requests.get(endpoint)
+            webhooks = resp.json()
+            
+            # Helius response might be an error if no webhooks exist
+            if not isinstance(webhooks, list):
+                webhooks = []
+
+            existing_id = None
+            for w in webhooks:
+                if w.get('webhookURL') == webhook_url:
+                    existing_id = w.get('webhookID')
+                    break
+            
+            payload = {
+                "webhookURL": webhook_url,
+                "transactionTypes": ["SWAP"],
+                "accountAddresses": account_addresses,
+                "webhookType": "enhanced", 
+            }
+            
+            if existing_id:
+                # Update
+                update_url = f"https://api.helius.xyz/v0/webhooks/{existing_id}?api-key={self.helius_key}"
+                r = requests.put(update_url, json=payload)
+                return r.json()
+            else:
+                # Create
+                r = requests.post(endpoint, json=payload)
+                return r.json()
+        except Exception as e:
+            self.logger.error(f"Error managing Helius Webhook: {e}")
+            return None
+
     def _rpc_call(self, method, params):
         """Helper for raw JSON-RPC calls."""
         payload = {

@@ -166,6 +166,10 @@ class AlertSystem(commands.Cog):
         # self.dex_monitor.start() # PAUSED: Copy-trading only (No "Dex Gem" alerts)
         self.discovery_loop.start() # ACTIVE: Running in "Whale Hunter Mode" (Silent)
         self.kraken_discovery_loop.start()
+        self.swarm_monitor.start() # ACTIVE: Copy-Trading Engine
+        
+        # Webhook Setup Task
+        self.bot.loop.create_task(self.setup_helius_webhook())
         
         # Async startup tasks
         asyncio.create_task(self._startup_sync())
@@ -199,7 +203,36 @@ class AlertSystem(commands.Cog):
                 if account:
                     print(f"💵 Alpaca - Cash: ${account['cash']:.2f}, Buying Power: ${account['buying_power']:.2f}")
             except Exception as e:
-                print(f"⚠️ Failed to sync Alpaca positions: {e}")
+                print(f"⚠️ Failed to sync Alpaca: {e}")
+
+    async def setup_helius_webhook(self):
+        """Registers the bot's URL with Helius to receive whale activity."""
+        import os
+        webhook_url = os.getenv("HELIUS_WEBHOOK_URL")
+        if not webhook_url:
+            print("⚠️ HELIUS_WEBHOOK_URL not set. Webhooks will not be automated.")
+            return
+
+        # Ensure URL ends with the endpoint
+        clean_url = webhook_url.rstrip('/')
+        if not clean_url.endswith("/helius/webhook"):
+            webhook_url = f"{clean_url}/helius/webhook"
+        else:
+            webhook_url = clean_url
+
+        # Get whale addresses
+        whales = list(self.copy_trader.qualified_wallets.keys())
+        if not whales:
+            print("⚠️ No whales tracked yet. Skipping webhook registration.")
+            return
+
+        print(f"📡 Registering {len(whales)} whales with Helius Webhook at {webhook_url}...")
+        result = self.copy_trader.collector.upsert_helius_webhook(webhook_url, whales)
+        
+        if result:
+            print(f"✅ Helius Webhook Setup SUCCESS: {result.get('webhookID', 'Unknown ID')}")
+        else:
+            print("❌ Helius Webhook Setup FAILED.")
 
 
 

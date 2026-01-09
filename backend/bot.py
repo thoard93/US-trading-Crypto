@@ -1,5 +1,6 @@
 import os
 import discord
+import asyncio
 from discord.ext import commands
 from dotenv import load_dotenv
 from collectors.crypto_collector import CryptoCollector
@@ -123,8 +124,34 @@ async def help(ctx):
     embed.set_footer(text="Short-term trading assistant | GoPlus & CCXT")
     await ctx.send(embed=embed)
 
+async def start_services():
+    # 1. Start Webhook Listener (FastAPI)
+    import uvicorn
+    from webhook_listener import app, set_bot_instance
+    
+    # Link bot to listener for signal dispatch
+    set_bot_instance(bot)
+    
+    # Configure Server
+    # Render provides PORT environment variable
+    port = int(os.getenv("PORT", 8000))
+    config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
+    server = uvicorn.Server(config)
+    
+    print(f"📡 Webhook Listener starting on port {port}...")
+    
+    # 2. Run both
+    await asyncio.gather(
+        bot.start(TOKEN),
+        server.serve()
+    )
+
 if __name__ == '__main__':
     if TOKEN:
-        bot.run(TOKEN)
+        try:
+            import asyncio
+            asyncio.run(start_services())
+        except KeyboardInterrupt:
+            pass
     else:
         print("Error: DISCORD_TOKEN not found in environment variables.")
