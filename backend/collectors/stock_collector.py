@@ -9,9 +9,9 @@ load_dotenv()
 class StockCollector:
     def __init__(self, api_key=None, secret_key=None, base_url=None):
         # Prioritize provided keys, then fallback to env
-        self.api_key = api_key or os.getenv('ALPACA_API_KEY')
-        self.secret_key = secret_key or os.getenv('ALPACA_SECRET_KEY')
-        self.base_url = base_url or os.getenv('ALPACA_BASE_URL', 'https://paper-api.alpaca.markets')
+        self.api_key = (api_key or os.getenv('ALPACA_API_KEY', '')).strip() or None
+        self.secret_key = (secret_key or os.getenv('ALPACA_SECRET_KEY', '')).strip() or None
+        self.base_url = (base_url or os.getenv('ALPACA_BASE_URL', 'https://paper-api.alpaca.markets')).strip()
         
         if self.api_key and self.secret_key:
             self.api = REST(self.api_key, self.secret_key, self.base_url)

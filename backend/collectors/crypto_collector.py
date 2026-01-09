@@ -6,8 +6,8 @@ class CryptoCollector:
     def __init__(self, exchange_id='kraken', api_key=None, api_secret=None):
         import os
         # Prioritize provided keys, then fallback to env
-        api_key = api_key or os.getenv('KRAKEN_API_KEY')
-        api_secret = api_secret or os.getenv('KRAKEN_SECRET_KEY')
+        api_key = (api_key or os.getenv('KRAKEN_API_KEY', '')).strip() or None
+        api_secret = (api_secret or os.getenv('KRAKEN_SECRET_KEY', '')).strip() or None
         
         if api_key and api_secret:
             self.exchange = getattr(ccxt, exchange_id)({
