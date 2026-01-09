@@ -16,6 +16,8 @@ from solders.system_program import transfer, TransferParams
 from solders.address_lookup_table_account import AddressLookupTableAccount
 from nacl.signing import SigningKey
 import random
+import time
+from datetime import datetime
 
 # Jito Block Engine Configuration (Multiple endpoints for failover)
 JITO_BLOCK_ENGINES = [
@@ -401,7 +403,6 @@ class DexTrader:
                 print(f"📤 sentTransaction: {tx_signature}. Waiting for confirmation...")
             
             # Wait for confirmation (up to 60 seconds)
-            import time
             confirmed = False
             for i in range(12):
                 time.sleep(5)
