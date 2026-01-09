@@ -113,11 +113,89 @@ class AlertSystem(commands.Cog):
         self.dex_min_liquidity = 10000  # RAISED to $10k to prevent low-liquidity traps
         self.dex_max_positions = 15  # Increased from 10 to 15 (User Request)
         
+        # =========== MULTI-USER KRAKEN TRADING ===========
+        self.kraken_traders = []  # List of TradingExecutive instances
+        try:
+            db = SessionLocal()
+            kraken_keys = db.query(models.ApiKey).filter(models.ApiKey.exchange == 'kraken').all()
+            
+            for k in kraken_keys:
+                try:
+                    api_key = decrypt_key(k.api_key) if k.api_key else None
+                    api_secret = decrypt_key(k.api_secret) if k.api_secret else None
+                    if api_key and api_secret:
+                        te = TradingExecutive(api_key=api_key, secret_key=api_secret, user_id=k.user_id)
+                        if te.exchange and te.exchange.apiKey:
+                            self.kraken_traders.append(te)
+                            print(f"💰 Loaded Kraken keys for User {k.user_id}")
+                except Exception as e:
+                    print(f"⚠️ Failed to load Kraken keys for User {k.user_id}: {e}")
+            
+            # Fallback: ENV keys (legacy support)
+            import os
+            env_kraken_key = os.getenv('KRAKEN_API_KEY')
+            env_kraken_secret = os.getenv('KRAKEN_SECRET_KEY')
+            if env_kraken_key and env_kraken_secret:
+                # Check if ENV user already loaded
+                env_already_loaded = any(t.user_id == 1 for t in self.kraken_traders)
+                if not env_already_loaded:
+                    te = TradingExecutive(api_key=env_kraken_key, secret_key=env_kraken_secret, user_id=1)
+                    if te.exchange and te.exchange.apiKey:
+                        self.kraken_traders.append(te)
+                        print(f"💰 Loaded Kraken keys via ENV (User 1)")
+            
+            db.close()
+            
+            if self.kraken_traders:
+                print(f"🏦 Kraken Multi-User Trading ENABLED for {len(self.kraken_traders)} users.")
+        except Exception as e:
+            print(f"⚠️ Failed to load Kraken traders: {e}")
+        
+        # Legacy pointer for backward compatibility
+        self.trader = self.kraken_traders[0] if self.kraken_traders else TradingExecutive(user_id=1)
+        
+        # =========== MULTI-USER ALPACA TRADING ===========
+        self.alpaca_traders = []  # List of stock traders
+        try:
+            db = SessionLocal()
+            alpaca_keys = db.query(models.ApiKey).filter(models.ApiKey.exchange == 'alpaca').all()
+            
+            for k in alpaca_keys:
+                try:
+                    api_key = decrypt_key(k.api_key) if k.api_key else None
+                    api_secret = decrypt_key(k.api_secret) if k.api_secret else None
+                    if api_key and api_secret:
+                        te = TradingExecutive(alpaca_key=api_key, alpaca_secret=api_secret, user_id=k.user_id)
+                        if te.stock_api:
+                            self.alpaca_traders.append(te)
+                            print(f"📈 Loaded Alpaca keys for User {k.user_id}")
+                except Exception as e:
+                    print(f"⚠️ Failed to load Alpaca keys for User {k.user_id}: {e}")
+            
+            # Fallback: ENV keys
+            env_alpaca_key = os.getenv('ALPACA_API_KEY')
+            env_alpaca_secret = os.getenv('ALPACA_SECRET_KEY')
+            if env_alpaca_key and env_alpaca_secret:
+                env_already_loaded = any(t.user_id == 1 for t in self.alpaca_traders)
+                if not env_already_loaded:
+                    te = TradingExecutive(alpaca_key=env_alpaca_key, alpaca_secret=env_alpaca_secret, user_id=1)
+                    if te.stock_api:
+                        self.alpaca_traders.append(te)
+                        print(f"📈 Loaded Alpaca keys via ENV (User 1)")
+            
+            db.close()
+            
+            if self.alpaca_traders:
+                print(f"📊 Alpaca Multi-User Trading ENABLED for {len(self.alpaca_traders)} users.")
+        except Exception as e:
+            print(f"⚠️ Failed to load Alpaca traders: {e}")
+        
         # STOCK Auto-trading configuration
         self.stock_auto_trade = False  # DISABLED: Copy-trading only mode (no RSI signals)
         self.stock_trade_amount = 5.0  # $5 per trade (fractional shares)
         self.stock_max_positions = 5  # Max concurrent stock positions
         self.stock_positions = {}  # Track stock positions locally
+
         
         # User defined watchlists
         self.majors_watchlist = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT']
