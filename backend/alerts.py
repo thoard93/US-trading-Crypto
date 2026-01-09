@@ -1570,10 +1570,10 @@ class AlertSystem(commands.Cog):
                 # Check each position we hold that came from a swarm
                 for mint in list(trader.positions.keys()):
                     if mint in self.copy_trader.active_swarms:
-                        # OPTIMIZED EXIT CHECK: Check every 1 minute (Fast but cheap)
+                        # OPTIMIZED EXIT CHECK: Check every 5 minutes (Slow but efficient)
                         if not hasattr(self, '_last_exit_check'): self._last_exit_check = {}
                         last_check = self._last_exit_check.get(mint, 0)
-                        if (datetime.datetime.now().timestamp() - last_check) < 60: # 1 min
+                        if (datetime.datetime.now().timestamp() - last_check) < 300: # 5 min
                             continue
                             
                         self._last_exit_check[mint] = datetime.datetime.now().timestamp()
@@ -1603,11 +1603,11 @@ class AlertSystem(commands.Cog):
                             else:
                                 print(f"❌ Whale exit sell failed: {result.get('error')}")
                 
-            # 3. Periodically run the Hunter (every 4 hours = 48 ticks of 5 mins)
+            # 3. Periodically run the Hunter (every 4 hours = 1440 ticks of 10s)
             if not hasattr(self, 'swarm_tick'): self.swarm_tick = 0
             self.swarm_tick += 1
             
-            if self.swarm_tick % 48 == 0:
+            if self.swarm_tick % 1440 == 0:
                 print("🦈 Auto-Hunter: Scanning for fresh whales...")
                 new_wallets = await self.copy_trader.scan_market_for_whales(max_pairs=5, max_traders_per_pair=3)
                 if new_wallets > 0:

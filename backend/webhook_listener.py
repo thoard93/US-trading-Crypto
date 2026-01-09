@@ -9,7 +9,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("WebhookListener")
 
 # SILENCE Uvicorn Access Logs (They spam every single transaction)
+class NoWebhookFilter(logging.Filter):
+    def filter(self, record):
+        # Silence standard uvicorn access logs for the webhook endpoint
+        return "POST /helius/webhook" not in record.getMessage()
+
+logging.getLogger("uvicorn.access").addFilter(NoWebhookFilter())
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
 
 app = FastAPI(title="Helius Webhook Listener")
 
