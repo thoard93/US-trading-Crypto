@@ -24,6 +24,8 @@ class SmartCopyTrader:
         self.qualified_wallets = self._load_wallets()
         self.active_swarms = self._load_swarms() # Restore active swarms
         self._last_signatures = {} # Cache for {wallet: signature}
+        self._recent_whale_activity = [] # List of {wallet, mint, timestamp, signature}
+        self._scan_index = 0
 
     def _load_swarms(self):
         """Restore active swarm participants from DB."""
@@ -322,16 +324,11 @@ class SmartCopyTrader:
         if not self.qualified_wallets:
             return []
             
-        # Initialize persistent cache for activity if not present
-        if not hasattr(self, '_recent_whale_activity'):
-            self._recent_whale_activity = [] # List of {wallet, mint, timestamp, signature}
-            
         signals = []
         cluster = defaultdict(set) # token_mint -> {wallet_addresses}
         
         # Optimize: Round-Robin Scanning (10 wallets per cycle)
         # Prevents API Credit Drain (2M -> 100k per day)
-        if not hasattr(self, '_scan_index'): self._scan_index = 0
         
         all_wallets = list(self.qualified_wallets.keys())
         batch_size = 15 # Restore Coverage: Batch size increased because checks are now 90% cheaper
