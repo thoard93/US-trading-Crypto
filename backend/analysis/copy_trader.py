@@ -106,9 +106,16 @@ class SmartCopyTrader:
                 }
             
             db.close()
+            
+            # ✅ LOG SUCCESS/FAILURE
+            if result:
+                self.logger.info(f"✅ Loaded {len(result)} whale wallets from DB.")
+            else:
+                self.logger.warning("⚠️ No whale wallets found in DB. Starting fresh.")
+            
             return result
         except Exception as e:
-            self.logger.error(f"Error loading wallets from DB: {e}")
+            self.logger.error(f"❌ Error loading wallets from DB: {e}")
             return {}
     
     def _save_wallet_to_db(self, address, data):
@@ -124,18 +131,20 @@ class SmartCopyTrader:
             if not existing:
                 new_wallet = WhaleWallet(
                     address=address,
-                    stats=data['stats'],
-                    discovered_on=data['discovered_on'],
-                    score=data['score']
+                    stats=data.get('stats'),
+                    discovered_on=data.get('discovered_on'),
+                    score=data.get('score', 10.0)
                 )
                 db.add(new_wallet)
+                self.logger.info(f"💾 Saved new whale to DB: {address[:16]}...")
             else:
-                existing.stats = data['stats'] # Update stats
+                existing.stats = data.get('stats') # Update stats
             
             db.commit()
             db.close()
-        except Exception:
-            pass
+        except Exception as e:
+            self.logger.error(f"❌ Error saving whale to DB: {e}")
+
 
     def _prune_old_whales(self, keep_count=100):
         """Remove oldest whales to keep list fresh."""
