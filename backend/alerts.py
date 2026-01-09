@@ -1565,8 +1565,7 @@ class AlertSystem(commands.Cog):
                 print(f"🚨 EXECUTING SWARM BUY: {mint}")
                 await self.execute_swarm_trade(mint)
             
-                # 📉 REMOVED RPC POLLING: Exit checks are now handled by webhooks (see trigger_instant_exit)
-                pass
+            # 📉 EXIT HANDLING: Now handled by webhooks (see trigger_instant_exit)
                 
             # 3. Periodically run the Hunter (every 4 hours = 1440 ticks of 10s)
             if not hasattr(self, 'swarm_tick'): self.swarm_tick = 0
