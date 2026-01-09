@@ -5,12 +5,19 @@ import os
 
 # Use DATABASE_URL from environment (provided by Render Postgres)
 # Fallback to local SQLite for development
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
-if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
-    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "").strip() or None
+
+if SQLALCHEMY_DATABASE_URL:
+    # DEBUG: Masked connection string (Safe for logs)
+    db_host = SQLALCHEMY_DATABASE_URL.split('@')[-1] if '@' in SQLALCHEMY_DATABASE_URL else "internal"
+    print(f"🗄️ Connecting to Database: {db_host}")
+    
+    if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
+        SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 if not SQLALCHEMY_DATABASE_URL:
     SQLALCHEMY_DATABASE_URL = "sqlite:///./trading_platform.db"
+    print("⚠️ DATABASE_URL not found. Falling back to SQLite.")
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, 
