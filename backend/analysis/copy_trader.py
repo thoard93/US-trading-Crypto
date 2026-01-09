@@ -444,6 +444,13 @@ class SmartCopyTrader:
         cluster = defaultdict(set)
         for entry in self._recent_whale_activity:
             cluster[entry['mint']].add(entry['wallet'])
+        
+        # 🔍 DIAGNOSTIC: Show top tokens by whale interest
+        if cluster:
+            sorted_tokens = sorted(cluster.items(), key=lambda x: len(x[1]), reverse=True)[:3]
+            top_info = ", ".join([f"{m[:8]}...({len(w)} whales)" for m, w in sorted_tokens])
+            if sorted_tokens and len(sorted_tokens[0][1]) >= 2:
+                self.logger.info(f"📊 Top Tokens: {top_info}")
             
         # 3. FILTER
         for mint, buyers in cluster.items():
@@ -458,6 +465,7 @@ class SmartCopyTrader:
                     self._save_swarm_participant(mint, whale)
                     
         return signals
+
 
     def detect_whale_sells(self, transactions, held_tokens):
         """
