@@ -12,6 +12,12 @@ from alerts import AlertSystem
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN', '').strip()
 
+# DEBUG: Print token info (Safe)
+if TOKEN:
+    print(f"🔑 Discord Token Loaded: {TOKEN[:4]}...{TOKEN[-4:]} (Length: {len(TOKEN)})")
+else:
+    print("❌ Critical: DISCORD_TOKEN is missing or empty!")
+
 # Initialize components
 crypto = CryptoCollector()
 analyzer = TechnicalAnalysis()
