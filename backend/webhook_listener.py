@@ -64,7 +64,7 @@ async def process_helius_data(transactions):
         added = alert_system.copy_trader.process_transactions(transactions)
         
         if added > 0:
-            logger.info(f"✅ Webhook added {added} new whale activities to cache.")
+            # logger.info(f"✅ Webhook added {added} new whale activities to cache.")
             
             # 2. Trigger Swarm Analysis immediately
             signals = alert_system.copy_trader.analyze_swarms()

@@ -1533,7 +1533,7 @@ class AlertSystem(commands.Cog):
         else:
             await ctx.send("📭 No DEX tokens found to sell.")
 
-    @tasks.loop(seconds=30)  # RESTORED SPEED: Signature-First scanning makes 30s cost-effective
+    @tasks.loop(seconds=300)  # DEACTIVATED POLLING: Slowed to 5 mins for exit checks and hunter ONLY
     async def swarm_monitor(self):
         """Polls for Swarm Signals (Copy Trading)."""
         # Set heartbeat FIRST so we know loop is alive
@@ -1543,22 +1543,11 @@ class AlertSystem(commands.Cog):
             return
             
         try:
-            # 1. Get Signals
-            signals = await self.copy_trader.monitor_swarm()
+            # 1. SKIP SIGNATURE POLLING (Handled by Webhooks now)
+            # signals = await self.copy_trader.monitor_swarm()
+            signals = [] # No new signals from polling
             
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
-            
-            if signals:
-                # 🚨 Discord Alert: Signals Detected!
-                if channel_memes:
-                    embed = discord.Embed(
-                        title="🐋 WHALE SWARM DETECTED!",
-                        description=f"Found **{len(signals)}** token(s) with whale activity!",
-                        color=discord.Color.purple()
-                    )
-                    for mint in signals[:5]:  # Show first 5
-                        embed.add_field(name="Token", value=f"`{mint[:16]}...`", inline=True)
-                    await channel_memes.send(embed=embed)
             
             for mint in signals:
                 # Check if ANY user already has a position
@@ -1612,11 +1601,11 @@ class AlertSystem(commands.Cog):
                             else:
                                 print(f"❌ Whale exit sell failed: {result.get('error')}")
                 
-            # 3. Periodically run the Hunter (every 60 mins)
+            # 3. Periodically run the Hunter (every 4 hours = 48 ticks of 5 mins)
             if not hasattr(self, 'swarm_tick'): self.swarm_tick = 0
             self.swarm_tick += 1
             
-            if self.swarm_tick % 60 == 0:
+            if self.swarm_tick % 48 == 0:
                 print("🦈 Auto-Hunter: Scanning for fresh whales...")
                 new_wallets = await self.copy_trader.scan_market_for_whales(max_pairs=5, max_traders_per_pair=3)
                 if new_wallets > 0:
@@ -1666,9 +1655,10 @@ class AlertSystem(commands.Cog):
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
             
             if not pair:
-                print(f"🚫 Swarm Ignored: No pair data found for {mint[:16]}...")
-                if channel_memes:
-                    await channel_memes.send(f"🚫 **Swarm Token:** `{mint[:20]}...` - No DEX data found")
+                # print(f"🚫 Swarm Ignored: No pair data found for {mint[:16]}...")
+                # SILENCED DISCORD NOISE to prevent rate limits
+                # if channel_memes:
+                #     await channel_memes.send(f"🚫 **Swarm Token:** `{mint[:20]}...` - No DEX data found")
                 return
             
             print(f"✅ Found DexScreener data for {mint[:16]}!")
