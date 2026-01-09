@@ -11,8 +11,8 @@ class WalletCollector:
     Fetches transaction history from Solana RPC to identify 'Qualified Wallets'.
     """
     def __init__(self):
-        self.rpc_url = os.getenv('SOLANA_RPC_URL', 'https://api.mainnet-beta.solana.com')
-        self.helius_key = os.getenv('HELIUS_API_KEY') # User needs to provide this
+        self.rpc_url = os.getenv('SOLANA_RPC_URL', 'https://api.mainnet-beta.solana.com').strip()
+        self.helius_key = os.getenv('HELIUS_API_KEY', '').strip() or None # User needs to provide this
         self.logger = logging.getLogger(__name__)
         self.last_request_time = 0
         self.request_interval = 0.5 
