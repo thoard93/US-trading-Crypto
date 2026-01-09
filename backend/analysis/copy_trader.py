@@ -333,7 +333,7 @@ class SmartCopyTrader:
         if not hasattr(self, '_scan_index'): self._scan_index = 0
         
         all_wallets = list(self.qualified_wallets.keys())
-        batch_size = 10
+        batch_size = 2 # EMERGENCY REDUCTION: Was 10 (Saves 80% on Helius costs)
         total_wallets = len(all_wallets)
         
         if total_wallets == 0: return []

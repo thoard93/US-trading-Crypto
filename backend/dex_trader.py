@@ -39,6 +39,13 @@ JITO_TIP_ACCOUNTS = [
     "3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT"
 ]
 
+# Fallback Status RPCs (For confirmation checks when Helius is busy or out of credits)
+STATUS_FALLBACK_RPCS = [
+    "https://api.mainnet-beta.solana.com",
+    "https://solana-mainnet.g.alchemy.com/v2/demo", # Public Demo (Replace with real if needed)
+    "https://rpc.ankr.com/solana",
+]
+
 class DexTrader:
     def __init__(self, private_key=None):
         # Load wallet from environment or argument
@@ -406,28 +413,40 @@ class DexTrader:
             confirmed = False
             for i in range(12):
                 time.sleep(5)
-                # Check status
-                try:
-                    status_resp = requests.post(self.rpc_url, json={
-                         "jsonrpc": "2.0", "id": 1, "method": "getSignatureStatuses",
-                         "params": [[tx_signature], {"searchTransactionHistory": True}]
-                    })
-                    status = status_resp.json().get('result', {}).get('value', [None])[0]
-                    if status:
-                        if status.get('err'):
-                             print(f"❌ Transaction FAILED on-chain: {status['err']}")
-                             return {"error": f"On-chain failure: {status['err']}"}
+                # Check status across multiple RPCs for redundancy
+                status = None
+                status_sources = [self.rpc_url] + STATUS_FALLBACK_RPCS
+                
+                for rpc_url in status_sources:
+                    try:
+                        status_resp = requests.post(rpc_url, json={
+                             "jsonrpc": "2.0", "id": 1, "method": "getSignatureStatuses",
+                             "params": [[tx_signature], {"searchTransactionHistory": True}]
+                        }, timeout=5)
                         
-                        if status.get('confirmationStatus') in ['confirmed', 'finalized']:
-                             print(f"✅ Swap CONFIRMED! TX: {tx_signature}")
-                             # Check actual balance change or assume success
-                             return {
-                                "success": True,
-                                "signature": tx_signature,
-                                "input_amount": amount_lamports,
-                                "output_amount": quote.get('outAmount'),
-                                "price_impact": quote.get('priceImpactPct')
-                            }
+                        if status_resp.status_code == 200:
+                            status_val = status_resp.json().get('result', {}).get('value', [None])[0]
+                            if status_val:
+                                status = status_val
+                                break # Found a status, stop searching fallbacks
+                    except:
+                        continue # Try next RPC
+                
+                if status:
+                    if status.get('err'):
+                         print(f"❌ Transaction FAILED on-chain: {status['err']}")
+                         return {"error": f"On-chain failure: {status['err']}"}
+                    
+                    if status.get('confirmationStatus') in ['confirmed', 'finalized']:
+                         print(f"✅ Swap CONFIRMED! TX: {tx_signature}")
+                         # Check actual balance change or assume success
+                         return {
+                            "success": True,
+                            "signature": tx_signature,
+                            "input_amount": amount_lamports,
+                            "output_amount": quote.get('outAmount'),
+                            "price_impact": quote.get('priceImpactPct')
+                        }
                 except Exception as e:
                     print(f"⚠️ Error checking status: {e}")
             
