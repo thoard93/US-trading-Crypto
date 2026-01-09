@@ -1836,19 +1836,26 @@ class AlertSystem(commands.Cog):
                 embed.add_field(name="❌ Blocked By", value=f"Liq ${liquidity:,.0f} < ${self.dex_min_liquidity:,.0f}", inline=False)
             elif not safety_pass:
                 embed.add_field(name="❌ Blocked By", value=f"Safety {safety_score} < 50", inline=False)
+            elif not volatility_pass:
+                embed.add_field(name="🌋 Blocked By", value=f"Volatility {abs(price_change_24h):.0f}% > 500% (too risky)", inline=False)
+
             
             embed.add_field(name="🔗 DEX", value=f"[View on DexScreener]({dex_url})", inline=False)
             
-            # 4. Return if blocked
-            if not all_pass:
-                # print(f"🚫 Swarm analysis skipped for {symbol}: Liq/Safety/Vol failed.")
-                return
-            
-            # Send Analysis Embed ONLY for successful trades to prevent Discord Rate Limits
+            # ALWAYS send the analysis embed so user sees blocked trades too
+            channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
             if channel_memes:
                 await channel_memes.send(embed=embed)
+            
+            # 4. Return if blocked
+            if not all_pass:
+                print(f"🚫 Swarm analysis blocked for {symbol}: Liq/Safety/Vol failed.")
+                return
                 
             # 5. Sizing (Reduced to 0.05 SOL for less price impact)
+            amount_sol = 0.05
+            print(f"✅ All checks passed! Executing swarm buy for {symbol}...")
+
             amount_sol = 0.05
             print(f"✅ All checks passed! Executing swarm buy for {symbol}...")
             
