@@ -1305,6 +1305,15 @@ class AlertSystem(commands.Cog):
     @commands.command()
     async def hunt(self, ctx):
         """Manually trigger whale wallet discovery."""
+        # Prevent concurrent hunts
+        if not hasattr(self, '_hunt_lock'):
+            self._hunt_lock = False
+        
+        if self._hunt_lock:
+            await ctx.send("⏳ A whale hunt is already in progress. Please wait...")
+            return
+        
+        self._hunt_lock = True
         await ctx.send("🦈 **Starting Whale Hunt...** Scanning trending pairs for profitable traders...")
         
         try:
@@ -1316,18 +1325,24 @@ class AlertSystem(commands.Cog):
                 max_traders_per_pair=5
             )
             
+            total_tracked = len(self.copy_trader.qualified_wallets)
+            
             if new_wallets > 0:
                 embed = discord.Embed(
                     title="🐋 Whale Hunt Complete!",
                     description=f"Discovered **{new_wallets}** new qualified wallets!",
                     color=discord.Color.green()
                 )
-                embed.add_field(name="Total Tracked", value=f"{len(self.copy_trader.qualified_wallets)} wallets", inline=True)
+                embed.add_field(name="New This Hunt", value=f"{new_wallets} wallets", inline=True)
+                embed.add_field(name="Total Tracked", value=f"{total_tracked} wallets", inline=True)
                 await ctx.send(embed=embed)
             else:
-                await ctx.send("📭 No new qualified wallets found. Try again later when markets are more active.")
+                await ctx.send(f"📭 No new qualified wallets found. Currently tracking {total_tracked} whales.")
         except Exception as e:
             await ctx.send(f"❌ Hunt failed: {str(e)[:100]}")
+        finally:
+            self._hunt_lock = False
+
 
     @commands.command()
     async def whales(self, ctx):
@@ -1359,15 +1374,26 @@ class AlertSystem(commands.Cog):
 
     @commands.command()
     async def reset(self, ctx):
-        """Reset the whale list (remove all tracked wallets)."""
+        """Reset the whale list (remove all tracked wallets from memory AND database)."""
         if not self.copy_trader:
             await ctx.send("⚠️ Copy Trader not initialized.")
             return
             
         count = len(self.copy_trader.qualified_wallets)
         self.copy_trader.qualified_wallets = {}
-        # Clear persistent DB if applicable, here we just clear memory for now
-        await ctx.send(f"🧹 **Whale List Reset.** Removed {count} wallets. Run `!hunt` to find fresh ones!")
+        
+        # ALSO clear the database table
+        try:
+            from database import SessionLocal
+            from models import WhaleWallet
+            db = SessionLocal()
+            db.query(WhaleWallet).delete()
+            db.commit()
+            db.close()
+            await ctx.send(f"🧹 **Whale List Reset.** Removed {count} wallets from memory AND database. Run `!hunt` to find fresh ones!")
+        except Exception as e:
+            await ctx.send(f"🧹 Cleared {count} from memory, but DB clear failed: {str(e)[:50]}")
+
 
     @commands.command()
     async def prune(self, ctx):
