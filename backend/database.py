@@ -21,7 +21,12 @@ if not SQLALCHEMY_DATABASE_URL:
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, 
-    # check_same_thread is only needed for SQLite
+    # Render Free Tier limits: max 5 connections. 
+    # We restrict the bot to 3 to leave room for the Web API and Migrations.
+    pool_size=3,
+    max_overflow=0,
+    pool_timeout=10,
+    pool_recycle=1800,
     connect_args={"check_same_thread": False} if "sqlite" in SQLALCHEMY_DATABASE_URL else {}
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

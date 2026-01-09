@@ -67,8 +67,9 @@ class SmartCopyTrader:
                 db.commit()
             
             db.close()
-        except Exception as e:
-            self.logger.error(f"Error saving swarm participant: {e}")
+        except Exception:
+            # Silence DB spam - swarms are still processed in memory
+            pass
 
     def _delete_swarm_from_db(self, token_address):
         """Remove all participants for a token from DB (on exit)."""
@@ -80,8 +81,8 @@ class SmartCopyTrader:
             db.query(ActiveSwarm).filter(ActiveSwarm.token_address == token_address).delete()
             db.commit()
             db.close()
-        except Exception as e:
-            self.logger.error(f"Error deleting swarm from DB: {e}")
+        except Exception:
+            pass
 
     def _load_wallets(self):
         """Load wallets from Database."""
@@ -132,8 +133,8 @@ class SmartCopyTrader:
             
             db.commit()
             db.close()
-        except Exception as e:
-            self.logger.error(f"Error saving wallet to DB: {e}")
+        except Exception:
+            pass
 
     def _prune_old_whales(self, keep_count=100):
         """Remove oldest whales to keep list fresh."""
