@@ -445,10 +445,10 @@ class DexTrader:
             if response.status_code == 200:
                 data = response.json()
                 if data and len(data) > 0:
-                    # Use 75th percentile for reliable landing
-                    tip_sol = data[0].get('landed_tips_75th_percentile', 0.0001)
-                    # Ensure minimum of 0.0001 SOL and max of 0.01 SOL
-                    tip_sol = max(0.0001, min(0.01, tip_sol))
+                    # Use 75th percentile for reliable landing, but floor at 0.0005 during congestion
+                    tip_sol = data[0].get('landed_tips_75th_percentile', 0.0005)
+                    # Force a minimum of 0.0005 SOL (~$0.10) and max of 0.01 SOL
+                    tip_sol = max(0.0005, min(0.01, tip_sol))
                     return int(tip_sol * 1e9)
         except Exception as e:
             print(f"⚠️ Failed to fetch Jito tip floor: {e}")
