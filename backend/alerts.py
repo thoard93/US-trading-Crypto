@@ -1533,7 +1533,7 @@ class AlertSystem(commands.Cog):
         else:
             await ctx.send("📭 No DEX tokens found to sell.")
 
-    @tasks.loop(seconds=300)  # DEACTIVATED POLLING: Slowed to 5 mins for exit checks and hunter ONLY
+    @tasks.loop(seconds=10) # ⚡ OPTIMIZED SPEED: Decoupled from webhooks, now running safely every 10s.
     async def swarm_monitor(self):
         """Polls for Swarm Signals (Copy Trading)."""
         # Set heartbeat FIRST so we know loop is alive
@@ -1543,11 +1543,13 @@ class AlertSystem(commands.Cog):
             return
             
         try:
-            # 1. SKIP SIGNATURE POLLING (Handled by Webhooks now)
-            # signals = await self.copy_trader.monitor_swarm()
-            signals = [] # No new signals from polling
+            # 1. ANALYZE SWARMS (Decoupled from Webhooks - runs 100% in memory)
+            signals = self.copy_trader.analyze_swarms()
             
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
+            
+            if signals:
+                print(f"🚀 SWARM ANALYSIS FOUND {len(signals)} SIGNALS: {signals}")
             
             for mint in signals:
                 # Check if ANY user already has a position

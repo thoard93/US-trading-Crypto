@@ -63,18 +63,8 @@ async def process_helius_data(transactions):
         # 1. Update activity cache in CopyTrader
         added = alert_system.copy_trader.process_transactions(transactions)
         
-        if added > 0:
-            # logger.info(f"✅ Webhook added {added} new whale activities to cache.")
-            
-            # 2. Trigger Swarm Analysis immediately
-            signals = alert_system.copy_trader.analyze_swarms()
-            
-            if signals:
-                logger.info(f"🚀 WEBHOOK TRIGGERED SWARM: {signals}")
-                # 3. Inform AlertSystem to handle execution (Discord alerts + trades)
-                for mint in signals:
-                    # Check if already holding logic is usually inside execute_swarm_trade or similar
-                    await alert_system.execute_swarm_trade(mint)
+        # ⚠️ ANALYSIS REMOVED: Moved to a throttled 30s loop in alerts.py to stop overload.
+        # This keeps the webhook extremely fast.
         
     except Exception as e:
         logger.error(f"❌ Error processing webhook data: {e}")
