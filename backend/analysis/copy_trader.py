@@ -450,6 +450,46 @@ class SmartCopyTrader:
                     
         return signals
 
+    def detect_whale_sells(self, transactions, held_tokens):
+        """
+        Detect if any tracked whale is SELLING a token we currently hold.
+        Returns list of token mints where sells were detected.
+        
+        Args:
+            transactions: List of Helius Enhanced Transactions
+            held_tokens: Set of token mints we currently hold positions in
+        """
+        sell_signals = []
+        if not held_tokens:
+            return sell_signals
+            
+        SOL_MINT = "So11111111111111111111111111111111111111112"
+        USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        STABLE_MINTS = {SOL_MINT, USDC_MINT, "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"}
+        
+        for tx in transactions:
+            wallet = tx.get('feePayer')
+            if not wallet:
+                continue
+                
+            # Only care about tracked whales
+            if wallet not in self.qualified_wallets:
+                continue
+                
+            transfers = tx.get('tokenTransfers', [])
+            
+            # Check for SELL: Whale sends token OUT, receives SOL/USDC IN
+            for t in transfers:
+                if t.get('fromUserAccount') == wallet:
+                    sold_mint = t.get('mint')
+                    if sold_mint and sold_mint in held_tokens:
+                        self.logger.warning(f"📉 WHALE SELL DETECTED: {wallet[:8]}... sold {sold_mint[:8]}...")
+                        if sold_mint not in sell_signals:
+                            sell_signals.append(sold_mint)
+                            
+        return sell_signals
+
+
 
     async def check_swarm_exit(self, token_mint):
         """

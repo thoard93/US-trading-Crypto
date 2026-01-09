@@ -67,11 +67,19 @@ async def process_helius_data(transactions):
             logger.warning("⚠️ AlertSystem Cog not found.")
             return
 
-        # 1. Update activity cache in CopyTrader
+        # 1. Update activity cache in CopyTrader (for BUYs)
         added = alert_system.copy_trader.process_transactions(transactions)
         
-        # ⚠️ ANALYSIS REMOVED: Moved to a throttled 30s loop in alerts.py to stop overload.
-        # This keeps the webhook extremely fast.
+        # 2. INSTANT EXIT DETECTION: Check if any whale is selling tokens we hold
+        held_tokens = set()
+        for trader in alert_system.dex_traders:
+            held_tokens.update(trader.positions.keys())
+            
+        if held_tokens:
+            sell_signals = alert_system.copy_trader.detect_whale_sells(transactions, held_tokens)
+            for mint in sell_signals:
+                logger.warning(f"🚨 INSTANT EXIT TRIGGERED FOR: {mint[:16]}...")
+                await alert_system.trigger_instant_exit(mint)
         
     except Exception as e:
         logger.error(f"❌ Error processing webhook data: {e}")

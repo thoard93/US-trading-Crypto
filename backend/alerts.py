@@ -1565,43 +1565,8 @@ class AlertSystem(commands.Cog):
                 print(f"🚨 EXECUTING SWARM BUY: {mint}")
                 await self.execute_swarm_trade(mint)
             
-            # 2. CHECK WHALE EXITS - Auto-sell if whales are dumping
-            for trader in self.dex_traders:
-                # Check each position we hold that came from a swarm
-                for mint in list(trader.positions.keys()):
-                    if mint in self.copy_trader.active_swarms:
-                        # OPTIMIZED EXIT CHECK: Check every 5 minutes (Slow but efficient)
-                        if not hasattr(self, '_last_exit_check'): self._last_exit_check = {}
-                        last_check = self._last_exit_check.get(mint, 0)
-                        if (datetime.datetime.now().timestamp() - last_check) < 300: # 5 min
-                            continue
-                            
-                        self._last_exit_check[mint] = datetime.datetime.now().timestamp()
-                        
-                        # Check if whales are selling
-                        should_exit = await self.copy_trader.check_swarm_exit(mint)
-                        if should_exit:
-                            print(f"📉 WHALE DUMP DETECTED! Auto-selling {mint}...")
-                            loop = asyncio.get_running_loop()
-                            result = await loop.run_in_executor(None, trader.sell_token, mint)
-                            if result.get('success'):
-                                # Alert Discord
-                                if channel_memes:
-                                    await channel_memes.send(
-                                        f"📉 **WHALE EXIT TRIGGERED!**\n"
-                                        f"Sold `{mint[:16]}...` - Following smart money OUT!\n"
-                                        f"TX: `{result.get('signature', 'N/A')[:32]}...`"
-                                    )
-                                # Clean up tracking
-                                if mint in self.copy_trader.active_swarms:
-                                    del self.copy_trader.active_swarms[mint]
-                                # ADD TO DUMP BLACKLIST (60 min cooldown for re-entry)
-                                if not hasattr(self, '_dump_blacklist'):
-                                    self._dump_blacklist = {}
-                                self._dump_blacklist[mint] = datetime.datetime.now().timestamp()
-                                print(f"🚫 Added {mint[:16]}... to dump blacklist (60min cooldown)")
-                            else:
-                                print(f"❌ Whale exit sell failed: {result.get('error')}")
+                # 📉 REMOVED RPC POLLING: Exit checks are now handled by webhooks (see trigger_instant_exit)
+                pass
                 
             # 3. Periodically run the Hunter (every 4 hours = 1440 ticks of 10s)
             if not hasattr(self, 'swarm_tick'): self.swarm_tick = 0
@@ -1619,6 +1584,40 @@ class AlertSystem(commands.Cog):
             import traceback
             print(f"❌ Swarm Monitor Error: {e}")
             traceback.print_exc()
+
+    async def trigger_instant_exit(self, mint):
+        """
+        Instantly sell a token when a whale dump is detected via webhook.
+        Called directly from webhook_listener.py for real-time exits.
+        """
+        channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
+        
+        for trader in self.dex_traders:
+            if mint not in trader.positions:
+                continue
+                
+            print(f"🚨 INSTANT EXIT: Selling {mint[:16]}...")
+            loop = asyncio.get_running_loop()
+            result = await loop.run_in_executor(None, trader.sell_token, mint)
+            
+            if result.get('success'):
+                # Alert Discord
+                if channel_memes:
+                    await channel_memes.send(
+                        f"📉 **INSTANT WHALE EXIT!**\n"
+                        f"Sold `{mint[:16]}...` - Following smart money OUT!\n"
+                        f"TX: `{result.get('signature', 'N/A')[:32]}...`"
+                    )
+                # Clean up tracking
+                if mint in self.copy_trader.active_swarms:
+                    del self.copy_trader.active_swarms[mint]
+                # ADD TO DUMP BLACKLIST (60 min cooldown for re-entry)
+                if not hasattr(self, '_dump_blacklist'):
+                    self._dump_blacklist = {}
+                self._dump_blacklist[mint] = datetime.datetime.now().timestamp()
+                print(f"🚫 Added {mint[:16]}... to dump blacklist (60min cooldown)")
+            else:
+                print(f"❌ Instant exit sell failed: {result.get('error')}")
 
     async def execute_swarm_trade(self, mint):
         """Executes a BUY for a Swarm Signal."""
