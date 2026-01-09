@@ -230,10 +230,10 @@ class DexTrader:
             # Determine slippage for this trade
             slippage_bps = override_slippage if override_slippage else self.slippage_bps
             
-            # Dynamic Jito Tip Floor
-            jito_tip = 0
+            # Dynamic Jito Tip Floor (LAMPS)
+            jito_tip_lamports = 0
             if use_jito:
-                jito_tip = self.get_jito_tip_amount() or 100000 # Default to 0.0001 SOL if failed
+                jito_tip_lamports = self.get_jito_tip_amount_lamports()
             
             # 1. Get quote
             quote = self.get_jupiter_quote(input_mint, output_mint, amount_lamports, override_slippage)
@@ -265,8 +265,8 @@ class DexTrader:
                     "userPublicKey": self.wallet_address,
                     "wrapAndUnwrapSol": True,
                     "dynamicComputeUnitLimit": True,
-                    "prioritizationFeeLamports": initial_fee if not use_jito else None, # Skip priority fee if using Jito Tip
-                    "jitoTipLamports": jito_tip if use_jito else None,
+                    "prioritizationFeeLamports": initial_fee if not use_jito else None, 
+                    "jitoTipLamports": jito_tip_lamports if use_jito else None,
                     "dynamicSlippage": False, # FORCE FIXED SLIPPAGE
                 }
                 
@@ -335,31 +335,41 @@ class DexTrader:
             signed_tx_base64 = base64.b64encode(signed_tx_bytes).decode('utf-8')
             
             if use_jito:
-                # Submit to Jito Block Engines
+                # Submit to ALL Jito Block Engines with Burst Resubmission
                 tx_payload = {
                     "jsonrpc": "2.0", "id": 1,
                     "method": "sendTransaction",
                     "params": [signed_tx_base64, {"encoding": "base64"}]
                 }
                 
-                print(f"🔐 Submitting Jito Bundle (Tip: {jito_tip/1e9:.6f} SOL)")
-                success_jito = False
-                for jito_base in JITO_BLOCK_ENGINES:
-                    try:
-                        jito_url = f"{jito_base}/api/v1/transactions?bundleOnly=true"
-                        resp = requests.post(jito_url, json=tx_payload, timeout=10)
-                        if resp.status_code == 200:
-                            result = resp.json()
-                            tx_signature = result.get('result')
-                            if tx_signature:
-                                success_jito = True
-                                break
-                    except: continue
+                print(f"🔐 Submitting Jito Bundle (Tip: {jito_tip_lamports / 1e9:.6f} SOL / {jito_tip_lamports:,} lamps)")
                 
-                if not success_jito:
-                    return {"error": "Failed to submit bundle to Jito Block Engines"}
+                # Use a background-like resubmission for 15 seconds
+                # This ensures we hit multiple leaders/engines
+                for attempt in range(5):
+                    success_current_attempt = False
+                    for jito_base in JITO_BLOCK_ENGINES:
+                        try:
+                            # Use /v1/transactions with bundleOnly=true for single TX "bundles"
+                            jito_url = f"{jito_base}/api/v1/transactions?bundleOnly=true"
+                            resp = requests.post(jito_url, json=tx_payload, timeout=5)
+                            if resp.status_code == 200:
+                                result = resp.json()
+                                cur_sig = result.get('result')
+                                if cur_sig:
+                                    tx_signature = cur_sig
+                                    success_current_attempt = True
+                        except: continue
+                    
+                    if attempt == 0 and not success_current_attempt:
+                        return {"error": "Failed initial submission to all Jito Block Engines"}
+                    
+                    if attempt == 0:
+                        print(f"📤 sentJitoBundle: {tx_signature}. Starting burst resubmission...")
+                    
+                    if attempt < 4: time.sleep(3) # Resubmit every 3s for 12s total
                 
-                print(f"📤 sentJitoBundle: {tx_signature}. Waiting for confirmation...")
+                print(f"✅ Burst complete. Waiting for confirmation: {tx_signature}")
             else:
                 # Standard Helius Send
                 send_response = requests.post(self.rpc_url, json={
@@ -427,8 +437,8 @@ class DexTrader:
             print(f"❌ Swap execution error: {e}")
             return {"error": str(e)}
     
-    def get_jito_tip_amount(self):
-        """Fetch dynamic tip amount from Jito API (75th percentile)."""
+    def get_jito_tip_amount_lamports(self):
+        """Fetch dynamic tip amount from Jito API (returned in lamports)."""
         try:
             response = requests.get(JITO_TIP_FLOOR_URL, timeout=5)
             if response.status_code == 200:
@@ -438,10 +448,10 @@ class DexTrader:
                     tip_sol = data[0].get('landed_tips_75th_percentile', 0.0001)
                     # Ensure minimum of 0.0001 SOL and max of 0.01 SOL
                     tip_sol = max(0.0001, min(0.01, tip_sol))
-                    return tip_sol
+                    return int(tip_sol * 1e9)
         except Exception as e:
             print(f"⚠️ Failed to fetch Jito tip floor: {e}")
-        return 0.0005  # Default fallback: 0.0005 SOL (~$0.08)
+        return 500000  # Default fallback: 0.0005 SOL (500,000 lamps)
     
     def execute_jito_bundle(self, token_mint, sol_amount):
         """
