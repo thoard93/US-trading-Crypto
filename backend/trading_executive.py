@@ -4,12 +4,14 @@ import logging
 
 class TradingExecutive:
     def __init__(self, api_key=None, secret_key=None, alpaca_key=None, alpaca_secret=None, alpaca_url=None, user_id=1):
-        self.api_key = api_key or os.getenv('KRAKEN_API_KEY')
-        self.secret_key = secret_key or os.getenv('KRAKEN_SECRET_KEY')
-        self.alpaca_key = alpaca_key or os.getenv('ALPACA_API_KEY')
-        self.alpaca_secret = alpaca_secret or os.getenv('ALPACA_SECRET_KEY')
-        self.alpaca_url = alpaca_url or os.getenv('ALPACA_BASE_URL')
+        # Strip all API keys to remove any accidental whitespace
+        self.api_key = (api_key or os.getenv('KRAKEN_API_KEY', '')).strip() or None
+        self.secret_key = (secret_key or os.getenv('KRAKEN_SECRET_KEY', '')).strip() or None
+        self.alpaca_key = (alpaca_key or os.getenv('ALPACA_API_KEY', '')).strip() or None
+        self.alpaca_secret = (alpaca_secret or os.getenv('ALPACA_SECRET_KEY', '')).strip() or None
+        self.alpaca_url = (alpaca_url or os.getenv('ALPACA_BASE_URL', '')).strip() or None
         self.user_id = user_id
+
         
         # Initialize CryptoCollector with specific keys
         from collectors.crypto_collector import CryptoCollector

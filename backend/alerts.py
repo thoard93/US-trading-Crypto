@@ -1543,6 +1543,14 @@ class AlertSystem(commands.Cog):
             return
             
         try:
+            # DIAGNOSTIC: Show cache size every cycle
+            cache_size = len(self.copy_trader._recent_whale_activity)
+            whale_count = len(self.copy_trader.qualified_wallets)
+            if cache_size > 0 or not hasattr(self, '_swarm_diag_tick'):
+                print(f"🔍 Swarm Monitor: {cache_size} activities in cache, tracking {whale_count} whales")
+            if not hasattr(self, '_swarm_diag_tick'): self._swarm_diag_tick = 0
+            self._swarm_diag_tick += 1
+            
             # 1. ANALYZE SWARMS (Decoupled from Webhooks - runs 100% in memory)
             signals = self.copy_trader.analyze_swarms()
             
@@ -1550,6 +1558,7 @@ class AlertSystem(commands.Cog):
             
             if signals:
                 print(f"🚀 SWARM ANALYSIS FOUND {len(signals)} SIGNALS: {signals}")
+
             
             for mint in signals:
                 # Check if ANY user already has a position
