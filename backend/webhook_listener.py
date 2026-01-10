@@ -66,12 +66,17 @@ async def process_helius_data(transactions):
         alert_system = None
         for _ in range(60): # 60 * 0.5s = 30s
             alert_system = bot_instance.get_cog("AlertSystem")
-            if alert_system:
+            # Wait for both Cog registration AND background data loading
+            if alert_system and getattr(alert_system, 'ready', False):
                 break
             await asyncio.sleep(0.5)
             
         if not alert_system:
             logger.warning("⚠️ AlertSystem Cog not found after 30s wait. Data dropped.")
+            return
+            
+        if not getattr(alert_system, 'ready', False):
+            logger.warning("⚠️ AlertSystem found but NOT READY after 30s. Data dropped.")
             return
 
         # 1. Update activity cache in CopyTrader (for BUYs)

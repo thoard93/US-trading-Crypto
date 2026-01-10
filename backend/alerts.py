@@ -58,6 +58,7 @@ class AlertSystem(commands.Cog):
             print(f"🎲 Polymarket Copy-Trader initialized (PAPER MODE)")
         
         # =========== TRADER INITIALIZATION (Deferred to cog_load) ===========
+        self.ready = False # STATUS FLAG: Cog is registered but data is loading in background
         self.dex_traders = []
         self.dex_trader = None
         self.kraken_traders = []
@@ -1895,33 +1896,42 @@ class AlertSystem(commands.Cog):
 
     async def cog_load(self):
         """Called when the cog is loaded - start the monitoring loops."""
-        print("🚀 AlertSystem: Starting asynchronous initialization...")
+        print("🚀 AlertSystem: Cog loaded. Starting background initialization task...")
+        # INSTANT Handshake: Schedule the heavy loading in a separate background task
+        # This allows add_cog to return IMMEDIATELY so the Webhook Listener finds us.
+        self._init_task = asyncio.create_task(self._async_background_init())
         
-        # 1. Load data and traders in a thread to keep event loop free
+    async def _async_background_init(self):
+        """Full asynchronous initialization that won't block Cog registration."""
         try:
+            print("⏳ AlertSystem: Background loading started...")
+            # 1. Heavy lifting in a thread
             await asyncio.to_thread(self._heavy_initialization_sync)
+            
+            # 2. Start the monitoring loops
+            if not self.monitor_market.is_running():
+                self.monitor_market.start()
+            if not self.discovery_loop.is_running():
+                self.discovery_loop.start()
+            if not self.kraken_discovery_loop.is_running():
+                self.kraken_discovery_loop.start()
+            if not self.swarm_monitor.is_running():
+                self.swarm_monitor.start()
+                print("🐋 Swarm Monitor started!")
+            if POLYMARKET_ENABLED and not self.polymarket_monitor.is_running():
+                self.polymarket_monitor.start()
+                print(f"🎲 Polymarket Monitor started")
+                
+            # 3. Webhook and Sync
+            await self.setup_helius_webhook()
+            await self._startup_sync()
+            
+            self.ready = True
+            print(f"✅ AlertSystem: Background initialization COMPLETE. System is READY.")
         except Exception as e:
-            print(f"❌ Error during Cog background initialization: {e}")
-            
-        # 2. Start the monitoring loops
-        if not self.monitor_market.is_running():
-            self.monitor_market.start()
-        if not self.discovery_loop.is_running():
-            self.discovery_loop.start()
-        if not self.kraken_discovery_loop.is_running():
-            self.kraken_discovery_loop.start()
-        if not self.swarm_monitor.is_running():
-            self.swarm_monitor.start()
-            print("🐋 Swarm Monitor started!")
-        if POLYMARKET_ENABLED and not self.polymarket_monitor.is_running():
-            self.polymarket_monitor.start()
-            print(f"🎲 Polymarket Monitor started")
-            
-        # 3. Webhook and Sync
-        await self.setup_helius_webhook()
-        await self._startup_sync()
-        
-        print(f"✅ AlertSystem Cog registered and fully operational.")
+            import traceback
+            print(f"❌ Error during background initialization: {e}")
+            traceback.print_exc()
 
     def _heavy_initialization_sync(self):
         """Perform all blocking DB and API key loading here."""
