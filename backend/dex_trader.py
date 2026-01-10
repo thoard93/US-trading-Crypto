@@ -568,15 +568,15 @@ class DexTrader:
             if response.status_code == 200:
                 data = response.json()
                 if data and len(data) > 0:
-                    # Use 75th percentile for reliable landing
-                    tip_sol = data[0].get('landed_tips_75th_percentile', 0.002)
-                    # AGGRESSIVE: Minimum 0.002 SOL (~$0.40) for pump.fun priority
-                    # Max 0.01 SOL to avoid overpaying
-                    tip_sol = max(0.002, min(0.01, tip_sol))
+                    # Use 95th percentile for AGGRESSIVE landing (beats most competition)
+                    tip_sol = data[0].get('landed_tips_95th_percentile', 0.003)
+                    # BEAST MODE: Minimum 0.003 SOL (~$0.60) for pump.fun priority
+                    # Max 0.015 SOL to cap costs on extremely competitive moments
+                    tip_sol = max(0.003, min(0.015, tip_sol))
                     return int(tip_sol * 1e9)
         except Exception as e:
             print(f"⚠️ Failed to fetch Jito tip floor: {e}")
-        return 2000000  # Default fallback: 0.002 SOL (2M lamports) - aggressive for pump.fun
+        return 3000000  # Default fallback: 0.003 SOL (3M lamports) - BEAST MODE
     
     def execute_jito_bundle(self, token_mint, sol_amount):
         """
@@ -835,13 +835,16 @@ class DexTrader:
             print(f"🚀 Routing via JUPITER + JITO (atomic execution).")
             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000, use_jito=True)
         
-        # PHASE 43: NO RETRY ON SLIPPAGE (6014)
-        # Pre-flight simulation catches these for free. If it still fails on-chain, 
-        # retrying with the same stale quote will just waste more SOL.
+        # BEAST MODE: Single FAST retry with fresh quote for slippage failures
+        # Because Jito = zero fee on failure, we can retry once immediately with a fresh quote
         if 'error' in result and ('0x177e' in str(result['error']) or '6014' in str(result['error'])):
-            print("🛑 Slippage exceeded on-chain. Aborting (no retry to save SOL).")
-            # Don't retry - the price has moved too far
-
+            print("⚡ Slippage exceeded! BEAST MODE: Retrying ONCE with fresh quote...")
+            import time
+            time.sleep(0.3)  # Tiny pause for price to settle
+            # Retry with fresh quote (the execute_swap gets a new quote internally)
+            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000, use_jito=True)
+            if 'error' in result:
+                print("🛑 Retry also failed. Aborting to prevent drain.")
 
         
         if result.get('success'):
