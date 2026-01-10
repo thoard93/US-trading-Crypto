@@ -28,6 +28,12 @@ def run_migrations():
             print(" ✅ Added 'asset_type' to trades")
         except Exception: pass
         
+        # 4. Update 'whale_wallets' table - Add last_active for pruning lazy whales
+        try:
+            conn.execute(text("ALTER TABLE whale_wallets ADD COLUMN last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
+            print(" ✅ Added 'last_active' to whale_wallets")
+        except Exception: pass  # Already exists
+        
         conn.commit()
     print("✨ Migrations Complete.")
 
