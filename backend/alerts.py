@@ -68,8 +68,9 @@ class AlertSystem(commands.Cog):
         # Trading Configuration (Settings)
         self.dex_auto_trade = False
         self.dex_min_safety_score = 50
-        self.dex_min_liquidity = 10000
+        self.dex_min_liquidity = 25000  # PHASE 43: Raised from $10k to $25k to avoid thin pools
         self.dex_max_positions = 15
+
         
         self.stock_auto_trade = False
         self.stock_trade_amount = 5.0

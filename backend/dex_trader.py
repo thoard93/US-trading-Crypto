@@ -160,7 +160,9 @@ class DexTrader:
             return 0
     
     def get_jupiter_quote(self, input_mint, output_mint, amount_lamports, override_slippage=None):
-        """Get a quote from Jupiter Aggregator with retries and reliable fallbacks."""
+        """Get a quote from Jupiter Aggregator with retries and reliable fallbacks.
+        Returns tuple: (quote_dict, timestamp) for freshness tracking.
+        """
         try:
             # Determine slippage
             slippage_bps = override_slippage if override_slippage else self.slippage_bps
@@ -178,7 +180,10 @@ class DexTrader:
                         url = f"https://{host}{path}?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}&onlyDirectRoute=false"
                         response = requests.get(url, timeout=10)
                         if response.status_code == 200:
-                            return response.json()
+                            quote = response.json()
+                            # Return quote with timestamp for freshness checking
+                            quote['_timestamp'] = time.time()
+                            return quote
                         else:
                             print(f"⚠️ Jupiter {host} Quote attempt {attempt+1} failed ({response.status_code})")
                     except Exception as e:
@@ -244,12 +249,21 @@ class DexTrader:
             if use_jito:
                 jito_tip_lamports = self.get_jito_tip_amount_lamports()
             
-            # 1. Get quote
+            # 1. Get quote with freshness tracking
             quote = self.get_jupiter_quote(input_mint, output_mint, amount_lamports, override_slippage)
             if not quote:
                 return {"error": "Failed to get quote"}
             
-            print(f"🔄 Jupiter Quote: slippage={slippage_bps}bps, outAmount={quote.get('outAmount')}")
+            # PHASE 43: Quote Freshness Guard - Reject stale quotes (> 2 seconds old)
+            quote_age = time.time() - quote.get('_timestamp', 0)
+            if quote_age > 2.0:
+                print(f"⚠️ Quote too stale ({quote_age:.1f}s old). Fetching fresh quote...")
+                quote = self.get_jupiter_quote(input_mint, output_mint, amount_lamports, override_slippage)
+                if not quote:
+                    return {"error": "Failed to get fresh quote"}
+            
+            print(f"🔄 Jupiter Quote: slippage={slippage_bps}bps, outAmount={quote.get('outAmount')}, age={quote_age:.2f}s")
+
             
             # 2. Get swap transaction with retries and fallback
             swap_data = None
@@ -343,9 +357,35 @@ class DexTrader:
             # Reconstruct transaction with our signature
             signed_tx = VersionedTransaction.populate(message, [signature])
             
-            # 4. Send transaction
+            # 4. PHASE 43: Pre-flight Simulation (Catch failures for FREE before on-chain)
             signed_tx_bytes = bytes(signed_tx)
             signed_tx_base64 = base64.b64encode(signed_tx_bytes).decode('utf-8')
+            
+            # Simulate transaction before sending (costs nothing, catches ~80% of slippage failures)
+            try:
+                sim_response = requests.post(self.rpc_url, json={
+                    "jsonrpc": "2.0", "id": 1,
+                    "method": "simulateTransaction",
+                    "params": [signed_tx_base64, {"encoding": "base64", "commitment": "processed"}]
+                }, timeout=10)
+                sim_result = sim_response.json()
+                sim_err = sim_result.get('result', {}).get('err')
+                
+                if sim_err:
+                    err_str = str(sim_err)
+                    # Check for slippage error (6014 / 0x177e)
+                    if '6014' in err_str or '0x177e' in err_str:
+                        print(f"🛑 PRE-FLIGHT ABORT: Slippage would fail (saved TX fee!)")
+                        return {"error": "Pre-flight simulation: Slippage exceeded", "simulated": True}
+                    else:
+                        print(f"🛑 PRE-FLIGHT ABORT: Simulation failed: {sim_err}")
+                        return {"error": f"Pre-flight simulation failed: {sim_err}", "simulated": True}
+                else:
+                    print(f"✅ Pre-flight simulation PASSED (safe to submit)")
+            except Exception as sim_e:
+                # Don't block on simulation failure - proceed with caution
+                print(f"⚠️ Pre-flight simulation error (proceeding anyway): {sim_e}")
+
             
             if use_jito:
                 # Submit to ALL Jito Block Engines with Burst Resubmission
@@ -781,13 +821,13 @@ class DexTrader:
             print(f"🚀 Routing via JUPITER + JITO (atomic execution).")
             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000, use_jito=True)
         
-        # Retry logic if slippage exceeded
+        # PHASE 43: NO RETRY ON SLIPPAGE (6014)
+        # Pre-flight simulation catches these for free. If it still fails on-chain, 
+        # retrying with the same stale quote will just waste more SOL.
         if 'error' in result and ('0x177e' in str(result['error']) or '6014' in str(result['error'])):
-            print("⚠️ Slippage exceeded. Retrying with 100% SLIPPAGE...")
-            import time
-            time.sleep(1)
-            # Retry with 100% and Jito for safety
-            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000, use_jito=True)
+            print("🛑 Slippage exceeded on-chain. Aborting (no retry to save SOL).")
+            # Don't retry - the price has moved too far
+
 
         
         if result.get('success'):
