@@ -40,7 +40,10 @@ async def on_ready():
     # Load the AlertSystem cog
     if not bot.get_cog('AlertSystem'):
         await bot.add_cog(AlertSystem(bot))
-        print("Alert system loaded.")
+        print("✅ Alert system loaded.")
+        # Diagnostic: List all loaded cogs to verify registration
+        cogs = list(bot.cogs.keys())
+        print(f"📦 Loaded Cogs: {cogs}")
 
 @bot.command()
 async def ping(ctx):

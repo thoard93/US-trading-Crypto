@@ -276,8 +276,12 @@ class DexTrader:
                     "dynamicComputeUnitLimit": True,
                     "prioritizationFeeLamports": initial_fee if not use_jito else None, 
                     "jitoTipLamports": jito_tip_lamports if use_jito else None,
-                    "dynamicSlippage": False, # FORCE FIXED SLIPPAGE
+                    "dynamicSlippage": True if override_slippage and override_slippage >= 5000 else False, 
                 }
+                
+                # For high slippage retries, enforce direct route if possible to avoid hop failures
+                if override_slippage and override_slippage >= 9000:
+                    swap_body["onlyDirectRoute"] = True
                 
                 success = False
                 for attempt in range(2):
