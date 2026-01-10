@@ -1814,6 +1814,77 @@ class AlertSystem(commands.Cog):
         except Exception as e:
             print(f"❌ Execute Swarm Error: {e}")
 
+    async def trigger_instant_exit(self, mint):
+        """
+        Execute instant sell when whale sells detected.
+        Called by webhook_listener when whales dump a token we hold.
+        """
+        try:
+            channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
+            
+            # Find symbol from DexScreener
+            symbol = mint[:8]  # Fallback
+            try:
+                import requests
+                resp = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{mint}", timeout=5)
+                if resp.status_code == 200:
+                    pairs = resp.json().get('pairs', [])
+                    if pairs:
+                        symbol = pairs[0].get('baseToken', {}).get('symbol', symbol)
+            except:
+                pass
+            
+            print(f"🚨 INSTANT EXIT: Whales selling {symbol} ({mint[:16]}...)!")
+            
+            if channel_memes:
+                await channel_memes.send(f"🚨 **WHALE SELL DETECTED!** 📉\n`{symbol}` - Triggering instant exit for all users...")
+            
+            # Execute sell for ALL traders who hold this token
+            for trader in self.dex_traders:
+                user_label = getattr(trader, 'user_id', 'Main')
+                
+                if mint not in trader.positions:
+                    continue
+                    
+                print(f"📉 SELLING (User {user_label}): {symbol}")
+                
+                # Run sync trading in executor
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(None, trader.sell_token, mint)
+                
+                if result.get('success'):
+                    sig = result.get('signature', 'Unknown')
+                    pnl = result.get('pnl_percent', 0)
+                    pnl_emoji = "🟢" if pnl >= 0 else "🔴"
+                    
+                    # Remove from positions
+                    if mint in trader.positions:
+                        del trader.positions[mint]
+                    
+                    # Cleanup swarm tracking
+                    if mint in self.copy_trader.active_swarms:
+                        del self.copy_trader.active_swarms[mint]
+                        self.copy_trader._delete_swarm_from_db(mint)
+                    
+                    if channel_memes:
+                        embed = discord.Embed(
+                            title=f"📉 WHALE EXIT: {symbol}",
+                            description=f"Following Smart Money EXIT!\n**User:** {user_label}\n**P/L:** {pnl_emoji} {pnl:+.1f}%",
+                            color=discord.Color.orange()
+                        )
+                        embed.add_field(name="TX", value=f"`{sig[:32]}...`", inline=False)
+                        await channel_memes.send(embed=embed)
+                else:
+                    error_msg = result.get('error', 'Unknown error')
+                    print(f"❌ Instant Exit FAILED for {symbol} (User {user_label}): {error_msg}")
+                    if channel_memes:
+                        await channel_memes.send(f"❌ **Exit Failed (User {user_label}):** `{symbol}` - {error_msg[:50]}...")
+                        
+        except Exception as e:
+            print(f"❌ Instant Exit Error: {e}")
+
+
+
     @commands.command()
     async def status(self, ctx):
         """Show system health and monitoring status."""
