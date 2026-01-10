@@ -20,8 +20,13 @@ class TradingExecutive:
         
         # Initialize StockCollector with specific keys
         from collectors.stock_collector import StockCollector
-        self.stock_collector = StockCollector(api_key=self.alpaca_key, secret_key=self.alpaca_secret, base_url=self.alpaca_url)
-        self.stock_api = self.stock_collector.api
+        try:
+            self.stock_collector = StockCollector(api_key=self.alpaca_key, secret_key=self.alpaca_secret, base_url=self.alpaca_url)
+            self.stock_api = getattr(self.stock_collector, 'api', None)
+        except Exception as e:
+            print(f"⚠️ StockCollector failed to initialize for user {self.user_id}: {e}")
+            self.stock_collector = None
+            self.stock_api = None
         
         if self.exchange and self.exchange.apiKey:
             print(f"✅ Crypto Trading initialized for user {self.user_id}.")
@@ -29,7 +34,7 @@ class TradingExecutive:
         if self.stock_api:
             print(f"✅ Stock Trading (Alpaca) initialized for user {self.user_id}.")
         else:
-            print(f"⚠️ Stock Trading disabled for user {self.user_id} (No keys).")
+            print(f"⚠️ Stock Trading disabled for user {self.user_id} (No keys or init failure).")
 
         # Scalp-optimized Safety Settings
         self.trade_amount_usdt = 10.0  
