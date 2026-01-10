@@ -40,10 +40,11 @@ class AlertSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         from collectors.crypto_collector import CryptoCollector
-        self.crypto = CryptoCollector()
-        self.stocks = StockCollector()
+        # Initialize collectors as None to safely defer loading
+        self.crypto = None 
+        self.stocks = None
         self.analyzer = TechnicalAnalysis()
-        self.trader = TradingExecutive(user_id=1)
+        self.trader = None # Critical fix: Defer TradingExecutive which hangs
         self.dex_scout = DexScout()
         self.safety = SafetyChecker()
         self.copy_trader = SmartCopyTrader()
@@ -62,7 +63,6 @@ class AlertSystem(commands.Cog):
         self.dex_traders = []
         self.dex_trader = None
         self.kraken_traders = []
-        self.trader = TradingExecutive(user_id=1) # Minimal default
         self.alpaca_traders = []
         
         # Trading Configuration (Settings)
@@ -1935,6 +1935,19 @@ class AlertSystem(commands.Cog):
 
     def _heavy_initialization_sync(self):
         """Perform all blocking DB and API key loading here."""
+        # 0. Initialize Primary Singletons
+        from collectors.crypto_collector import CryptoCollector
+        from collectors.stock_collector import StockCollector
+        
+        # Safe to initialize here in the thread
+        if not self.crypto:
+            self.crypto = CryptoCollector()
+        if not self.stocks:
+            self.stocks = StockCollector()
+        if not self.trader:
+            self.trader = TradingExecutive(user_id=1)
+            print("✅ Default TradingExecutive initialized in background.")
+
         # 1. Load SmartCopyTrader Data
         if self.copy_trader:
             self.copy_trader.load_data()
