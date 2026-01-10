@@ -353,13 +353,12 @@ class DexTrader:
                 
                 print(f"🔐 Submitting Jito Bundle (Tip: {jito_tip_lamports / 1e9:.6f} SOL / {jito_tip_lamports:,} lamps)")
                 
-                # Use a background-like resubmission for 15 seconds
-                # This ensures we hit multiple leaders/engines
+                # Burst resubmission for 15 seconds
+                # Simultaneous fallback to standard RPC after first burst
                 for attempt in range(5):
                     success_current_attempt = False
                     for jito_base in JITO_BLOCK_ENGINES:
                         try:
-                            # Use /v1/transactions with bundleOnly=true for single TX "bundles"
                             jito_url = f"{jito_base}/api/v1/transactions?bundleOnly=true"
                             resp = requests.post(jito_url, json=tx_payload, timeout=5)
                             if resp.status_code == 200:
@@ -368,19 +367,54 @@ class DexTrader:
                                 if cur_sig:
                                     tx_signature = cur_sig
                                     success_current_attempt = True
+                                else:
+                                    print(f"📋 DEBUG: Jito {jito_base.split('.')[1]} Response: {result}")
+                            else:
+                                print(f"📋 DEBUG: Jito {jito_base.split('.')[1]} HTTP {resp.status_code}: {resp.text}")
                         except: continue
                     
+                    # DUAL SUBMISSION FALLBACK: Also send to standard RPC after second attempt
+                    # This ensures that even if Jito is dropping it, a standard leader might catch it
+                    if attempt >= 1:
+                        try:
+                            print(f"📡 Sending standard RPC fallback (Attempt {attempt})...")
+                            requests.post(self.rpc_url, json={
+                                "jsonrpc": "2.0", "id": 1, "method": "sendTransaction",
+                                "params": [signed_tx_base64, {"encoding": "base64", "skipPreflight": True}]
+                            }, timeout=5)
+                        except Exception as e:
+                            print(f"⚠️ Fallback RPC send failed: {e}")
+
                     if attempt == 0 and not success_current_attempt:
-                        return {"error": "Failed initial submission to all Jito Block Engines"}
+                        # If Jito failed initially, don't alert, try the standard RPC as a direct fallback
+                        try:
+                            print(f"📡 Jito initial fail. Attempting direct RPC fallback...")
+                            fallback_resp = requests.post(self.rpc_url, json={
+                                "jsonrpc": "2.0", "id": 1, "method": "sendTransaction",
+                                "params": [signed_tx_base64, {"encoding": "base64", "skipPreflight": True}]
+                            }, timeout=5)
+                            res = fallback_resp.json()
+                            if res.get('result'):
+                                tx_signature = res.get('result')
+                                success_current_attempt = True
+                                print(f"🚀 Jito initial fail. Direct fallback success: {tx_signature}")
+                            else:
+                                print(f"❌ Direct RPC fallback failed: {res}")
+                        except Exception as e:
+                            print(f"⚠️ Direct RPC fallback error: {e}")
+                    
+                    if attempt == 0 and not success_current_attempt:
+                        return {"error": "Failed initial submission to all Jito Block Engines and RPC"}
                     
                     if attempt == 0:
-                        print(f"📤 sentJitoBundle: {tx_signature}. Starting burst resubmission...")
+                        print(f"📤 sentTransaction: {tx_signature}. Starting burst resubmission...")
                     
-                    if attempt < 4: time.sleep(3) # Resubmit every 3s for 12s total
+                    if attempt < 4: time.sleep(3) 
                 
                 print(f"✅ Burst complete. Waiting for confirmation: {tx_signature}")
             else:
                 # Standard Helius Send
+                print(f"📡 Sending standard transaction to Helius RPC...")
                 send_response = requests.post(self.rpc_url, json={
                     "jsonrpc": "2.0",
                     "id": 1,
@@ -408,11 +442,15 @@ class DexTrader:
                 
                 tx_signature = result.get('result')
                 print(f"📤 sentTransaction: {tx_signature}. Waiting for confirmation...")
+
             
             # Wait for confirmation (up to 60 seconds)
             confirmed = False
-            for i in range(12):
-                time.sleep(5)
+            print(f"⏳ Monitoring confirmation status for TX: {tx_signature}")
+            for i in range(30): # 30 * 2s = 60s
+                if i % 3 == 0: print(f"⏳ Confirmation check {i+1}/30...")
+                time.sleep(2)
+
                 # Check status across multiple RPCs for redundancy
                 try:
                     status = None
@@ -429,6 +467,8 @@ class DexTrader:
                                 status_val = status_resp.json().get('result', {}).get('value', [None])[0]
                                 if status_val:
                                     status = status_val
+                                    src = rpc_url.split('.')[1] if '.' in rpc_url else 'Helius'
+                                    print(f"🏷️ Found status via {src}: {status.get('confirmationStatus')}")
                                     break # Found a status, stop searching fallbacks
                         except:
                             continue # Try next RPC
@@ -717,6 +757,8 @@ class DexTrader:
         
         user_id = getattr(self, 'user_id', 'Unknown')
         print(f"🔄 BUYING (User {user_id}) {token_mint} | SOL: {sol_amount:.4f}")
+        print(f"DEBUG: SOL Balance: {balance:.6f}, Required: {required:.6f}")
+
 
         # ALL TOKENS NOW USE JUPITER - PumpPortal transactions never land
         # Jupiter TXs actually reach the chain (proven with Kaiju trade)
@@ -763,7 +805,9 @@ class DexTrader:
         else:
              sell_amount = int(token_balance * (percentage / 100))
         
-        print(f"🔄 SELLING {token_mint} | Amount: {sell_amount}")
+        print(f"🔄 SELLING {token_mint} | Amount: {sell_amount} | Pct: {percentage}%")
+        print(f"DEBUG: Wallet: {self.wallet_address}")
+
 
         # Aggressive Sell: Use 100% Slippage + Jito for atomic exit (no fee on fail)
         result = self.execute_swap(token_mint, self.SOL_MINT, sell_amount, override_slippage=10000, use_jito=True)
