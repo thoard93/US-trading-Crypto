@@ -228,17 +228,23 @@ class AlertSystem(commands.Cog):
         channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
         channel_stocks = self.bot.get_channel(self.STOCKS_CHANNEL_ID)
 
-        # 0. Monitor Active Positions (Critical for SL/TP compliance)
-        all_owned = list(self.trader.active_positions.keys())
-        if all_owned:
-            print(f"🛡️ Monitoring {len(all_owned)} active positions for exits...")
-            for symbol in all_owned:
-                # Detect asset type based on symbol format
-                a_type = "Stock" if "/" not in symbol else "Crypto"
-                if a_type == "Crypto" and channel_crypto:
-                    await self._check_and_alert(symbol, channel_crypto, a_type)
-                elif a_type == "Stock" and channel_stocks:
-                    await self._check_and_alert(symbol, channel_stocks, a_type)
+        # 0. Monitor Active Positions for ALL KRAKEN USERS (Critical for SL/TP compliance)
+        for kraken_trader in self.kraken_traders:
+            user_label = getattr(kraken_trader, 'user_id', 'Main')
+            all_owned = list(kraken_trader.active_positions.keys())
+            if all_owned:
+                print(f"🛡️ Monitoring {len(all_owned)} Kraken positions for User {user_label}...")
+                for symbol in all_owned:
+                    # Detect asset type based on symbol format
+                    a_type = "Stock" if "/" not in symbol else "Crypto"
+                    # Use the specific user's trader for exit checks
+                    original_trader = self.trader
+                    self.trader = kraken_trader  # Temporarily swap to check this user's positions
+                    if a_type == "Crypto" and channel_crypto:
+                        await self._check_and_alert(symbol, channel_crypto, a_type)
+                    elif a_type == "Stock" and channel_stocks:
+                        await self._check_and_alert(symbol, channel_stocks, a_type)
+                    self.trader = original_trader  # Restore
 
         # 1. Monitor Majors
         print(f"Checking major crypto: {self.majors_watchlist}")
@@ -1714,12 +1720,11 @@ class AlertSystem(commands.Cog):
             change_emoji = "📈" if price_change_24h >= 0 else "📉"
             change_color = "+" if price_change_24h >= 0 else ""
             
-            # VOLATILITY FILTER: Skip tokens moving EXTREMELY fast (>1500% in 24h)
-            # Raised from 500% to 1500% because we trust whale judgment
-            volatility_pass = abs(price_change_24h) < 1500
-            if not volatility_pass:
-                print(f"🌋 VOLATILITY BLOCK: {symbol} moved {price_change_24h:.0f}% in 24h (limit: 1500%)")
-
+            # VOLATILITY FILTER: DISABLED
+            # 24h change doesn't reflect current volatility (token could have pumped yesterday, stable now)
+            # +1000-2000% in 24h is NORMAL for pump.fun tokens
+            # We trust whale judgment - if 4+ whales are buying, it's a valid signal
+            volatility_pass = True  # Always pass - whales = confidence
             
             # NOTE: Pump.fun tokens now use JITO BUNDLES (atomic - zero fee on failure)
             # No longer blocking pump.fun tokens since Jito handles them properly
@@ -1744,8 +1749,7 @@ class AlertSystem(commands.Cog):
                 embed.add_field(name="❌ Blocked By", value=f"Liq ${liquidity:,.0f} < ${self.dex_min_liquidity:,.0f}", inline=False)
             elif not safety_pass:
                 embed.add_field(name="❌ Blocked By", value=f"Safety {safety_score} < 50", inline=False)
-            elif not volatility_pass:
-                embed.add_field(name="🌋 Blocked By", value=f"Volatility {abs(price_change_24h):.0f}% > 1500% (extreme)", inline=False)
+            # Note: Volatility filter is disabled (we trust whale judgment)
 
 
             
