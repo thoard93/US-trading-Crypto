@@ -82,6 +82,12 @@ async def process_helius_data(transactions):
         # 1. Update activity cache in CopyTrader (for BUYs)
         added = alert_system.copy_trader.process_transactions(transactions)
         
+        # 1b. Track whale activity (update last_active for pruning)
+        for tx in transactions:
+            wallet = tx.get('feePayer')
+            if wallet and wallet in alert_system.copy_trader.qualified_wallets:
+                alert_system.copy_trader.update_whale_activity(wallet)
+        
         # 2. INSTANT EXIT DETECTION: Check if any whale is selling tokens we hold
         held_tokens = set()
         for trader in alert_system.dex_traders:

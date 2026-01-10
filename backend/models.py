@@ -70,6 +70,7 @@ class WhaleWallet(Base):
     score = Column(Float, default=10.0)
     discovered_on = Column(String)  # Symbol or source
     discovered_at = Column(DateTime, default=datetime.datetime.utcnow)
+    last_active = Column(DateTime, default=datetime.datetime.utcnow)  # Last trade seen
     stats = Column(JSON, nullable=True) # Full analysis data
 
 class ActiveSwarm(Base):

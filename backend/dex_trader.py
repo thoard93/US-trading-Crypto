@@ -40,11 +40,16 @@ JITO_TIP_ACCOUNTS = [
 ]
 
 # Fallback Status RPCs (For confirmation checks when Helius is busy or out of credits)
+# These are FREE public RPCs - lower rate limits but good for fallback
 STATUS_FALLBACK_RPCS = [
     "https://api.mainnet-beta.solana.com",
-    "https://solana-mainnet.g.alchemy.com/v2/demo", # Public Demo (Replace with real if needed)
     "https://rpc.ankr.com/solana",
+    "https://solana.public-rpc.com",
 ]
+
+# TRADING RPCs: Higher priority for sending transactions
+# You can set TRADING_RPC_URL in .env to use a dedicated fast RPC for trades
+# This reduces Helius usage (keep Helius for webhooks only)
 
 class DexTrader:
     def __init__(self, private_key=None):
@@ -53,6 +58,10 @@ class DexTrader:
         if private_key: private_key = private_key.strip()
 
         # RPC Auto-Configuration
+        # Priority: TRADING_RPC_URL > SOLANA_RPC_URL > Auto-Helius > Public (slow)
+        trading_rpc = os.getenv('TRADING_RPC_URL')  # Dedicated trading RPC (optional)
+        if trading_rpc: trading_rpc = trading_rpc.strip()
+        
         env_rpc = os.getenv('SOLANA_RPC_URL')
         if env_rpc: env_rpc = env_rpc.strip()
         
@@ -62,9 +71,12 @@ class DexTrader:
         # Check if env_rpc is the slow public one
         is_slow_rpc = env_rpc and "api.mainnet-beta.solana.com" in env_rpc
         
-        if helius_key and (not env_rpc or is_slow_rpc):
-            print("🚀 Upgrading to High-Speed Helius RPC (Auto-detected key)")
-            # If user had slow RPC set, we are overriding it
+        # Use dedicated trading RPC if available (reduces Helius usage!)
+        if trading_rpc:
+            print("🚀 Using dedicated TRADING_RPC_URL for transactions (saves Helius credits)")
+            self.rpc_url = trading_rpc
+        elif helius_key and (not env_rpc or is_slow_rpc):
+            print("🚀 Using Helius RPC for transactions")
             if is_slow_rpc:
                 print("⚠️ Overriding slow 'api.mainnet-beta' config with Helius!")
             self.rpc_url = f"https://mainnet.helius-rpc.com/?api-key={helius_key}"
@@ -74,8 +86,7 @@ class DexTrader:
             print("⚠️ Using Slow Public RPC (High risk of slippage failure)")
             self.rpc_url = 'https://api.mainnet-beta.solana.com'
             
-        print(f"DEBUG: Final RPC URL: {self.rpc_url}")
-        print(f"DEBUG: Helius Key Present: {bool(helius_key)}")
+        print(f"DEBUG: Trading RPC: {self.rpc_url[:50]}...")
         self._raw_secret = None  # Store raw secret for signing
         
         if private_key:
@@ -557,14 +568,15 @@ class DexTrader:
             if response.status_code == 200:
                 data = response.json()
                 if data and len(data) > 0:
-                    # Use 75th percentile for reliable landing, DOUBLED minimum for pump.fun priority
-                    tip_sol = data[0].get('landed_tips_75th_percentile', 0.001)
-                    # Force a minimum of 0.001 SOL (~$0.20) and max of 0.01 SOL for priority landing
-                    tip_sol = max(0.001, min(0.01, tip_sol))
+                    # Use 75th percentile for reliable landing
+                    tip_sol = data[0].get('landed_tips_75th_percentile', 0.002)
+                    # AGGRESSIVE: Minimum 0.002 SOL (~$0.40) for pump.fun priority
+                    # Max 0.01 SOL to avoid overpaying
+                    tip_sol = max(0.002, min(0.01, tip_sol))
                     return int(tip_sol * 1e9)
         except Exception as e:
             print(f"⚠️ Failed to fetch Jito tip floor: {e}")
-        return 1000000  # Default fallback: 0.001 SOL (1M lamps) - doubled for priority
+        return 2000000  # Default fallback: 0.002 SOL (2M lamports) - aggressive for pump.fun
     
     def execute_jito_bundle(self, token_mint, sol_amount):
         """

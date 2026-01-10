@@ -538,6 +538,74 @@ class SmartCopyTrader:
         return sell_signals
 
 
+    def prune_lazy_whales(self, inactive_hours=24):
+        """
+        Remove whales who haven't traded in X hours.
+        Returns count of pruned whales.
+        """
+        try:
+            from database import SessionLocal
+            import models
+            from datetime import datetime, timedelta
+            
+            db = SessionLocal()
+            cutoff = datetime.utcnow() - timedelta(hours=inactive_hours)
+            
+            # Find lazy whales (no last_active or older than cutoff)
+            lazy_whales = db.query(models.WhaleWallet).filter(
+                (models.WhaleWallet.last_active < cutoff) | 
+                (models.WhaleWallet.last_active == None)
+            ).all()
+            
+            pruned_count = 0
+            pruned_addresses = []
+            
+            for whale in lazy_whales:
+                address = whale.address
+                pruned_addresses.append(address[:8])
+                
+                # Remove from memory
+                if address in self.qualified_wallets:
+                    del self.qualified_wallets[address]
+                
+                # Remove from DB
+                db.delete(whale)
+                pruned_count += 1
+            
+            db.commit()
+            db.close()
+            
+            if pruned_count > 0:
+                self.logger.info(f"🧹 Pruned {pruned_count} lazy whales (inactive > {inactive_hours}h)")
+            
+            return pruned_count
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error pruning whales: {e}")
+            return 0
+    
+    def update_whale_activity(self, wallet_address):
+        """Update last_active timestamp for a whale when we see them trade."""
+        try:
+            from database import SessionLocal
+            import models
+            from datetime import datetime
+            
+            if wallet_address not in self.qualified_wallets:
+                return
+            
+            db = SessionLocal()
+            whale = db.query(models.WhaleWallet).filter(
+                models.WhaleWallet.address == wallet_address
+            ).first()
+            
+            if whale:
+                whale.last_active = datetime.utcnow()
+                db.commit()
+            db.close()
+        except Exception as e:
+            pass  # Silent fail - activity tracking is non-critical
+
 
     async def check_swarm_exit(self, token_mint):
         """

@@ -873,6 +873,23 @@ class AlertSystem(commands.Cog):
         except Exception as e:
             print(f"❌ Kraken Discovery error: {e}")
 
+    @tasks.loop(hours=6)
+    async def auto_prune_loop(self):
+        """Automatically prune lazy whales every 6 hours (24h inactivity threshold)."""
+        if not self.ready or not self.copy_trader:
+            return
+        if not self.bot.is_ready():
+            return
+        
+        print("🧹 Running auto-prune for lazy whales...")
+        pruned = self.copy_trader.prune_lazy_whales(inactive_hours=24)
+        
+        if pruned > 0:
+            channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
+            if channel_memes:
+                remaining = len(self.copy_trader.qualified_wallets)
+                await channel_memes.send(f"🧹 **Auto-Pruned {pruned} lazy whales** (inactive > 24h). {remaining} active whales remaining.")
+
     async def _check_and_alert(self, symbol, channel, asset_type):
         """Helper to fetch data, check exits, and process alerts."""
         try:
@@ -1385,18 +1402,22 @@ class AlertSystem(commands.Cog):
 
 
     @commands.command()
-    async def prune(self, ctx):
-        """Remove whales inactive for > 24 hours."""
+    async def prune(self, ctx, hours: int = 24):
+        """Remove whales inactive for > X hours (default 24h). Usage: !prune 24"""
         if not self.copy_trader:
             await ctx.send("⚠️ Copy Trader not initialized.")
             return
             
         before = len(self.copy_trader.qualified_wallets)
-        # Assuming we track 'last_active' or similar, strict prune for now just does nothing if logic missing
-        # For this version, simply clearing old ones manually via reset is safer, but I'll add a dummy prune
-        # actually, let's implement true prune if 'discovered_on' is old?
-        # Simpler: just tell user to use reset.
-        await ctx.send("✂️ **Pruning:** Feature pending. Please use `!reset` to clear all whales and `!hunt` to refresh.")
+        await ctx.send(f"🔍 Checking for whales inactive > {hours} hours...")
+        
+        pruned = self.copy_trader.prune_lazy_whales(inactive_hours=hours)
+        after = len(self.copy_trader.qualified_wallets)
+        
+        if pruned > 0:
+            await ctx.send(f"✂️ **Pruned {pruned} lazy whales!**\n📊 Before: {before} → After: {after} whales tracked.")
+        else:
+            await ctx.send(f"✅ All {after} whales are active. No lazy whales to prune.")
 
     @commands.command()
     async def polymarket(self, ctx):
