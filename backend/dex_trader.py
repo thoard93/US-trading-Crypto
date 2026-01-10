@@ -557,14 +557,14 @@ class DexTrader:
             if response.status_code == 200:
                 data = response.json()
                 if data and len(data) > 0:
-                    # Use 75th percentile for reliable landing, but floor at 0.0005 during congestion
-                    tip_sol = data[0].get('landed_tips_75th_percentile', 0.0005)
-                    # Force a minimum of 0.0005 SOL (~$0.10) and max of 0.01 SOL
-                    tip_sol = max(0.0005, min(0.01, tip_sol))
+                    # Use 75th percentile for reliable landing, DOUBLED minimum for pump.fun priority
+                    tip_sol = data[0].get('landed_tips_75th_percentile', 0.001)
+                    # Force a minimum of 0.001 SOL (~$0.20) and max of 0.01 SOL for priority landing
+                    tip_sol = max(0.001, min(0.01, tip_sol))
                     return int(tip_sol * 1e9)
         except Exception as e:
             print(f"⚠️ Failed to fetch Jito tip floor: {e}")
-        return 500000  # Default fallback: 0.0005 SOL (500,000 lamps)
+        return 1000000  # Default fallback: 0.001 SOL (1M lamps) - doubled for priority
     
     def execute_jito_bundle(self, token_mint, sol_amount):
         """

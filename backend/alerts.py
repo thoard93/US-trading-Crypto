@@ -1760,12 +1760,10 @@ class AlertSystem(commands.Cog):
                 print(f"🚫 Swarm analysis blocked for {symbol}: Liq/Safety/Vol failed.")
                 return
                 
-            # 5. Sizing (Reduced to 0.05 SOL for less price impact)
-            amount_sol = 0.05
+            # 5. Sizing (Reduced to 0.03 SOL for less price impact on pump.fun)
+            amount_sol = 0.03
             print(f"✅ All checks passed! Executing swarm buy for {symbol}...")
 
-            amount_sol = 0.05
-            print(f"✅ All checks passed! Executing swarm buy for {symbol}...")
             
             # 5. Execute for ALL traders (multi-user support)
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
