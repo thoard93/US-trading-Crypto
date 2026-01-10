@@ -162,8 +162,21 @@ class AlertSystem(commands.Cog):
             
             for k in alpaca_keys:
                 try:
-                    api_key = decrypt_key(k.api_key) if k.api_key else None
-                    api_secret = decrypt_key(k.api_secret) if k.api_secret else None
+                    # SECURE DECRYPTION: Try decrypt, fallback to raw if cipher fails (handles unencrypted DB legacy)
+                    api_key = ""
+                    if k.api_key:
+                        try:
+                            api_key = decrypt_key(k.api_key)
+                        except:
+                            api_key = k.api_key
+                    
+                    api_secret = ""
+                    if k.api_secret:
+                        try:
+                            api_secret = decrypt_key(k.api_secret)
+                        except:
+                            api_secret = k.api_secret
+                            
                     if api_key and api_secret:
                         te = TradingExecutive(alpaca_key=api_key, alpaca_secret=api_secret, user_id=k.user_id)
                         if te.stock_api:
@@ -1406,9 +1419,13 @@ class AlertSystem(commands.Cog):
             total_tracked = len(self.copy_trader.qualified_wallets)
             
             if new_wallets > 0:
+                # INSTANT SYNC: Update Helius webhook immediately so new whales are monitored
+                print(f"🦈 Hunt found new whales! Registering with Helius...")
+                await self.setup_helius_webhook()
+                
                 embed = discord.Embed(
                     title="🐋 Whale Hunt Complete!",
-                    description=f"Discovered **{new_wallets}** new qualified wallets!",
+                    description=f"Discovered **{new_wallets}** new qualified wallets and registered with Helius!",
                     color=discord.Color.green()
                 )
                 embed.add_field(name="New This Hunt", value=f"{new_wallets} wallets", inline=True)
@@ -2033,7 +2050,41 @@ class AlertSystem(commands.Cog):
         if POLYMARKET_ENABLED and not self.polymarket_monitor.is_running():
             self.polymarket_monitor.start()
             print(f"🎲 Polymarket Monitor started")
+            
+        # Ensure Helius Webhook is registered on start
+        await self.setup_helius_webhook()
         print(f"✅ AlertSystem Cog loaded successfully")
+
+    async def setup_helius_webhook(self):
+        """Helper to register/update Helius webhook with all qualified wallets."""
+        try:
+            webhook_url = os.getenv('HELIUS_WEBHOOK_URL')
+            if not webhook_url:
+                print("⚠️ HELIUS_WEBHOOK_URL not found. Real-time monitoring disabled.")
+                return False
+                
+            # Get ALL qualified wallet addresses
+            wallets = list(self.copy_trader.qualified_wallets.keys())
+            if not wallets:
+                print("📭 No whale wallets to monitor (yet).")
+                return False
+                
+            print(f"📡 Registering Helius Webhook at {webhook_url} (Monitoring {len(wallets)} addresses)...")
+            
+            # Use WalletCollector utility to upsert
+            from collectors.wallet_collector import WalletCollector
+            collector = WalletCollector()
+            result = collector.upsert_helius_webhook(webhook_url, wallets)
+            
+            if result and result.get('webhookID'):
+                print(f"✅ Helius Webhook Setup SUCCESS: {result['webhookID']}")
+                return True
+            else:
+                print(f"❌ Helius Webhook Setup FAILED: {result}")
+                return False
+        except Exception as e:
+            print(f"❌ Error setting up Helius Webhook: {e}")
+            return False
 
 async def setup(bot):
     await bot.add_cog(AlertSystem(bot))

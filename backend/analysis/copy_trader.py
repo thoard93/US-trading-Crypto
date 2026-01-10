@@ -431,7 +431,7 @@ class SmartCopyTrader:
         signals = []
         now = datetime.utcnow()
         
-        # 1. PRUNE
+        # 1. PRUNE RECENT ACTIVITY
         self._recent_whale_activity = [
             x for x in self._recent_whale_activity 
             if (now - x['timestamp']).total_seconds() / 60 <= window_minutes
@@ -445,14 +445,27 @@ class SmartCopyTrader:
         for entry in self._recent_whale_activity:
             cluster[entry['mint']].add(entry['wallet'])
         
+        # 🔍 SWARM PRUNING (Phase 42 Improvement)
+        # Remove tokens from active_swarms (and DB) if they no longer meet the threshold
+        # This allows them to "re-signal" if a new swarm forms later.
+        active_mint_list = list(self.active_swarms.keys())
+        for mint in active_mint_list:
+            if cluster.get(mint, set()) == set(): # No activity at all in the window
+                self.logger.info(f"🧹 Pruning dead swarm: {mint[:16]}... (cooled down)")
+                if mint in self.active_swarms:
+                    del self.active_swarms[mint]
+                # Cleanup DB so it doesn't restore on next reboot
+                self._delete_swarm_from_db(mint)
+
         # 🔍 DIAGNOSTIC: Show top tokens by whale interest
         if cluster:
             sorted_tokens = sorted(cluster.items(), key=lambda x: len(x[1]), reverse=True)[:3]
             top_info = ", ".join([f"{m[:8]}...({len(w)} whales)" for m, w in sorted_tokens])
+            # Lowered visibility threshold to 2 whales so user can see "Near Swarms"
             if sorted_tokens and len(sorted_tokens[0][1]) >= 2:
                 self.logger.info(f"📊 Top Tokens: {top_info}")
             
-        # 3. FILTER
+        # 3. FILTER / SIGNAL
         for mint, buyers in cluster.items():
             if len(buyers) >= min_buyers:
                 if mint in self.active_swarms:
@@ -465,6 +478,18 @@ class SmartCopyTrader:
                     self._save_swarm_participant(mint, whale)
                     
         return signals
+
+    def _delete_swarm_from_db(self, mint):
+        """Removes a swarm and its participants from the database."""
+        try:
+            from database import SessionLocal
+            from models import ActiveSwarm
+            db = SessionLocal()
+            db.query(ActiveSwarm).filter(ActiveSwarm.token_address == mint).delete()
+            db.commit()
+            db.close()
+        except Exception as e:
+            self.logger.error(f"Error pruning swarm from DB: {e}")
 
 
     def detect_whale_sells(self, transactions, held_tokens):

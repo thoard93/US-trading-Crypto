@@ -13,12 +13,15 @@ class StockCollector:
         self.secret_key = (secret_key or os.getenv('ALPACA_SECRET_KEY', '')).strip() or None
         self.base_url = (base_url or os.getenv('ALPACA_BASE_URL', 'https://paper-api.alpaca.markets')).strip()
         
-        if self.api_key and self.secret_key:
-            self.api = REST(self.api_key, self.secret_key, self.base_url)
-            print(f"✅ StockCollector initialized with Alpaca keys (Base: {self.base_url}).")
-        else:
-            self.api = None
-            print("⚠️ StockCollector initialized WITHOUT Alpaca keys. Stock collection disabled.")
+    def _switch_base_url(self):
+        """Switches between Paper and Live URLs."""
+        paper = 'https://paper-api.alpaca.markets'
+        live = 'https://api.alpaca.markets'
+        
+        new_url = live if self.base_url == paper else paper
+        print(f"🔄 Alpaca: Switching base_url from {self.base_url} to {new_url} (401 Retry)")
+        self.base_url = new_url
+        self.api = REST(self.api_key, self.secret_key, self.base_url)
 
     def fetch_ohlcv(self, symbol, timeframe='1Hour', limit=100):
         """
@@ -29,55 +32,63 @@ class StockCollector:
             return None
             
         try:
-            # Map common strings to Alpaca TimeFrame constants
-            tf_map = {
-                '1Min': TimeFrame.Minute,
-                '5Min': TimeFrame.Minute,
-                '1Hour': TimeFrame.Hour,
-                '1Day': TimeFrame.Day
-            }
-            tf = tf_map.get(timeframe, TimeFrame.Hour)
-            
-            # Calculate start date based on timeframe and limit
-            # For hourly bars, go back ~2 weeks to ensure we get enough bars
-            if timeframe == '1Hour':
-                start = datetime.now() - timedelta(days=14)
-            elif timeframe == '1Day':
-                start = datetime.now() - timedelta(days=limit + 10)
-            else:
-                start = datetime.now() - timedelta(hours=limit * 2)
-            
-            # Format for Alpaca API
-            start_str = start.strftime('%Y-%m-%d')
-            
-            # Fetch historical bars with explicit start date
-            bars = self.api.get_bars(
-                symbol, 
-                tf, 
-                start=start_str,
-                limit=min(limit, 500)
-            ).df
-            
-            if bars.empty:
-                print(f"⚠️ No bars returned for {symbol}")
-                return None
-            
-            # Standardize column names for the Technical Engine
-            bars = bars.reset_index()
-            bars = bars.rename(columns={
-                'timestamp': 'timestamp', 
-                'open': 'open', 
-                'high': 'high', 
-                'low': 'low', 
-                'close': 'close', 
-                'volume': 'volume'
-            })
-            
-            print(f"📊 Fetched {len(bars)} bars for {symbol}")
-            return bars
+            return self._fetch_ohlcv_internal(symbol, timeframe, limit)
         except Exception as e:
-            print(f"Error fetching stock data for {symbol}: {e}")
+            if "401" in str(e) or "Unauthorized" in str(e):
+                self._switch_base_url()
+                try:
+                    return self._fetch_ohlcv_internal(symbol, timeframe, limit)
+                except Exception as e2:
+                    print(f"❌ Alpaca: Retry failed for {symbol}: {e2}")
+            else:
+                print(f"Error fetching stock data for {symbol}: {e}")
             return None
+
+    def _fetch_ohlcv_internal(self, symbol, timeframe='1Hour', limit=100):
+        # Map common strings to Alpaca TimeFrame constants
+        tf_map = {
+            '1Min': TimeFrame.Minute,
+            '5Min': TimeFrame.Minute,
+            '15Min': TimeFrame.Minute,
+            '1Hour': TimeFrame.Hour,
+            '1Day': TimeFrame.Day
+        }
+        tf = tf_map.get(timeframe, TimeFrame.Hour)
+        
+        # Calculate start date based on timeframe and limit
+        if timeframe == '1Hour':
+            start = datetime.now() - timedelta(days=14)
+        elif timeframe == '1Day':
+            start = datetime.now() - timedelta(days=limit + 10)
+        else:
+            start = datetime.now() - timedelta(hours=limit * 2)
+        
+        # Format for Alpaca API
+        start_str = start.strftime('%Y-%m-%d')
+        
+        # Fetch historical bars
+        bars = self.api.get_bars(
+            symbol, 
+            tf, 
+            start=start_str,
+            limit=min(limit, 500)
+        ).df
+        
+        if bars.empty:
+            return None
+        
+        # Standardize column names
+        bars = bars.reset_index()
+        bars = bars.rename(columns={
+            'index': 'timestamp', # Alpaca V2 DF index is timestamp
+            'timestamp': 'timestamp', 
+            'open': 'open', 
+            'high': 'high', 
+            'low': 'low', 
+            'close': 'close', 
+            'volume': 'volume'
+        })
+        return bars
 
     def get_current_price(self, symbol):
         """Fetch the latest trade price."""
@@ -89,15 +100,27 @@ class StockCollector:
         if not self.api:
             return None
         try:
-            snapshot = self.api.get_snapshot(symbol)
-            price = snapshot.latest_trade.price
-            prev_close = snapshot.prev_daily_bar.close if snapshot.prev_daily_bar else price
-            change = ((price / prev_close) - 1) * 100 if prev_close else 0.0
-            return {
-                "price": price,
-                "change": round(change, 2)
-            }
+            return self._get_stock_data_internal(symbol)
         except Exception as e:
+            if "401" in str(e) or "Unauthorized" in str(e):
+                self._switch_base_url()
+                try:
+                    return self._get_stock_data_internal(symbol)
+                except Exception as e2:
+                    print(f"❌ Alpaca: Snapshot retry failed for {symbol}: {e2}")
+            else:
+                print(f"Error fetching snapshot for {symbol}: {e}")
+            return None
+
+    def _get_stock_data_internal(self, symbol):
+        snapshot = self.api.get_snapshot(symbol)
+        price = snapshot.latest_trade.price
+        prev_close = snapshot.prev_daily_bar.close if snapshot.prev_daily_bar else price
+        change = ((price / prev_close) - 1) * 100 if prev_close else 0.0
+        return {
+            "price": price,
+            "change": round(change, 2)
+        }
             print(f"Error fetching snapshot for {symbol}: {e}")
             return None
 
