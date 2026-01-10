@@ -1,8 +1,10 @@
 import discord
 import json
+import os
 from discord.ext import tasks, commands
 import asyncio
 import datetime
+
 from collectors.crypto_collector import CryptoCollector
 from collectors.stock_collector import StockCollector
 from analysis.technical_engine import TechnicalAnalysis
@@ -1167,12 +1169,13 @@ class AlertSystem(commands.Cog):
 
                         trade_embed = discord.Embed(
                             title=trade_title,
-                            description=f"Automated order for **{symbol}** successful.",
+                            description=f"Automated order for **{symbol}** successful.\n**User:** {self.trader.user_id}",
                             color=discord.Color.dark_gold()
                         )
                         trade_embed.add_field(name="Amount Used", value=f"${trade_amount}", inline=True)
                         trade_embed.add_field(name="Order ID", value=trade_result.get('id', 'N/A'), inline=True)
                         await channel.send(embed=trade_embed)
+
                     elif trade_result and "error" in trade_result:
                         print(f"❌ Auto-trade failed for {symbol}: {trade_result['error']}")
             else:
@@ -1799,14 +1802,15 @@ class AlertSystem(commands.Cog):
                 else:
                     # Buy failed - log to Discord and add to cooldown
                     error_msg = result.get('error', 'Unknown error')
-                    print(f"❌ Swarm Buy FAILED for {symbol}: {error_msg}")
+                    print(f"❌ Swarm Buy FAILED for {symbol} (User {user_label}): {error_msg}")
                     
                     # Add to cooldown to prevent infinite retries
                     self._failed_tokens[mint] = datetime.datetime.now().timestamp()
                     self.save_failed_tokens()
                     
                     if channel_memes:
-                        await channel_memes.send(f"❌ **Swarm Buy Failed:** `{symbol}` - {error_msg[:50]}... (5min cooldown)")
+                        await channel_memes.send(f"❌ **Swarm Buy Failed (User {user_label}):** `{symbol}` - {error_msg[:50]}... (5min cooldown)")
+
 
         except Exception as e:
             print(f"❌ Execute Swarm Error: {e}")

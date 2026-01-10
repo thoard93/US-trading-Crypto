@@ -366,8 +366,10 @@ class DexTrader:
                 sim_response = requests.post(self.rpc_url, json={
                     "jsonrpc": "2.0", "id": 1,
                     "method": "simulateTransaction",
-                    "params": [signed_tx_base64, {"encoding": "base64", "commitment": "processed"}]
+                    # PHASE 43.1: Use 'confirmed' commitment for more reliable simulation
+                    "params": [signed_tx_base64, {"encoding": "base64", "commitment": "confirmed"}]
                 }, timeout=10)
+
                 sim_result = sim_response.json()
                 sim_err = sim_result.get('result', {}).get('err')
                 

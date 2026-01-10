@@ -157,15 +157,23 @@ class TradingExecutive:
         return None
 
     def get_usdt_balance(self):
-        """Fetch current USDT balance. Returns None on network error to prevent false '0.00' balance."""
+        """Fetch current USDT balance with retry logic for flaky networks."""
         if not self.exchange:
             return 0
-        try:
-            balance = self.exchange.fetch_balance()
-            return balance.get('USDT', {}).get('free', 0)
-        except Exception as e:
-            print(f"⚠️ Kraken Balance Fetch Failed (Flaky Network): {e}")
-            return None
+        
+        import time
+        for attempt in range(3):  # Try up to 3 times
+            try:
+                balance = self.exchange.fetch_balance()
+                return balance.get('USDT', {}).get('free', 0)
+            except Exception as e:
+                if attempt < 2:
+                    print(f"⚠️ Kraken Balance Fetch attempt {attempt+1} failed, retrying in 2s: {e}")
+                    time.sleep(2)
+                else:
+                    print(f"⚠️ Kraken Balance Fetch Failed after 3 attempts: {e}")
+                    return None
+
 
     def execute_market_buy(self, symbol, amount_usdt=10.0, risk_factor=1.0):
         """Execute a market buy order with risk-adjusted sizing."""
