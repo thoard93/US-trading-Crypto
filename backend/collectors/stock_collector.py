@@ -121,8 +121,6 @@ class StockCollector:
             "price": price,
             "change": round(change, 2)
         }
-            print(f"Error fetching snapshot for {symbol}: {e}")
-            return None
 
     def get_account(self):
         """Get account info including buying power."""
