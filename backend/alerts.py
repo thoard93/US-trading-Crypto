@@ -215,6 +215,8 @@ class AlertSystem(commands.Cog):
 
     @tasks.loop(minutes=10)  # POSITION TRADER MODE: Was 2 min, now 10 min (reduce churning)
     async def monitor_market(self):
+        if not self.ready:
+            return
         if not self.bot.is_ready():
             await self.bot.wait_until_ready()
 
@@ -369,6 +371,8 @@ class AlertSystem(commands.Cog):
     @tasks.loop(minutes=3)  # POSITION TRADER MODE: Was 15s, now 3 min (stop churning)
     async def dex_monitor(self):
         """Dedicated high-speed loop for DEX memecoins (30s)."""
+        if not self.ready:
+            return
         if not self.bot.is_ready():
             return
             
@@ -707,75 +711,11 @@ class AlertSystem(commands.Cog):
                 
                 await asyncio.sleep(0.5)
 
-    async def _check_and_alert(self, symbol, channel, asset_type):
-        """Helper to fetch data, check exits, and process alerts."""
-        try:
-            # Use 5m timeframe for scalping/memes, 1h for stocks
-            tf = '5m' if asset_type in ["Meme", "Crypto"] else '1h'
-            
-            # Use different collectors based on asset type
-            if asset_type == "Stock":
-                data = self.stocks.fetch_ohlcv(symbol, timeframe='1Hour', limit=100)
-            else:
-                data = self.crypto.fetch_ohlcv(symbol, timeframe=tf, limit=100)
-            
-            if data is None or data.empty:
-                return
-
-            current_price = data.iloc[-1]['close']
-            p_str = f"{current_price:.8f}" if current_price < 1.0 else f"{current_price:.2f}"
-            
-            # Stop-Loss / Take-Profit (Only if we have a position)
-            if symbol in self.trader.active_positions:
-                exit_reason = self.trader.check_exit_conditions(symbol, current_price)
-                if exit_reason:
-                    if asset_type == "Stock":
-                        exit_res = self.trader.execute_market_sell_stock(symbol)
-                    else:
-                        exit_res = self.trader.execute_market_sell(symbol)
-
-                    if "error" not in exit_res:
-                        embed = discord.Embed(
-                            title=f"🚨 AUTO-EXIT ({asset_type.upper()}): {exit_reason}",
-                            description=f"Closed position for **{symbol}** at ${p_str}",
-                            color=discord.Color.orange()
-                        )
-                        await channel.send(embed=embed)
-                        if symbol in self.trader.active_positions:
-                            del self.trader.active_positions[symbol]
-                            # Clean up stock specific tracking
-                            if symbol in self.stock_positions:
-                                del self.stock_positions[symbol]
-                        
-                        # Record exit time for cooldown
-                        self.last_exit_times[symbol] = datetime.datetime.now()
-                        
-                        # CRITICAL: Return here to prevent the bot from immediately re-buying
-                        # if the trend analysis still says 'BUY'
-                        print(f"🛑 Position exited for {symbol}. Cooldown started. Skipping further analysis.")
-                        return 
-                    else:
-                        # Handle specific sell errors (e.g., Ghost positions)
-                        err_msg = str(exit_res.get('error', '')).lower()
-                        if "insufficient qty" in err_msg or "not found" in err_msg:
-                            print(f"⚠️ Ghost position detected for {symbol}. Clearing local state.")
-                            if symbol in self.trader.active_positions:
-                                del self.trader.active_positions[symbol]
-                            if symbol in self.stock_positions:
-                                del self.stock_positions[symbol]
-                            return
-            
-            await asyncio.sleep(0.1) # Tiny delay to allow state to settle
-            await self._process_alert(channel, symbol, data, asset_type)
-        except Exception as e:
-            # Don't spam discovery errors
-            if "does not have market symbol" not in str(e):
-                print(f"⚠️ Error checking {symbol}: {e}")
-        await asyncio.sleep(0.3)
-
     @tasks.loop(minutes=10)  # POSITION TRADER MODE: Was 2 min, now 10 min
     async def discovery_loop(self):
         """Find new trending DEX gems automatically - SNIPER MODE."""
+        if not self.ready:
+            return
         if not self.bot.is_ready(): return
         
         # COPY-TRADING ONLY MODE: Skip discovery when auto-trade is disabled
@@ -868,6 +808,358 @@ class AlertSystem(commands.Cog):
     @tasks.loop(hours=1)
     async def kraken_discovery_loop(self):
         """Automatically find top volume cryptos on Kraken."""
+        if not self.ready:
+            return
+        if not self.bot.is_ready(): return
+        
+        print("🔍 Running Kraken Market Discovery...")
+        try:
+            # Load markets to ensure valid mapping
+            markets = self.crypto.exchange.load_markets()
+            
+            # Fetch all tickers from Kraken
+            tickers = self.crypto.exchange.fetch_tickers()
+            usdt_tickers = []
+            
+            for symbol, ticker in tickers.items():
+                # Filter for USDT pairs that are ACTUALLY tradable
+                if '/USDT' in symbol and ticker.get('quoteVolume') and symbol in markets:
+                    m = markets[symbol]
+                    if m.get('active') and m.get('spot'):
+                        usdt_tickers.append({
+                            'symbol': symbol,
+                            'volume': float(ticker.get('quoteVolume', 0)),
+                            'price': float(ticker.get('last', 0))
+                        })
+            
+            # Sort by volume (Top 30)
+            sorted_tickers = sorted(usdt_tickers, key=lambda x: x['volume'], reverse=True)[:30]
+            
+            new_majors = []
+            new_memes = []
+            
+            for t in sorted_tickers:
+                s = t['symbol']
+                p = t['price']
+                
+                # Exclude USDC/USDT and specific restricted pairs if we find them
+                if 'USDC' in s or 'PYUSD' in s: continue
+                
+                # Exclude sub-pennies/memes from majors
+                if p > 0.5 and s not in new_majors:
+                    new_majors.append(s)
+                elif p <= 0.5 and s not in new_memes:
+                    new_memes.append(s)
+            
+            # Core pairs (that we know work or want anyway)
+            core_majors = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
+            core_memes = ['DOGE/USDT', 'SHIB/USDT', 'ADA/USDT']
+            
+            self.majors_watchlist = sorted(list(set(core_majors + new_majors[:8])))
+            self.memes_watchlist = sorted(list(set(core_memes + new_memes[:12])))
+            
+            print(f"✅ Kraken Watchlist Updated: Majors({len(self.majors_watchlist)}), Memes({len(self.memes_watchlist)})")
+            
+        except Exception as e:
+            print(f"❌ Kraken Discovery error: {e}")
+
+    async def _check_and_alert(self, symbol, channel, asset_type):
+        """Helper to fetch data, check exits, and process alerts."""
+        try:
+            # Use 5m timeframe for scalping/memes, 1h for stocks
+            tf = '5m' if asset_type in ["Meme", "Crypto"] else '1h'
+            
+            # Use different collectors based on asset type
+            if asset_type == "Stock":
+                data = self.stocks.fetch_ohlcv(symbol, timeframe='1Hour', limit=100)
+            else:
+                data = self.crypto.fetch_ohlcv(symbol, timeframe=tf, limit=100)
+            
+            if data is None or data.empty:
+                return
+
+            current_price = data.iloc[-1]['close']
+            p_str = f"{current_price:.8f}" if current_price < 1.0 else f"{current_price:.2f}"
+            
+            # Stop-Loss / Take-Profit (Only if we have a position)
+            if symbol in self.trader.active_positions:
+                exit_reason = self.trader.check_exit_conditions(symbol, current_price)
+                if exit_reason:
+                    if asset_type == "Stock":
+                        exit_res = self.trader.execute_market_sell_stock(symbol)
+                    else:
+                        exit_res = self.trader.execute_market_sell(symbol)
+
+                    if "error" not in exit_res:
+                        embed = discord.Embed(
+                            title=f"🚨 AUTO-EXIT ({asset_type.upper()}): {exit_reason}",
+                            description=f"Closed position for **{symbol}** at ${p_str}",
+                            color=discord.Color.orange()
+                        )
+                        await channel.send(embed=embed)
+                        if symbol in self.trader.active_positions:
+                            del self.trader.active_positions[symbol]
+                            # Clean up stock specific tracking
+                            if symbol in self.stock_positions:
+                                del self.stock_positions[symbol]
+                        
+                        # Record exit time for cooldown
+                        self.last_exit_times[symbol] = datetime.datetime.now()
+                        
+                        # CRITICAL: Return here to prevent the bot from immediately re-buying
+                        # if the trend analysis still says 'BUY'
+                        print(f"🛑 Position exited for {symbol}. Cooldown started. Skipping further analysis.")
+                        return 
+                    else:
+                        # Handle specific sell errors (e.g., Ghost positions)
+                        err_msg = str(exit_res.get('error', '')).lower()
+                        if "insufficient qty" in err_msg or "not found" in err_msg:
+                            print(f"⚠️ Ghost position detected for {symbol}. Clearing local state.")
+                            if symbol in self.trader.active_positions:
+                                del self.trader.active_positions[symbol]
+                            if symbol in self.stock_positions:
+                                del self.stock_positions[symbol]
+                            return
+            
+            await asyncio.sleep(0.1) # Tiny delay to allow state to settle
+            await self._process_alert(channel, symbol, data, asset_type)
+        except Exception as e:
+            # Don't spam discovery errors
+            if "does not have market symbol" not in str(e):
+                print(f"⚠️ Error checking {symbol}: {e}")
+        await asyncio.sleep(0.3)
+
+    @tasks.loop(seconds=30)
+    async def swarm_monitor(self):
+        """The Copy-Trading Engine."""
+        if not self.ready:
+            return
+        if not self.bot.is_ready():
+            return
+        
+        # High-frequency swarm monitoring
+        try:
+            # 1. Check for new whale trades (Helius Webhook)
+            # This is handled by the Helius webhook listener, not polled here.
+            # This loop is for processing existing swarm data and potential exits.
+
+            # 2. Process active swarms for exits (SL/TP/Whale Exit)
+            if self.copy_trader.active_swarms:
+                print(f"🌊 Monitoring {len(self.copy_trader.active_swarms)} active swarms...")
+                channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
+                
+                for token_address, participants in list(self.copy_trader.active_swarms.items()):
+                    try:
+                        pair_data = await self.dex_scout.get_pair_data('solana', token_address)
+                        if not pair_data:
+                            continue
+                        info = self.dex_scout.extract_token_info(pair_data)
+                        current_price = info.get('price_usd')
+                        symbol = info.get('symbol', 'UNKNOWN')
+
+                        if not current_price:
+                            continue
+
+                        # Check for whale exits (if a significant portion of original whales have sold)
+                        # This is handled by the Helius webhook listener, which updates `whale_exit_signals`.
+                        # We just need to react to those signals here.
+                        
+                        # Check if we have an active position for this token
+                        if self.dex_traders:
+                            for trader in self.dex_traders:
+                                if token_address in trader.positions:
+                                    pos = trader.positions[token_address]
+                                    entry_price = pos.get('entry_price_usd')
+                                    should_sell = False
+                                    reason = ""
+                                    user_label = getattr(trader, 'user_id', 'Main')
+
+                                    if entry_price:
+                                        pnl = ((current_price - entry_price) / entry_price) * 100
+
+                                        # --- SWARM DUMP EXIT (Smart Copy) ---
+                                        if token_address in self.copy_trader.whale_exit_signals:
+                                            should_sell = True
+                                            reason = f"📉 Swarm Dump (Whales exiting)"
+                                            del self.copy_trader.whale_exit_signals[token_address] # Clear signal after processing
+
+                                        # --- TRAILING STOP (for Swarm positions) ---
+                                        # Update high water mark
+                                        if 'highest_price_usd' not in pos:
+                                            pos['highest_price_usd'] = entry_price
+                                        if current_price > pos['highest_price_usd']:
+                                            pos['highest_price_usd'] = current_price
+                                        
+                                        # Trigger trailing stop if +10% reached
+                                        if pnl >= 10.0 and not should_sell:
+                                            peak = pos['highest_price_usd']
+                                            drawdown = ((peak - current_price) / peak) * 100
+                                            if drawdown >= 5.0:  # 5% drop from peak
+                                                locked_gain = ((current_price - entry_price) / entry_price) * 100
+                                                should_sell = True
+                                                reason = f"📉 Trailing Stop (Locked +{locked_gain:.1f}% from +{pnl:.1f}% peak)"
+                                        
+                                        # Hard Stop Loss (for Swarm positions)
+                                        elif pnl <= -25.0: # SL: -25%
+                                            should_sell = True
+                                            reason = f"🛑 Stop Loss ({pnl:.1f}%)"
+                                        
+                                        if should_sell:
+                                            res = trader.sell_token(token_address)
+                                            if res.get('success'):
+                                                await channel_memes.send(f"{reason}: USER {user_label} Sold {symbol}")
+                                                
+                                                # SET COOLDOWN: Prevent re-buying for 5 minutes
+                                                self.dex_exit_cooldowns[token_address] = datetime.datetime.now().timestamp()
+                                                
+                                                # DELETE FROM DATABASE
+                                                try:
+                                                    db = SessionLocal()
+                                                    db.query(models.DexPosition).filter(
+                                                        models.DexPosition.wallet_address == trader.wallet_address,
+                                                        models.DexPosition.token_address == token_address
+                                                    ).delete()
+                                                    db.commit()
+                                                    print(f"🗑️ Removed DEX position {symbol} from DB")
+                                                except Exception as db_err:
+                                                    print(f"⚠️ DB delete error: {db_err}")
+                                                finally:
+                                                    db.close()
+                                                
+                                                # Remove from active swarms if all traders have exited
+                                                # This logic might need refinement if multiple traders are in the same swarm
+                                                # For now, if *this* trader exits, we consider it done for them.
+                                                # If no other traders hold it, it will naturally be removed from active_swarms
+                                                # when the last trader's position is gone.
+                                                
+                                            else:
+                                                error_msg = res.get('error', '')
+                                                print(f"⚠️ Sell failed for {symbol}: {error_msg}")
+                                                if 'No tokens to sell' in str(error_msg):
+                                                    if token_address in trader.positions:
+                                                        del trader.positions[token_address]
+                                                        print(f"👻 Cleared ghost position {symbol} from memory")
+                                                    try:
+                                                        db = SessionLocal()
+                                                        db.query(models.DexPosition).filter(
+                                                            models.DexPosition.wallet_address == trader.wallet_address,
+                                                            models.DexPosition.token_address == token_address
+                                                        ).delete()
+                                                        db.commit()
+                                                    except Exception:
+                                                        pass
+                                                    finally:
+                                                        db.close()
+                    except Exception as e:
+                        print(f"⚠️ Error monitoring swarm token {token_address}: {e}")
+                    
+                    await asyncio.sleep(0.1) # Small delay to prevent rate limits
+            else:
+                # print("😴 No active swarms to monitor.")
+                pass
+
+        except Exception as e:
+            print(f"❌ Error in swarm_monitor loop: {e}")
+
+    @tasks.loop(minutes=10)  # POSITION TRADER MODE: Was 2 min, now 10 min
+    async def discovery_loop(self):
+        """Find new trending DEX gems automatically - SNIPER MODE."""
+        if not self.ready:
+            return
+        if not self.bot.is_ready(): return
+        
+        # COPY-TRADING ONLY MODE: Skip discovery when auto-trade is disabled
+        if not self.dex_auto_trade:
+            return  # Only trade via swarm copy-trading
+        
+        print("🔍 Running DEX Gem Discovery... (SNIPER MODE)")
+        channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
+        
+        new_gems = []
+        
+        # 1. Fetch TRENDING Solana pairs (top pumpers)
+        try:
+            trending = await self.dex_scout.get_trending_solana_pairs(min_liquidity=self.dex_min_liquidity, limit=10)
+            for pair in trending:
+                addr = pair.get('baseToken', {}).get('address')
+                if not addr:
+                    continue
+                    
+                # Skip if already tracking
+                if any(item['address'] == addr for item in self.dex_watchlist + self.trending_dex_gems):
+                    continue
+                
+                # Check if pumping enough (1% in 5 min)
+                change_5m = float(pair.get('priceChange', {}).get('m5', 0))
+                liquidity = float(pair.get('liquidity', {}).get('usd', 0))
+                
+                if change_5m >= 1.0 and liquidity >= self.dex_min_liquidity:
+                    # Quick safety check
+                    audit = await self.safety.check_token(addr, "solana")
+                    safety_score = audit.get('safety_score', 0)
+                    
+                if safety_score >= self.dex_min_safety_score:
+                    new_gems.append({"chain": "solana", "address": addr})
+                    
+                    # ONLY send alerts if Auto-Trading is enabled (Sniper Mode)
+                    # Prevents spamming "Gem Found" alerts during Copy-Trading only mode
+                    if self.dex_auto_trade:
+                        if channel_memes:
+                            embed = discord.Embed(
+                                title=f"🎯 SNIPER TARGET: {pair.get('baseToken', {}).get('symbol')}",
+                                description=f"**+{change_5m:.1f}%** in 5min | Safety: {safety_score}/100",
+                                color=discord.Color.gold()
+                            )
+                            embed.add_field(name="Price", value=f"${float(pair.get('priceUsd', 0)):.8f}", inline=True)
+                            embed.add_field(name="Liquidity", value=f"${liquidity:,.0f}", inline=True)
+                            
+                            # IMMEDIATE SNIPE when discovery finds a good gem
+                            if (self.dex_trader and 
+                                self.dex_trader.wallet_address and
+                                addr not in self.dex_trader.positions and
+                                len(self.dex_trader.positions) < self.dex_max_positions):
+                                
+                                trade_result = self.dex_trader.buy_token(addr)
+                                if trade_result.get('success'):
+                                    embed.add_field(
+                                        name="🤖 SNIPED!", 
+                                        value=f"TX: `{trade_result['signature'][:16]}...`", 
+                                        inline=False
+                                    )
+                                    embed.color = discord.Color.green()
+                                else:
+                                    embed.add_field(name="⚠️ Snipe Failed", value=trade_result.get('error', 'Unknown')[:100], inline=False)
+                            
+                            await channel_memes.send(embed=embed)
+        except Exception as e:
+            print(f"⚠️ Trending scan error: {e}")
+        
+        # 2. Fetch token profiles (original method)
+        try:
+            profiles = await self.dex_scout.get_latest_token_profiles()
+            if profiles:
+                for p in profiles[:5]:
+                    addr = p.get('tokenAddress')
+                    chain = p.get('chainId')
+                    
+                    if any(item['address'] == addr for item in self.dex_watchlist + self.trending_dex_gems + new_gems):
+                        continue
+                        
+                    audit = await self.safety.check_token(addr, "solana" if chain == 'solana' else "1")
+                    if audit.get('safety_score', 0) >= self.dex_min_safety_score:
+                        new_gems.append({"chain": chain, "address": addr})
+        except Exception as e:
+            print(f"⚠️ Profile scan error: {e}")
+
+        # Update trending gems (keep them for multiple cycles)
+        self.trending_dex_gems = new_gems + self.trending_dex_gems[:15]
+        print(f"📊 Tracking {len(self.trending_dex_gems)} trending gems")
+
+    @tasks.loop(hours=1)
+    async def kraken_discovery_loop(self):
+        """Automatically find top volume cryptos on Kraken."""
+        if not self.ready:
+            return
         if not self.bot.is_ready(): return
         
         print("🔍 Running Kraken Market Discovery...")
@@ -1194,6 +1486,10 @@ class AlertSystem(commands.Cog):
     @commands.command()
     async def scan(self, ctx):
         """Manually trigger a market scan."""
+        if not self.ready:
+            await ctx.send("⏳ **System warming up...** Data and traders are loading in the background. Please wait ~30s.")
+            return
+            
         await ctx.send("⚡ Triggering Full Market Scan summary...")
         
         scan_results = []
@@ -1249,12 +1545,20 @@ class AlertSystem(commands.Cog):
     @commands.command()
     async def balance(self, ctx):
         """Check Kraken USDT balance."""
+        if not self.ready:
+            await ctx.send("⏳ **System warming up...** Trading engines are initializing. Please wait.")
+            return
+            
         bal = self.trader.get_usdt_balance()
         await ctx.send(f"💰 **Kraken Portfolio Balance:** `{bal}` USDT")
 
     @commands.command()
     async def hunt(self, ctx):
         """Manually trigger whale wallet discovery."""
+        if not self.ready:
+            await ctx.send("⏳ **System warming up...** Copy-trader data is loading. Please wait.")
+            return
+            
         # Prevent concurrent hunts
         if not hasattr(self, '_hunt_lock'):
             self._hunt_lock = False
@@ -1301,6 +1605,10 @@ class AlertSystem(commands.Cog):
     @commands.command()
     async def whales(self, ctx):
         """List currently tracked whale wallets."""
+        if not self.ready:
+            await ctx.send("⏳ **System warming up...** Loading wallet cache...")
+            return
+            
         wallets = self.copy_trader.qualified_wallets
         
         if not wallets:

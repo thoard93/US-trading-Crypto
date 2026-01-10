@@ -13,6 +13,16 @@ class StockCollector:
         self.secret_key = (secret_key or os.getenv('ALPACA_SECRET_KEY', '')).strip() or None
         self.base_url = (base_url or os.getenv('ALPACA_BASE_URL', 'https://paper-api.alpaca.markets')).strip()
         
+        # Initialize Alpaca API client
+        if self.api_key and self.secret_key:
+            try:
+                self.api = REST(self.api_key, self.secret_key, self.base_url)
+            except Exception as e:
+                print(f"⚠️ Alpaca Client Init failed: {e}")
+                self.api = None
+        else:
+            self.api = None
+        
     def _switch_base_url(self):
         """Switches between Paper and Live URLs."""
         paper = 'https://paper-api.alpaca.markets'
