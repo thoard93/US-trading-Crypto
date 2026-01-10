@@ -1558,7 +1558,8 @@ class AlertSystem(commands.Cog):
             self._swarm_diag_tick += 1
             
             # 1. ANALYZE SWARMS (Decoupled from Webhooks - runs 100% in memory)
-            signals = self.copy_trader.analyze_swarms()
+            # Increased min_buyers from 3 to 4 for more established swarms (less slippage failures)
+            signals = self.copy_trader.analyze_swarms(min_buyers=4)
             
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
             
@@ -1837,16 +1838,34 @@ class AlertSystem(commands.Cog):
             print(f"🚨 INSTANT EXIT: Whales selling {symbol} ({mint[:16]}...)!")
             
             if channel_memes:
-                await channel_memes.send(f"🚨 **WHALE SELL DETECTED!** 📉\n`{symbol}` - Triggering instant exit for all users...")
+                await channel_memes.send(f"🚨 **WHALE SELL DETECTED!** 📉\n`{symbol}` - Checking positions...")
             
             # Execute sell for ALL traders who hold this token
             for trader in self.dex_traders:
                 user_label = getattr(trader, 'user_id', 'Main')
                 
+                # SAFETY CHECK 1: Must be in our tracked positions
                 if mint not in trader.positions:
+                    print(f"⚠️ Exit skipped (User {user_label}): {symbol} not in tracked positions")
+                    continue
+                
+                # SAFETY CHECK 2: Verify position has entry_time (was bought by bot)
+                position = trader.positions.get(mint, {})
+                if not position.get('entry_time'):
+                    print(f"⚠️ Exit skipped (User {user_label}): {symbol} has no entry_time (not bought by bot)")
+                    del trader.positions[mint]  # Clean up ghost position
+                    continue
+                
+                # SAFETY CHECK 3: Verify we actually have tokens to sell
+                actual_balance = trader.get_token_balance(mint)
+                if actual_balance <= 0:
+                    print(f"⚠️ Exit skipped (User {user_label}): {symbol} balance is 0 (already sold or dust)")
+                    del trader.positions[mint]  # Clean up ghost position
                     continue
                     
-                print(f"📉 SELLING (User {user_label}): {symbol}")
+                print(f"📉 SELLING (User {user_label}): {symbol} (Balance: {actual_balance})")
+                
+
                 
                 # Run sync trading in executor
                 loop = asyncio.get_running_loop()
