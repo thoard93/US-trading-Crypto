@@ -20,13 +20,19 @@ class SmartCopyTrader:
         self.dex_scout = DexScout()
         self.collector = WalletCollector()
         self.logger = logging.getLogger(__name__)
-        # DB Persistence
-        self.qualified_wallets = self._load_wallets()
-        self.active_swarms = self._load_swarms() # Restore active swarms
+        # DB Persistence (Initialized as empty, filled via load_data)
+        self.qualified_wallets = {}
+        self.active_swarms = defaultdict(set)
         self._last_signatures = {} # Cache for {wallet: signature}
         self._recent_whale_activity = [] # List of {wallet, mint, timestamp, signature}
         self._processed_signatures = set() # O(1) duplicate checking
         self._scan_index = 0
+
+    def load_data(self):
+        """Heavy lifting: Load wallets and swarms from DB."""
+        self.qualified_wallets = self._load_wallets()
+        self.active_swarms = self._load_swarms()
+        self.logger.info("📦 SmartCopyTrader data loaded successfully.")
 
     def _load_swarms(self):
         """Restore active swarm participants from DB."""

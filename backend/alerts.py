@@ -57,157 +57,23 @@ class AlertSystem(commands.Cog):
             self.polymarket_trader = get_polymarket_trader()
             print(f"🎲 Polymarket Copy-Trader initialized (PAPER MODE)")
         
-        # Initialize DEX trader for Solana memecoins
-        if DEX_TRADING_ENABLED:
-            # Load keys for ALL users
-            self.dex_traders = []
-            try:
-                db = SessionLocal()
-                # Fetch ALL Solana keys
-                keys = db.query(models.ApiKey).filter(models.ApiKey.exchange == 'solana').all()
-                
-                # Set to track uniqueness
-                added_wallets = set()
-                
-                for k in keys:
-                    try:
-                        priv = decrypt_key(k.api_key)
-                        dt = DexTrader(private_key=priv)
-                        if dt.wallet_address and dt.wallet_address not in added_wallets:
-                            # Attach user_id for logging
-                            dt.user_id = k.user_id 
-                            self.dex_traders.append(dt)
-                            added_wallets.add(dt.wallet_address)
-                            print(f"🔓 Loaded Wallet via DB: {dt.wallet_address[:8]}... (User {k.user_id})")
-                    except Exception as e:
-                        print(f"⚠️ Failed to load key for User {k.user_id}: {e}")
-                
-                # Fallback: ENV key
-                import os
-                env_key = os.getenv('SOLANA_PRIVATE_KEY')
-                if env_key:
-                    try:
-                        dt = DexTrader(private_key=env_key)
-                        if dt.wallet_address and dt.wallet_address not in added_wallets:
-                            dt.user_id = "ENV"
-                            self.dex_traders.append(dt)
-                            print(f"🔓 Loaded Wallet via ENV: {dt.wallet_address[:8]}...")
-                    except: pass
-                
-                db.close()
-            except Exception as e:
-                print(f"⚠️ Failed to load Solana keys: {e}")
-
-            # Legacy pointer (use first trader as primary reference)
-            self.dex_trader = self.dex_traders[0] if self.dex_traders else None
-            
-            if self.dex_traders:
-                print(f"🦊 DEX Auto-Trading ENABLED for {len(self.dex_traders)} wallets.")
-        else:
-            self.dex_traders = []
-            self.dex_trader = None
+        # =========== TRADER INITIALIZATION (Deferred to cog_load) ===========
+        self.dex_traders = []
+        self.dex_trader = None
+        self.kraken_traders = []
+        self.trader = TradingExecutive(user_id=1) # Minimal default
+        self.alpaca_traders = []
         
-        # DEX Auto-trading configuration
-        self.dex_auto_trade = False  # DISABLED: Copy-trading only mode (no sniper targets)
-        self.dex_min_safety_score = 50  # Lowered from 70 to 50 for MAXIMUM ACTION
-        self.dex_min_liquidity = 10000  # RAISED to $10k to prevent low-liquidity traps
-        self.dex_max_positions = 15  # Increased from 10 to 15 (User Request)
+        # Trading Configuration (Settings)
+        self.dex_auto_trade = False
+        self.dex_min_safety_score = 50
+        self.dex_min_liquidity = 10000
+        self.dex_max_positions = 15
         
-        # =========== MULTI-USER KRAKEN TRADING ===========
-        self.kraken_traders = []  # List of TradingExecutive instances
-        try:
-            db = SessionLocal()
-            kraken_keys = db.query(models.ApiKey).filter(models.ApiKey.exchange == 'kraken').all()
-            
-            for k in kraken_keys:
-                try:
-                    api_key = decrypt_key(k.api_key) if k.api_key else None
-                    api_secret = decrypt_key(k.api_secret) if k.api_secret else None
-                    if api_key and api_secret:
-                        te = TradingExecutive(api_key=api_key, secret_key=api_secret, user_id=k.user_id)
-                        if te.exchange and te.exchange.apiKey:
-                            self.kraken_traders.append(te)
-                            print(f"💰 Loaded Kraken keys for User {k.user_id}")
-                except Exception as e:
-                    print(f"⚠️ Failed to load Kraken keys for User {k.user_id}: {e}")
-            
-            # Fallback: ENV keys (legacy support)
-            import os
-            env_kraken_key = os.getenv('KRAKEN_API_KEY')
-            env_kraken_secret = os.getenv('KRAKEN_SECRET_KEY')
-            if env_kraken_key and env_kraken_secret:
-                # Check if ENV user already loaded
-                env_already_loaded = any(t.user_id == 1 for t in self.kraken_traders)
-                if not env_already_loaded:
-                    te = TradingExecutive(api_key=env_kraken_key, secret_key=env_kraken_secret, user_id=1)
-                    if te.exchange and te.exchange.apiKey:
-                        self.kraken_traders.append(te)
-                        print(f"💰 Loaded Kraken keys via ENV (User 1)")
-            
-            db.close()
-            
-            if self.kraken_traders:
-                print(f"🏦 Kraken Multi-User Trading ENABLED for {len(self.kraken_traders)} users.")
-        except Exception as e:
-            print(f"⚠️ Failed to load Kraken traders: {e}")
-        
-        # Legacy pointer for backward compatibility
-        self.trader = self.kraken_traders[0] if self.kraken_traders else TradingExecutive(user_id=1)
-        
-        # =========== MULTI-USER ALPACA TRADING ===========
-        self.alpaca_traders = []  # List of stock traders
-        try:
-            db = SessionLocal()
-            alpaca_keys = db.query(models.ApiKey).filter(models.ApiKey.exchange == 'alpaca').all()
-            
-            for k in alpaca_keys:
-                try:
-                    # SECURE DECRYPTION: Try decrypt, fallback to raw if cipher fails (handles unencrypted DB legacy)
-                    api_key = ""
-                    if k.api_key:
-                        try:
-                            api_key = decrypt_key(k.api_key)
-                        except:
-                            api_key = k.api_key
-                    
-                    api_secret = ""
-                    if k.api_secret:
-                        try:
-                            api_secret = decrypt_key(k.api_secret)
-                        except:
-                            api_secret = k.api_secret
-                            
-                    if api_key and api_secret:
-                        te = TradingExecutive(alpaca_key=api_key, alpaca_secret=api_secret, user_id=k.user_id)
-                        if te.stock_api:
-                            self.alpaca_traders.append(te)
-                            print(f"📈 Loaded Alpaca keys for User {k.user_id}")
-                except Exception as e:
-                    print(f"⚠️ Failed to load Alpaca keys for User {k.user_id}: {e}")
-            
-            # Fallback: ENV keys
-            env_alpaca_key = os.getenv('ALPACA_API_KEY')
-            env_alpaca_secret = os.getenv('ALPACA_SECRET_KEY')
-            if env_alpaca_key and env_alpaca_secret:
-                env_already_loaded = any(t.user_id == 1 for t in self.alpaca_traders)
-                if not env_already_loaded:
-                    te = TradingExecutive(alpaca_key=env_alpaca_key, alpaca_secret=env_alpaca_secret, user_id=1)
-                    if te.stock_api:
-                        self.alpaca_traders.append(te)
-                        print(f"📈 Loaded Alpaca keys via ENV (User 1)")
-            
-            db.close()
-            
-            if self.alpaca_traders:
-                print(f"📊 Alpaca Multi-User Trading ENABLED for {len(self.alpaca_traders)} users.")
-        except Exception as e:
-            print(f"⚠️ Failed to load Alpaca traders: {e}")
-        
-        # STOCK Auto-trading configuration
-        self.stock_auto_trade = False  # DISABLED: Copy-trading only mode (no RSI signals)
-        self.stock_trade_amount = 5.0  # $5 per trade (fractional shares)
-        self.stock_max_positions = 5  # Max concurrent stock positions
-        self.stock_positions = {}  # Track stock positions locally
+        self.stock_auto_trade = False
+        self.stock_trade_amount = 5.0
+        self.stock_max_positions = 5
+        self.stock_positions = {}
 
         
         # User defined watchlists
@@ -253,17 +119,9 @@ class AlertSystem(commands.Cog):
         self._failed_tokens = {}
         self.load_failed_tokens()
 
-        self.monitor_market.start()
-        # self.dex_monitor.start() # PAUSED: Copy-trading only (No "Dex Gem" alerts)
-        self.discovery_loop.start() # ACTIVE: Running in "Whale Hunter Mode" (Silent)
-        self.kraken_discovery_loop.start()
-        self.swarm_monitor.start() # ACTIVE: Copy-Trading Engine
+        self.load_failed_tokens()
         
-        # Webhook Setup Task
-        self.bot.loop.create_task(self.setup_helius_webhook())
-        
-        # Async startup tasks
-        asyncio.create_task(self._startup_sync())
+        # Note: Loops and Webhook setup moved to cog_load for speed
 
     async def _startup_sync(self):
         """Wait for bot to be ready and sync existing positions."""
@@ -2037,7 +1895,15 @@ class AlertSystem(commands.Cog):
 
     async def cog_load(self):
         """Called when the cog is loaded - start the monitoring loops."""
-        # Safety: Only start if not already running
+        print("🚀 AlertSystem: Starting asynchronous initialization...")
+        
+        # 1. Load data and traders in a thread to keep event loop free
+        try:
+            await asyncio.to_thread(self._heavy_initialization_sync)
+        except Exception as e:
+            print(f"❌ Error during Cog background initialization: {e}")
+            
+        # 2. Start the monitoring loops
         if not self.monitor_market.is_running():
             self.monitor_market.start()
         if not self.discovery_loop.is_running():
@@ -2051,9 +1917,93 @@ class AlertSystem(commands.Cog):
             self.polymarket_monitor.start()
             print(f"🎲 Polymarket Monitor started")
             
-        # Ensure Helius Webhook is registered on start
+        # 3. Webhook and Sync
         await self.setup_helius_webhook()
-        print(f"✅ AlertSystem Cog loaded successfully")
+        await self._startup_sync()
+        
+        print(f"✅ AlertSystem Cog registered and fully operational.")
+
+    def _heavy_initialization_sync(self):
+        """Perform all blocking DB and API key loading here."""
+        # 1. Load SmartCopyTrader Data
+        if self.copy_trader:
+            self.copy_trader.load_data()
+            
+        # 2. Load Solana Keys
+        if DEX_TRADING_ENABLED:
+            try:
+                db = SessionLocal()
+                keys = db.query(models.ApiKey).filter(models.ApiKey.exchange == 'solana').all()
+                added_wallets = set()
+                for k in keys:
+                    try:
+                        priv = decrypt_key(k.api_key)
+                        dt = DexTrader(private_key=priv)
+                        if dt.wallet_address and dt.wallet_address not in added_wallets:
+                            dt.user_id = k.user_id 
+                            self.dex_traders.append(dt)
+                            added_wallets.add(dt.wallet_address)
+                            print(f"🔓 Loaded Wallet via DB: {dt.wallet_address[:8]}... (User {k.user_id})")
+                    except Exception as e:
+                        print(f"⚠️ Failed to load key for User {k.user_id}: {e}")
+                
+                env_key = os.getenv('SOLANA_PRIVATE_KEY')
+                if env_key:
+                    try:
+                        dt = DexTrader(private_key=env_key)
+                        if dt.wallet_address and dt.wallet_address not in added_wallets:
+                            dt.user_id = "ENV"
+                            self.dex_traders.append(dt)
+                            print(f"🔓 Loaded Wallet via ENV: {dt.wallet_address[:8]}...")
+                    except: pass
+                db.close()
+                self.dex_trader = self.dex_traders[0] if self.dex_traders else None
+            except Exception as e:
+                print(f"⚠️ Failed to load Solana keys: {e}")
+
+        # 3. Load Kraken Keys
+        try:
+            db = SessionLocal()
+            kraken_keys = db.query(models.ApiKey).filter(models.ApiKey.exchange == 'kraken').all()
+            for k in kraken_keys:
+                try:
+                    ak, ask = decrypt_key(k.api_key), decrypt_key(k.api_secret)
+                    if ak and ask:
+                        te = TradingExecutive(api_key=ak, secret_key=ask, user_id=k.user_id)
+                        if te.exchange and te.exchange.apiKey:
+                            self.kraken_traders.append(te)
+                            print(f"💰 Loaded Kraken keys for User {k.user_id}")
+                except Exception as e:
+                    print(f"⚠️ Failed to load Kraken keys for User {k.user_id}: {e}")
+            
+            env_ak, env_ask = os.getenv('KRAKEN_API_KEY'), os.getenv('KRAKEN_SECRET_KEY')
+            if env_ak and env_ask and not any(t.user_id == 1 for t in self.kraken_traders):
+                te = TradingExecutive(api_key=env_ak, secret_key=env_ask, user_id=1)
+                if te.exchange and te.exchange.apiKey:
+                    self.kraken_traders.append(te)
+            db.close()
+            self.trader = self.kraken_traders[0] if self.kraken_traders else TradingExecutive(user_id=1)
+        except Exception as e:
+            print(f"⚠️ Failed to load Kraken traders: {e}")
+
+        # 4. Load Alpaca Keys
+        try:
+            db = SessionLocal()
+            alpaca_keys = db.query(models.ApiKey).filter(models.ApiKey.exchange == 'alpaca').all()
+            for k in alpaca_keys:
+                try:
+                    ak = decrypt_key(k.api_key) if k.api_key else k.api_key
+                    ask = decrypt_key(k.api_secret) if k.api_secret else k.api_secret
+                    if ak and ask:
+                        te = TradingExecutive(alpaca_key=ak, alpaca_secret=ask, user_id=k.user_id)
+                        if te.stock_api:
+                            self.alpaca_traders.append(te)
+                            print(f"📈 Loaded Alpaca keys for User {k.user_id}")
+                except Exception as e:
+                    print(f"⚠️ Failed to load Alpaca keys for User {k.user_id}: {e}")
+            db.close()
+        except Exception as e:
+            print(f"⚠️ Failed to load Alpaca traders: {e}")
 
     async def setup_helius_webhook(self):
         """Helper to register/update Helius webhook with all qualified wallets."""
