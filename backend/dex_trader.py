@@ -368,9 +368,13 @@ class DexTrader:
                                     tx_signature = cur_sig
                                     success_current_attempt = True
                                 else:
-                                    print(f"📋 DEBUG: Jito {jito_base.split('.')[1]} Response: {result}")
+                                    err_msg = result.get('error', {}).get('message', 'Unknown Error')
+                                    # Silencing 'already processed' as it means success or propagation
+                                    if "already processed" not in err_msg.lower():
+                                        print(f"📋 DEBUG: Jito {jito_base.split('.')[1]} Error: {err_msg}")
                             else:
-                                print(f"📋 DEBUG: Jito {jito_base.split('.')[1]} HTTP {resp.status_code}: {resp.text}")
+                                if resp.status_code != 400: # Silence 400s as they are usually 'already processed'
+                                    print(f"📋 DEBUG: Jito {jito_base.split('.')[1]} HTTP {resp.status_code}: {resp.text}")
                         except: continue
                     
                     # DUAL SUBMISSION FALLBACK: Also send to standard RPC after second attempt
@@ -468,8 +472,10 @@ class DexTrader:
                                 if status_val:
                                     status = status_val
                                     src = rpc_url.split('.')[1] if '.' in rpc_url else 'Helius'
-                                    print(f"🏷️ Found status via {src}: {status.get('confirmationStatus')}")
-                                    break # Found a status, stop searching fallbacks
+                                    conf = status.get('confirmationStatus', 'unknown')
+                                    err = status.get('err')
+                                    print(f"🏷️ Status [{src}]: {conf} | Err: {err}")
+                                    break 
                         except:
                             continue # Try next RPC
                     
@@ -773,11 +779,12 @@ class DexTrader:
         
         # Retry logic if slippage exceeded
         if 'error' in result and ('0x177e' in str(result['error']) or '6014' in str(result['error'])):
-            print("⚠️ Slippage exceeded. Retrying with 50% SLIPPAGE...")
+            print("⚠️ Slippage exceeded. Retrying with 100% SLIPPAGE...")
             import time
             time.sleep(1)
-            # Retry with 50% and Jito for safety
-            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=5000, use_jito=True)
+            # Retry with 100% and Jito for safety
+            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000, use_jito=True)
+
         
         if result.get('success'):
             # Track position
