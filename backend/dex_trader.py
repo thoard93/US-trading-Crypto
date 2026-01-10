@@ -568,15 +568,15 @@ class DexTrader:
             if response.status_code == 200:
                 data = response.json()
                 if data and len(data) > 0:
-                    # Use 95th percentile for AGGRESSIVE landing (beats most competition)
-                    tip_sol = data[0].get('landed_tips_95th_percentile', 0.003)
-                    # BEAST MODE: Minimum 0.003 SOL (~$0.60) for pump.fun priority
-                    # Max 0.015 SOL to cap costs on extremely competitive moments
-                    tip_sol = max(0.003, min(0.015, tip_sol))
+                    # Use 99th percentile for MAXIMUM priority (last attempt for pump.fun)
+                    tip_sol = data[0].get('landed_tips_99th_percentile', 0.005)
+                    # ULTRA MODE: Minimum 0.005 SOL (~$1) for pump.fun priority
+                    # Max 0.02 SOL to cap costs
+                    tip_sol = max(0.005, min(0.02, tip_sol))
                     return int(tip_sol * 1e9)
         except Exception as e:
             print(f"⚠️ Failed to fetch Jito tip floor: {e}")
-        return 3000000  # Default fallback: 0.003 SOL (3M lamports) - BEAST MODE
+        return 5000000  # Default fallback: 0.005 SOL (5M lamports) - ULTRA MODE
     
     def execute_jito_bundle(self, token_mint, sol_amount):
         """
