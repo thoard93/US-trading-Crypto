@@ -1586,7 +1586,7 @@ class AlertSystem(commands.Cog):
             
             # 1. ANALYZE SWARMS (Decoupled from Webhooks - runs 100% in memory)
             # Increased min_buyers from 3 to 4 for more established swarms (less slippage failures)
-            signals = self.copy_trader.analyze_swarms(min_buyers=4)
+            signals = self.copy_trader.analyze_swarms(min_buyers=3)
             
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
             
@@ -1702,11 +1702,14 @@ class AlertSystem(commands.Cog):
                 print(f"⏳ Skipping {mint[:16]}... (on cooldown after failed trade)")
                 return
         
+        # 🚫 SKIP PUMP.FUN TOKENS - Near 0% success rate with Jupiter
+        if mint.lower().endswith('pump'):
+            print(f"🚫 Skipping pump.fun token: {mint[:16]}... (not tradeable via Jupiter)")
+            return
+        
         # 1. Get Token Info (Symbol, Liquidity)
         try:
             print(f"🔍 Swarm Trade: Fetching pair data for {mint[:16]}...")
-            # NOTE: Some pump.fun tokens work (like PXL), so we don't filter them
-            # The 5-min cooldown handles failed tokens instead
                 
             pair = await self.dex_scout.get_pair_data("solana", mint)
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)

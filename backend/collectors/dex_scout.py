@@ -102,11 +102,18 @@ class DexScout:
         sol_profiles = [p for p in profiles if p.get('chainId') == 'solana']
         
         candidates = []
+        skipped_pump = 0
         # Step 2: Fetch detailed pair data for candidates
-        # We limit to scanning top 20 profiles to save API calls/time
-        for p in sol_profiles[:20]:
+        # We limit to scanning top 30 profiles to find enough non-pump.fun tokens
+        for p in sol_profiles[:30]:
             addr = p.get('tokenAddress')
             if not addr: continue
+            
+            # 🚫 SKIP PUMP.FUN TOKENS - They end with 'pump' in the address
+            # Focus on Raydium/Orca tokens for reliable trading
+            if addr.lower().endswith('pump'):
+                skipped_pump += 1
+                continue
             
             # Fetch Pair Data (Price, Liquidity)
             # This uses the 'tokens/{addr}' endpoint which is reliable
@@ -124,6 +131,9 @@ class DexScout:
             
             if len(candidates) >= limit:
                 break
+        
+        if skipped_pump > 0:
+            self.logger.info(f"⏭️ Skipped {skipped_pump} pump.fun tokens (focus on Raydium/Orca)")
                 
         return candidates
 

@@ -476,6 +476,12 @@ class SmartCopyTrader:
             if len(buyers) >= min_buyers:
                 if mint in self.active_swarms:
                     continue
+                
+                # 🚫 SKIP PUMP.FUN TOKENS - They have ~0% success rate with Jupiter routing
+                # Pump.fun tokens end with 'pump' in the contract address
+                if mint.lower().endswith('pump'):
+                    self.logger.info(f"⏭️ SKIPPING pump.fun token: {mint[:16]}... ({len(buyers)} whales) - Use Raydium/Orca instead")
+                    continue
                     
                 self.logger.info(f"🚀 SWARM DETECTED: {len(buyers)} whales bought {mint}")
                 signals.append(mint)
