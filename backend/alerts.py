@@ -1063,8 +1063,8 @@ class AlertSystem(commands.Cog):
                     trade_result = None
                     MAX_POSITIONS = 15
                     
-                    # Base trade amount - will be adjusted by conviction
-                    base_trade_amount = 10.0 
+                    # Base trade amount - REDUCED for more positions!
+                    base_trade_amount = 5.0  # Was $10, now $5 = 2x more positions
                     trade_amount = base_trade_amount  # Initialize for both BUY and SELL paths
                     scalp_mode = (asset_type == "Meme" or symbol_price < 1.0)
 
