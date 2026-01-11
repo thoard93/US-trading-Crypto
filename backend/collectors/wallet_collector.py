@@ -209,11 +209,16 @@ class WalletCollector:
     def _analyze_helius_data(self, address, transactions):
         """
         Analyzes parsed Helius transactions to find 'Holding Time'.
+        Also filters out pump.fun-heavy traders (DEX-only whales wanted).
         """
         inventory = defaultdict(list) # mint -> [buy_timestamps]
         holding_times = [] # list of seconds
         wins = 0
         losses = 0
+        
+        # Track pump.fun usage
+        pump_fun_trades = 0
+        regular_dex_trades = 0
         
         SOL_MINT = "So11111111111111111111111111111111111111112"
         USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
@@ -251,6 +256,15 @@ class WalletCollector:
             token_in = tokens_in[0]
             token_out = tokens_out[0]
             
+            # 🚫 CHECK FOR PUMP.FUN TOKENS (addresses ending in 'pump')
+            trade_tokens = [t for t in [token_in, token_out] if t and t not in STABLE_MINTS]
+            is_pump_fun_trade = any(t.lower().endswith('pump') for t in trade_tokens if t)
+            
+            if is_pump_fun_trade:
+                pump_fun_trades += 1
+            else:
+                regular_dex_trades += 1
+            
             # BUY: Stable -> Token
             if token_out in STABLE_MINTS and token_in not in STABLE_MINTS:
                 inventory[token_in].append({
@@ -283,13 +297,25 @@ class WalletCollector:
             p10 = holding_times[index]
             avg = sum(holding_times) / len(holding_times)
 
+        # Calculate pump.fun ratio
+        total_trades = pump_fun_trades + regular_dex_trades
+        pump_fun_ratio = pump_fun_trades / total_trades if total_trades > 0 else 0
+        
+        # 🚫 REJECT PUMP.FUN HEAVY TRADERS (>50% pump.fun trades)
+        is_pump_fun_trader = pump_fun_ratio > 0.5
+        
+        # Only qualify if: good holding time + enough trades + NOT a pump.fun trader
+        is_qualified = p10 > 60 and len(holding_times) > 5 and not is_pump_fun_trader
+
         return {
             "address": address,
             "tx_count": len(transactions),
             "trade_count": len(holding_times),
             "avg_holding_time_sec": avg,
             "p10_holding_time_sec": p10,
-            "is_qualified": p10 > 60 and len(holding_times) > 5 # Qualification Rule
+            "pump_fun_ratio": pump_fun_ratio,
+            "is_pump_fun_trader": is_pump_fun_trader,
+            "is_qualified": is_qualified
         }
 
     def crawl_token(self, token_mint):

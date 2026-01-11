@@ -314,8 +314,14 @@ class SmartCopyTrader:
                 stats = self.collector.analyze_wallet(wallet, lookback_txs=50)
                 checked_count += 1
                 
+                # Log pump.fun trader rejections
+                if stats and stats.get('is_pump_fun_trader'):
+                    pf_ratio = stats.get('pump_fun_ratio', 0) * 100
+                    self.logger.info(f"    ⏭️ SKIP pump.fun trader: {wallet[:16]}... ({pf_ratio:.0f}% pump.fun trades)")
+                    continue
+                
                 if stats and stats.get('is_qualified'):
-                    self.logger.info(f"    🔥 FOUND QUALIFIED TRADER: {wallet}")
+                    self.logger.info(f"    🔥 FOUND DEX WHALE: {wallet}")
                     wallet_data = {
                         "discovered_on": token_address[:16],
                         "discovered_at": datetime.now().isoformat(),
