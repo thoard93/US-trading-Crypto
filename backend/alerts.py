@@ -158,6 +158,15 @@ class AlertSystem(commands.Cog):
                     print(f"💵 Alpaca - Cash: ${account['cash']:.2f}, Buying Power: ${account['buying_power']:.2f}")
             except Exception as e:
                 print(f"⚠️ Failed to sync Alpaca: {e}")
+        
+        # 🚀 START BACKGROUND LOOPS (must be started explicitly!)
+        if not self.auto_hunt_loop.is_running():
+            self.auto_hunt_loop.start()
+            print("🦈 Auto-Hunt Loop STARTED (every 30 min)")
+        
+        if not self.auto_prune_loop.is_running():
+            self.auto_prune_loop.start()
+            print("🧹 Auto-Prune Loop STARTED (every 4 hours)")
 
     async def setup_helius_webhook(self):
         """Registers the bot's URL with Helius to receive whale activity."""
