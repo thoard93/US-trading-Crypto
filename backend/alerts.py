@@ -873,22 +873,61 @@ class AlertSystem(commands.Cog):
         except Exception as e:
             print(f"❌ Kraken Discovery error: {e}")
 
-    @tasks.loop(hours=6)
+
+    @tasks.loop(hours=2)
+    async def auto_hunt_loop(self):
+        """Automatically hunt for new whales every 2 hours."""
+        if not self.ready or not self.copy_trader:
+            return
+        if not self.bot.is_ready():
+            return
+        
+        # Prevent concurrent hunts
+        if hasattr(self, '_hunt_lock') and self._hunt_lock:
+            return
+        
+        self._hunt_lock = True
+        try:
+            print("🦈 Auto-Hunt: Scanning for new whales...")
+            import asyncio
+            new_wallets = await asyncio.to_thread(
+                self.copy_trader.scan_market_for_whales_sync, 
+                max_pairs=15, 
+                max_traders_per_pair=5
+            )
+            
+            if new_wallets > 0:
+                print(f"🐋 Auto-Hunt: Found {new_wallets} new whales! Updating Helius webhook...")
+                await self.setup_helius_webhook()
+                
+                channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
+                if channel_memes:
+                    total = len(self.copy_trader.qualified_wallets)
+                    await channel_memes.send(f"🦈 **Auto-Hunt Complete!** Found {new_wallets} new whales. Total: {total}")
+            else:
+                print("🦈 Auto-Hunt: No new qualified whales found this cycle.")
+        except Exception as e:
+            print(f"❌ Auto-Hunt error: {e}")
+        finally:
+            self._hunt_lock = False
+
+    @tasks.loop(hours=4)
     async def auto_prune_loop(self):
-        """Automatically prune lazy whales every 6 hours (24h inactivity threshold)."""
+        """Automatically prune lazy whales every 4 hours (12h inactivity threshold)."""
         if not self.ready or not self.copy_trader:
             return
         if not self.bot.is_ready():
             return
         
         print("🧹 Running auto-prune for lazy whales...")
-        pruned = self.copy_trader.prune_lazy_whales(inactive_hours=24)
+        pruned = self.copy_trader.prune_lazy_whales(inactive_hours=12)
         
         if pruned > 0:
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
             if channel_memes:
                 remaining = len(self.copy_trader.qualified_wallets)
-                await channel_memes.send(f"🧹 **Auto-Pruned {pruned} lazy whales** (inactive > 24h). {remaining} active whales remaining.")
+                await channel_memes.send(f"🧹 **Auto-Pruned {pruned} lazy whales** (inactive > 12h). {remaining} active whales remaining.")
+
 
     async def _check_and_alert(self, symbol, channel, asset_type):
         """Helper to fetch data, check exits, and process alerts."""

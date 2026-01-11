@@ -130,12 +130,13 @@ class TradingExecutive:
             hard_sl = 0.95  # -5% stop loss
             hard_tp = 1.15  # +15% take profit
         else:
-            # CRYPTO: Relaxed thresholds for volatile assets (KAS, SHIB, etc.)
-            # Trigger: +3% profit, Trail: 3% (locks in entry price)
-            trailing_trigger_pct = 1.03
-            trail_distance = 0.97
-            hard_sl = 0.92  # -8% stop loss (room for volatility)
-            hard_tp = 1.12  # +12% take profit
+            # CRYPTO: AGGRESSIVE DAY TRADING MODE for high conviction tokens
+            # Lock in profits faster with tighter thresholds
+            # Trigger: +2% profit, Trail: 2% (locks in entry price)
+            trailing_trigger_pct = 1.02  # Activate trailing at +2%
+            trail_distance = 0.98        # 2% trail (tighter)
+            hard_sl = 0.95               # -5% stop loss (tighter)
+            hard_tp = 1.05               # +5% take profit (lock it in!)
             
         trailing_trigger_price = entry * trailing_trigger_pct
         
