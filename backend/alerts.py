@@ -879,10 +879,9 @@ class AlertSystem(commands.Cog):
         except Exception as e:
             print(f"❌ Kraken Discovery error: {e}")
 
-
-    @tasks.loop(hours=2)
+    @tasks.loop(minutes=30)
     async def auto_hunt_loop(self):
-        """Automatically hunt for new whales every 2 hours."""
+        """Automatically hunt for new DEX whales every 30 minutes."""
         if not self.ready or not self.copy_trader:
             return
         if not self.bot.is_ready():
