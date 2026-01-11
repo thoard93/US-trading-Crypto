@@ -187,15 +187,15 @@ class TradingExecutive:
             
             # Apply risk factor
             adjusted_amount = amount_usdt * risk_factor
-            # Clamp to min $11 for Kraken (approx min order size)
-            adjusted_amount = max(11.0, float(adjusted_amount))
+            # Clamp to min $5 for Kraken (reduced for more positions)
+            adjusted_amount = max(5.0, float(adjusted_amount))
             
             if balance is None:
                 return {"error": "Skipping trade: Kraken balance fetch failed (Network issue)"}
                 
             if balance < adjusted_amount:
                 # Use remaining balance if close enough, else error
-                if balance > 10.0:
+                if balance > 5.0:
                     adjusted_amount = balance
                 else: 
                      return {"error": f"Insufficient USDT balance ({balance:.2f})"}
