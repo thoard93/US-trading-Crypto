@@ -862,8 +862,14 @@ class AlertSystem(commands.Cog):
                     new_memes.append(s)
             
             # Core pairs (that we know work or want anyway)
-            core_majors = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT']
-            core_memes = ['DOGE/USDT', 'SHIB/USDT', 'ADA/USDT']
+            core_majors = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'XRP/USDT', 'XMR/USDT', 'LINK/USDT']
+            # VOLATILE MEMES - Focus on coins that MOVE (not slow majors!)
+            core_memes = [
+                'DOGE/USDT', 'SHIB/USDT', 'ADA/USDT',     # Classic memes
+                'PENGU/USDT', 'FARTCOIN/USDT', 'MELANIA/USDT',  # New volatile memes
+                'KAS/USDT', 'APE/USDT', 'MANA/USDT',      # Mid-cap volatile
+                'ALGO/USDT', 'CC/USDT',                    # Lower cap movers
+            ]
             
             self.majors_watchlist = sorted(list(set(core_majors + new_majors[:8])))
             self.memes_watchlist = sorted(list(set(core_memes + new_memes[:12])))
