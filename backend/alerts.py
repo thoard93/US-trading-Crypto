@@ -1706,6 +1706,16 @@ class AlertSystem(commands.Cog):
                 continue
                 
             print(f"🚨 INSTANT EXIT: Selling {mint[:16]}...")
+            
+            # IMMEDIATELY add to blacklist and clear swarm (BEFORE sell attempt!)
+            # This prevents buy-sell loop even if sell fails
+            if not hasattr(self, '_dump_blacklist'):
+                self._dump_blacklist = {}
+            self._dump_blacklist[mint] = datetime.datetime.now().timestamp()
+            if mint in self.copy_trader.active_swarms:
+                del self.copy_trader.active_swarms[mint]
+            print(f"🚫 Blacklisted {mint[:16]}... (60min cooldown)")
+            
             loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(None, trader.sell_token, mint)
             
@@ -1717,14 +1727,6 @@ class AlertSystem(commands.Cog):
                         f"Sold `{mint[:16]}...` - Following smart money OUT!\n"
                         f"TX: `{result.get('signature', 'N/A')[:32]}...`"
                     )
-                # Clean up tracking
-                if mint in self.copy_trader.active_swarms:
-                    del self.copy_trader.active_swarms[mint]
-                # ADD TO DUMP BLACKLIST (60 min cooldown for re-entry)
-                if not hasattr(self, '_dump_blacklist'):
-                    self._dump_blacklist = {}
-                self._dump_blacklist[mint] = datetime.datetime.now().timestamp()
-                print(f"🚫 Added {mint[:16]}... to dump blacklist (60min cooldown)")
             else:
                 print(f"❌ Instant exit sell failed: {result.get('error')}")
 

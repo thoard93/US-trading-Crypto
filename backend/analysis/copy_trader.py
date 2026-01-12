@@ -438,7 +438,7 @@ class SmartCopyTrader:
                 added_count += 1
         return added_count
 
-    def analyze_swarms(self, min_buyers=3, window_minutes=60):
+    def analyze_swarms(self, min_buyers=3, window_minutes=10):
         """Analyzes recent activity for swarms."""
         signals = []
         now = datetime.utcnow()
