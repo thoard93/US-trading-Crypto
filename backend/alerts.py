@@ -1862,7 +1862,7 @@ class AlertSystem(commands.Cog):
                 
                 # LIVE CHECK: Query actual wallet to avoid buying after deploy
                 try:
-                    holdings = trader.get_token_holdings()
+                    holdings = trader.get_all_tokens()
                     if any(h.get('mint') == mint and h.get('amount', 0) > 0 for h in holdings):
                         print(f"⏭️ SKIP: User {user_label} already holds {symbol} (on-chain)")
                         continue
