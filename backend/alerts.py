@@ -1855,9 +1855,20 @@ class AlertSystem(commands.Cog):
             for trader in self.dex_traders:
                 user_label = getattr(trader, 'user_id', 'Main')
                 
-                # Skip if this trader already holds
+                # Skip if this trader already holds (memory cache)
                 if mint in trader.positions:
+                    print(f"⏭️ SKIP: User {user_label} already holds {symbol} (cache)")
                     continue
+                
+                # LIVE CHECK: Query actual wallet to avoid buying after deploy
+                try:
+                    holdings = trader.get_token_holdings()
+                    if any(h.get('mint') == mint and h.get('amount', 0) > 0 for h in holdings):
+                        print(f"⏭️ SKIP: User {user_label} already holds {symbol} (on-chain)")
+                        continue
+                except Exception as e:
+                    print(f"⚠️ Live balance check failed: {e}")
+                    # Continue anyway - memory cache check is primary
                 
                 print(f"🚀 BUYING SWARM (User {user_label}): {symbol} - {amount_sol} SOL")
                 # Run sync trading in executor to avoid blocking Discord heartbeat during 30s confirmation wait
