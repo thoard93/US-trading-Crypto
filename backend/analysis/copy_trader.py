@@ -509,6 +509,42 @@ class SmartCopyTrader:
         except Exception as e:
             self.logger.error(f"Error pruning swarm from DB: {e}")
 
+    def get_top_signals(self, limit=6):
+        """
+        Get top tokens by whale interest for frontend display.
+        Returns list of dicts with token info and whale count.
+        """
+        from collections import defaultdict
+        from datetime import datetime
+        
+        results = []
+        now = datetime.utcnow()
+        
+        # Cluster recent activity by mint
+        cluster = defaultdict(set)
+        for entry in self._recent_whale_activity:
+            # Only include recent activity (last 30 mins)
+            if (now - entry['timestamp']).total_seconds() / 60 <= 30:
+                cluster[entry['mint']].add(entry['wallet'])
+        
+        # Sort by whale count
+        sorted_tokens = sorted(cluster.items(), key=lambda x: len(x[1]), reverse=True)[:limit]
+        
+        for mint, whales in sorted_tokens:
+            # Try to get token info
+            symbol = mint[:8] + '...'
+            
+            results.append({
+                'mint': mint,
+                'symbol': symbol,
+                'whale_count': len(whales),
+                'is_swarm': len(whales) >= 3,
+                'price': 0,  # Could be fetched from DexScreener
+                'liquidity': 0
+            })
+        
+        return results
+
 
     def detect_whale_sells(self, transactions, held_tokens):
         """
