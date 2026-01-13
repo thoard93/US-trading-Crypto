@@ -119,6 +119,9 @@ class AlertSystem(commands.Cog):
         self.last_exit_times = {} # {symbol: timestamp} for wash trade prevention
         self.last_alert_times = {} # {symbol: timestamp} to prevent discord spam
         self.dex_exit_cooldowns = {} # {token_address: timestamp} - prevents re-buying after SL
+        
+        # ORPHAN GUARD: Retry queue for failed sells
+        self.sell_retry_queue = []  # [{token_address, trader, reason, attempts, last_attempt, slippage_bps}]
 
         # Load failed tokens blacklist
         self._failed_tokens = {}
@@ -167,6 +170,11 @@ class AlertSystem(commands.Cog):
         if not self.auto_prune_loop.is_running():
             self.auto_prune_loop.start()
             print("🧹 Auto-Prune Loop STARTED (every 4 hours)")
+        
+        # 🛡️ ORPHAN GUARD: Safety net for stuck positions
+        if not self.orphan_guard.is_running():
+            self.orphan_guard.start()
+            print("🛡️ Orphan Guard Loop STARTED (every 60s)")
 
     async def setup_helius_webhook(self):
         """Registers the bot's URL with Helius to receive whale activity."""
@@ -1712,6 +1720,161 @@ class AlertSystem(commands.Cog):
         except Exception as e:
             import traceback
             print(f"❌ Swarm Monitor Error: {e}")
+            traceback.print_exc()
+
+    @tasks.loop(seconds=60)
+    async def orphan_guard(self):
+        """
+        🛡️ ORPHAN GUARD: Safety net for stuck positions and failed sells.
+        
+        1. Process retry queue (failed sells due to slippage)
+        2. Time-based exits (30 min profit take, 60 min force exit)
+        3. Orphan detection (whale sold but we didn't)
+        """
+        try:
+            if not self.dex_traders:
+                return
+            
+            channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
+            now = datetime.datetime.now().timestamp()
+            
+            # ========== 1. PROCESS RETRY QUEUE ==========
+            retry_items_to_remove = []
+            for item in self.sell_retry_queue:
+                # Wait at least 30 seconds between retries
+                if now - item.get('last_attempt', 0) < 30:
+                    continue
+                
+                token_addr = item['token_address']
+                trader = item['trader']
+                attempts = item.get('attempts', 0)
+                slippage = item.get('slippage_bps', 5000)
+                reason = item.get('reason', 'Retry')
+                
+                # Progressive slippage: 50% -> 75% -> 100%
+                if attempts == 0:
+                    slippage = 5000
+                elif attempts == 1:
+                    slippage = 7500
+                else:
+                    slippage = 10000
+                
+                print(f"🔄 Retry Queue: Selling {token_addr[:16]}... (attempt {attempts + 1}, slippage {slippage // 100}%)")
+                
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    None, 
+                    lambda: trader.sell_token(token_addr, override_slippage=slippage)
+                )
+                
+                if result.get('success'):
+                    print(f"✅ Retry SUCCESS: {token_addr[:16]}...")
+                    retry_items_to_remove.append(item)
+                    if channel_memes:
+                        await channel_memes.send(f"🔄 **Retry Exit Succeeded**: Sold stuck position via orphan guard")
+                else:
+                    item['attempts'] = attempts + 1
+                    item['last_attempt'] = now
+                    item['slippage_bps'] = slippage
+                    
+                    if attempts >= 2:
+                        print(f"🛑 Retry FAILED after 3 attempts: {token_addr[:16]}... - Manual exit required!")
+                        retry_items_to_remove.append(item)
+                        if channel_memes:
+                            await channel_memes.send(f"🛑 **Manual Exit Required**: Could not sell `{token_addr[:12]}...` after 3 retries")
+            
+            # Clean up completed/failed items
+            for item in retry_items_to_remove:
+                if item in self.sell_retry_queue:
+                    self.sell_retry_queue.remove(item)
+            
+            # ========== 2. TIME-BASED EXITS AND ORPHAN DETECTION ==========
+            for trader in self.dex_traders:
+                user_label = getattr(trader, 'user_id', 'Main')
+                positions_to_check = list(trader.positions.items())
+                
+                for token_addr, pos in positions_to_check:
+                    entry_time = pos.get('entry_time', 0)
+                    if not entry_time:
+                        continue  # Legacy position without timestamp
+                    
+                    age_mins = (now - entry_time) / 60
+                    entry_price = pos.get('entry_price_usd', 0)
+                    symbol = pos.get('symbol', token_addr[:8])
+                    
+                    # Get current price (try DexScreener)
+                    try:
+                        pair = await self.dex_scout.get_pair_data("solana", token_addr)
+                        if pair:
+                            current_price = float(pair.get('priceUsd', 0))
+                        else:
+                            current_price = 0
+                    except:
+                        current_price = 0
+                    
+                    if entry_price and current_price:
+                        pnl = ((current_price - entry_price) / entry_price) * 100
+                    else:
+                        pnl = 0
+                    
+                    should_exit = False
+                    exit_reason = ""
+                    
+                    # 30 min + any profit = take it
+                    if age_mins >= 30 and pnl > 0:
+                        should_exit = True
+                        exit_reason = f"⏰ 30min Profit Take: +{pnl:.1f}%"
+                    
+                    # 30 min + deep loss = cut
+                    elif age_mins >= 30 and pnl <= -20:
+                        should_exit = True
+                        exit_reason = f"⏰ 30min Stop: {pnl:.1f}% (cut loser)"
+                    
+                    # 60 min = force exit regardless
+                    elif age_mins >= 60:
+                        should_exit = True
+                        exit_reason = f"🛡️ 60min Force Exit: {pnl:+.1f}% (orphan protection)"
+                    
+                    # Orphan check: whale no longer holding
+                    if not should_exit and age_mins >= 15:
+                        # Check if any whale still holds this token
+                        whale_still_holding = token_addr in self.copy_trader.active_swarms
+                        if not whale_still_holding:
+                            should_exit = True
+                            exit_reason = f"👻 Orphan Exit: Whales sold, we didn't ({pnl:+.1f}%)"
+                    
+                    if should_exit:
+                        print(f"🛡️ Orphan Guard: {exit_reason} - {symbol} (User {user_label})")
+                        
+                        loop = asyncio.get_running_loop()
+                        result = await loop.run_in_executor(None, trader.sell_token, token_addr)
+                        
+                        if result.get('success'):
+                            if channel_memes:
+                                await channel_memes.send(f"🛡️ **Orphan Guard**: {exit_reason} - Sold {symbol}")
+                            
+                            # Clear position and set cooldown
+                            if token_addr in trader.positions:
+                                del trader.positions[token_addr]
+                            self.dex_exit_cooldowns[token_addr] = now
+                        else:
+                            # Add to retry queue
+                            print(f"⚠️ Orphan Guard sell failed, adding to retry queue: {token_addr[:16]}...")
+                            self.sell_retry_queue.append({
+                                'token_address': token_addr,
+                                'trader': trader,
+                                'reason': exit_reason,
+                                'attempts': 0,
+                                'last_attempt': now,
+                                'slippage_bps': 5000
+                            })
+                    
+                    # Rate limit: small delay between position checks
+                    await asyncio.sleep(0.5)
+        
+        except Exception as e:
+            import traceback
+            print(f"❌ Orphan Guard Error: {e}")
             traceback.print_exc()
 
     async def trigger_instant_exit(self, mint):

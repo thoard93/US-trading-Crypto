@@ -860,8 +860,14 @@ class DexTrader:
         
         return result
     
-    def sell_token(self, token_mint, percentage=100):
-        """Sell token back to SOL."""
+    def sell_token(self, token_mint, percentage=100, override_slippage=None):
+        """Sell token back to SOL.
+        
+        Args:
+            token_mint: Token address to sell
+            percentage: Percentage of holdings to sell (default 100%)
+            override_slippage: Optional custom slippage in BPS (for retry queue)
+        """
         token_balance = self.get_token_balance(token_mint)
         
         if token_balance <= 0:
@@ -873,12 +879,15 @@ class DexTrader:
         else:
              sell_amount = int(token_balance * (percentage / 100))
         
-        print(f"🔄 SELLING {token_mint} | Amount: {sell_amount} | Pct: {percentage}%")
+        # Use provided slippage or default to 100% for meme coin exits
+        slippage = override_slippage if override_slippage else 10000
+        
+        print(f"🔄 SELLING {token_mint} | Amount: {sell_amount} | Pct: {percentage}% | Slippage: {slippage // 100}%")
         print(f"DEBUG: Wallet: {self.wallet_address}")
 
 
-        # Aggressive Sell: Use 100% Slippage + Jito for atomic exit (no fee on fail)
-        result = self.execute_swap(token_mint, self.SOL_MINT, sell_amount, override_slippage=10000, use_jito=True)
+        # Aggressive Sell: Use provided slippage + Jito for atomic exit (no fee on fail)
+        result = self.execute_swap(token_mint, self.SOL_MINT, sell_amount, override_slippage=slippage, use_jito=True)
         
         if result.get('success') and percentage == 100:
             # Remove from positions
