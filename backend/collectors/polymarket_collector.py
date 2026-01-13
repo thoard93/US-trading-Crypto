@@ -232,6 +232,9 @@ class PolymarketCollector:
             async with session.get(url, params=params, timeout=10) as resp:
                 if resp.status != 200:
                     text = await resp.text()
+                    # Silence noise for invalid IDs (common when markers are resolving)
+                    if resp.status == 400 and "Invalid token id" in text:
+                        return None
                     logger.warning(f"⚠️ Polymarket Price API Error ({token_id[:8]}): Status {resp.status} - {text[:100]}")
                     return None
                 
@@ -264,16 +267,20 @@ class PolymarketCollector:
             return []
         
         # Collect all whale positions
-        market_bets: Dict[str, Dict] = {}  # token_id -> {wallets: [], outcome: str, ...}
+        market_bets: Dict[str, Dict] = {}  # token_id -> {wallets: [], outcome: str, market_title: str, ...}
+        
+        # 0. Fetch top markets to map names
+        markets = await self.fetch_markets(limit=100)
+        market_map = {m.get('conditionId'): m.get('question', 'Unknown Market') for m in markets}
         
         for trader in traders:
             positions = await self.fetch_whale_positions(trader.wallet)
             
             for pos in positions:
-                if pos.token_id not in market_bets:
                     market_bets[pos.token_id] = {
                         "token_id": pos.token_id,
                         "market_id": pos.market_id,
+                        "market_title": market_map.get(pos.market_id, "Unknown Market"),
                         "outcome": pos.outcome,
                         "wallets": [],
                         "total_size": 0,
@@ -308,14 +315,17 @@ class PolymarketCollector:
                 signal = {
                     "token_id": token_id,
                     "market_id": data["market_id"],
+                    "market_title": data["market_title"],
                     "outcome": data["outcome"],
-                    "whale_count": len(data["wallets"]),
+                    "whale_count": len(set(data["wallets"])), # Use set for unique whales
                     "total_whale_size": data["total_size"],
                     "current_price": price,
-                    "wallets": data["wallets"]
+                    "wallets": list(set(data["wallets"]))
                 }
                 swarm_signals.append(signal)
-                logger.info(f"🐋 SWARM SIGNAL: {len(data['wallets'])} whales on {token_id[:8]}...")
+                title = data['market_title']
+                if len(title) > 30: title = title[:27] + "..."
+                logger.info(f"🐋 SWARM SIGNAL: {len(set(data['wallets']))} whales on {title} ({data['outcome']})")
         
         return swarm_signals
 

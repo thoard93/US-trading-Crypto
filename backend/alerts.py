@@ -1357,7 +1357,18 @@ class AlertSystem(commands.Cog):
         await ctx.send(f"💰 **Kraken Portfolio Balance:** `{bal}` USDT")
 
     @commands.command()
-    async def hunt(self, ctx):
+    async def help_me(self, ctx):
+        """Custom help for degen mode."""
+        help_text = (
+            "🚀 **DEGEN DEX Commands:**\n"
+            "• `!hunt` - Scan for new whale wallets\n"
+            "• `!track <addr>` - Track a specific token\n"
+            "• `!status` - Show bot health\n"
+            "• `!balance` - Check wallet balance\n"
+            "• `!sellall` - Emergency liquidation\n"
+            "• `!rugcheck <addr>` - Audit a token safety"
+        )
+        await ctx.send(help_text)
         """Manually trigger whale wallet discovery."""
         if not self.ready:
             await ctx.send("⏳ **System warming up...** Copy-trader data is loading. Please wait.")

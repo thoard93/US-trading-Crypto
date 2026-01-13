@@ -844,7 +844,7 @@ class DexTrader:
             # Retry with fresh quote (the execute_swap gets a new quote internally)
             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000, use_jito=True)
             if 'error' in result:
-                print("🛑 Retry also failed. Aborting to prevent drain.")
+                print("🛑 Retry also failed. Potential HONEYPOT (100% slippage failure). Aborting to prevent drain.")
 
         
         if result.get('success'):
