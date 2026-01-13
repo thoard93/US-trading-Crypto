@@ -237,23 +237,23 @@ class AlertSystem(commands.Cog):
         channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
         channel_stocks = self.bot.get_channel(self.STOCKS_CHANNEL_ID)
 
-        # 0. Monitor Active Positions for ALL KRAKEN USERS (Critical for SL/TP compliance)
-        for kraken_trader in self.kraken_traders:
-            user_label = getattr(kraken_trader, 'user_id', 'Main')
-            all_owned = list(kraken_trader.active_positions.keys())
-            if all_owned:
-                print(f"🛡️ Monitoring {len(all_owned)} Kraken positions for User {user_label}...")
-                for symbol in all_owned:
-                    # Detect asset type based on symbol format
-                    a_type = "Stock" if "/" not in symbol else "Crypto"
-                    # Use the specific user's trader for exit checks
-                    original_trader = self.trader
-                    self.trader = kraken_trader  # Temporarily swap to check this user's positions
-                    if a_type == "Crypto" and channel_crypto:
-                        await self._check_and_alert(symbol, channel_crypto, a_type)
-                    elif a_type == "Stock" and channel_stocks:
-                        await self._check_and_alert(symbol, channel_stocks, a_type)
-                    self.trader = original_trader  # Restore
+        # 0. Monitor Active Positions for ALL KRAKEN USERS - DISABLED (Kraken removed)
+        # for kraken_trader in self.kraken_traders:
+        #     user_label = getattr(kraken_trader, 'user_id', 'Main')
+        #     all_owned = list(kraken_trader.active_positions.keys())
+        #     if all_owned:
+        #         print(f"🛡️ Monitoring {len(all_owned)} Kraken positions for User {user_label}...")
+        #         for symbol in all_owned:
+        #             # Detect asset type based on symbol format
+        #             a_type = "Stock" if "/" not in symbol else "Crypto"
+        #             # Use the specific user's trader for exit checks
+        #             original_trader = self.trader
+        #             self.trader = kraken_trader  # Temporarily swap to check this user's positions
+        #             if a_type == "Crypto" and channel_crypto:
+        #                 await self._check_and_alert(symbol, channel_crypto, a_type)
+        #             elif a_type == "Stock" and channel_stocks:
+        #                 await self._check_and_alert(symbol, channel_stocks, a_type)
+        #             self.trader = original_trader  # Restore
 
         # 1. Monitor Majors - DISABLED (Kraken removed)
         # print(f"Checking major crypto: {self.majors_watchlist}")
@@ -831,7 +831,9 @@ class AlertSystem(commands.Cog):
             return
         if not self.bot.is_ready(): return
         
-        print("🔍 Running Kraken Market Discovery...")
+        # DISABLED - Kraken removed from DEX-only mode
+        return
+        # print("🔍 Running Kraken Market Discovery...")
         try:
             # Load markets to ensure valid mapping
             markets = self.crypto.exchange.load_markets()
