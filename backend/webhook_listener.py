@@ -147,29 +147,52 @@ async def get_portfolio(user_id: int, db: Session = Depends(get_db)):
     total_sol = 0.0
     
     alert_sys = get_alert_system()
+    trader = None
     
-    # Find the DEX trader for this user
+    # 1. First check AlertSystem for existing trader
     if alert_sys and hasattr(alert_sys, 'dex_traders'):
-        for trader in alert_sys.dex_traders:
-            trader_user_id = getattr(trader, 'user_id', 1)
-            if trader_user_id == user_id or user_id == 1:  # User 1 is owner
-                try:
-                    # Get SOL balance
-                    total_sol = trader.get_sol_balance() if hasattr(trader, 'get_sol_balance') else 0
-                    
-                    # Get all SPL tokens
-                    tokens = trader.get_all_tokens() if hasattr(trader, 'get_all_tokens') else []
-                    for token in tokens:
-                        assets.append({
-                            "asset": token.get('symbol', token.get('mint', 'Unknown')[:6]),
-                            "amount": token.get('amount', 0),
-                            "price": token.get('price', 0),
-                            "value_usdt": token.get('value_usd', 0),
-                            "type": "MEME"
-                        })
-                except Exception as e:
-                    logger.error(f"Error fetching wallet tokens: {e}")
+        for t in alert_sys.dex_traders:
+            trader_user_id = getattr(t, 'user_id', 1)
+            if trader_user_id == user_id or user_id == 1:
+                trader = t
                 break
+    
+    # 2. If no trader found, try to create one from user's saved key
+    if not trader:
+        try:
+            import models
+            from encryption_utils import decrypt_key
+            from dex_trader import DexTrader
+            
+            key_entry = db.query(models.ApiKey).filter(
+                models.ApiKey.user_id == user_id,
+                models.ApiKey.exchange == 'solana'
+            ).first()
+            
+            if key_entry:
+                private_key = decrypt_key(key_entry.api_key)
+                trader = DexTrader(private_key=private_key)
+                trader.user_id = user_id
+                logger.info(f"🔑 Created temp DexTrader for user {user_id}")
+        except Exception as e:
+            logger.error(f"Error creating DexTrader for user {user_id}: {e}")
+    
+    # 3. Fetch portfolio from trader
+    if trader:
+        try:
+            total_sol = trader.get_sol_balance() if hasattr(trader, 'get_sol_balance') else 0
+            
+            tokens = trader.get_all_tokens() if hasattr(trader, 'get_all_tokens') else []
+            for token in tokens:
+                assets.append({
+                    "asset": token.get('symbol', token.get('mint', 'Unknown')[:6]),
+                    "amount": token.get('amount', 0),
+                    "price": token.get('price', 0),
+                    "value_usdt": token.get('value_usd', 0),
+                    "type": "MEME"
+                })
+        except Exception as e:
+            logger.error(f"Error fetching wallet tokens: {e}")
     
     result = {
         "usdt_balance": total_sol * 142,  # Approximate SOL->USD
