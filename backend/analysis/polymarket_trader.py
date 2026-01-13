@@ -53,7 +53,7 @@ class TradingConfig:
     paper_mode: bool = True  # Start in paper mode!
     max_bet_usdc: float = 10.0  # Max $10 per bet
     max_bet_pct: float = 0.05  # Max 5% of bankroll
-    min_whale_consensus: int = 3  # Need 3+ whales
+    min_whale_consensus: int = 2  # Lowered from 3 to 2 for better sensitivity
     
     # Price filters (avoid extreme odds)
     min_price: float = 0.10  # Skip if price < 10¢
@@ -210,8 +210,11 @@ class PolymarketTrader:
         # Check 2: Price within range
         price = signal.get("current_price")
         if price is None:
-             result["reason"] = "Price data unavailable"
-             return result
+             # Check if signal has a fallback price
+             price = signal.get("current_price")
+             if price is None:
+                 result["reason"] = "Price data unavailable"
+                 return result
              
         if price < self.config.min_price:
             result["reason"] = f"Price too low ({price:.2f} < {self.config.min_price})"

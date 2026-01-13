@@ -183,8 +183,13 @@ class AlertSystem(commands.Cog):
         else:
             webhook_url = clean_url
 
-        # Get whale addresses
-        whales = list(self.copy_trader.qualified_wallets.keys())
+        # Get whale addresses (Limit to top 100 for Helius free tier mindfulness)
+        sorted_whales = sorted(
+            self.copy_trader.qualified_wallets.items(),
+            key=lambda x: x[1].get('discovered_at', ''),
+            reverse=True
+        )
+        whales = [w[0] for w in sorted_whales[:100]]
         
         # If no whales, use the bot's own wallet as a placeholder to ensure the URL is registered in Helius
         if not whales:
@@ -195,7 +200,7 @@ class AlertSystem(commands.Cog):
                 # Last resort fallback (System address)
                 whales = ["11111111111111111111111111111111"]
 
-        print(f"📡 Registering Helius Webhook at {webhook_url} (Monitoring {len(whales)} addresses)...")
+        print(f"📡 Registering Helius Webhook at {webhook_url} (Monitoring top {len(whales)} freshest whales)...")
         result = self.copy_trader.collector.upsert_helius_webhook(webhook_url, whales)
         
         if result:
@@ -1624,7 +1629,7 @@ class AlertSystem(commands.Cog):
         else:
             await ctx.send("📭 No DEX tokens found to sell.")
 
-    @tasks.loop(seconds=10) # ⚡ OPTIMIZED SPEED: Decoupled from webhooks, now running safely every 10s.
+    @tasks.loop(seconds=30) # ⚡ Helius Mindful: Polling slowed to 30s to save credits for top 100 real-time webhooks.
     async def swarm_monitor(self):
         """Polls for Swarm Signals (Copy Trading)."""
         # Set heartbeat FIRST so we know loop is alive
@@ -1639,9 +1644,8 @@ class AlertSystem(commands.Cog):
             if not hasattr(self, '_swarm_diag_tick'): self._swarm_diag_tick = 0
             self._swarm_diag_tick += 1
             
-            # 1. ANALYZE SWARMS (Decoupled from Webhooks - runs 100% in memory)
-            # Increased min_buyers from 3 to 4 for more established swarms (less slippage failures)
-            signals = self.copy_trader.analyze_swarms(min_buyers=3)
+            # Lowered min_buyers from 3 to 2 for better sensitivity as requested
+            signals = self.copy_trader.analyze_swarms(min_buyers=2)
             
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
             

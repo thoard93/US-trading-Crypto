@@ -91,8 +91,8 @@ class DexScout:
             self.logger.error(f"Error fetching token profiles: {e}")
             return []
 
-    async def get_trending_solana_pairs(self, min_liquidity=2000, limit=15):
-        """Fetch trending Solana pairs from DexScreener (2-Step Process)."""
+    async def get_trending_solana_pairs(self, min_liquidity=2000, limit=50):
+        """Fetch trending Solana pairs from DexScreener (Expanded scan)."""
         # Step 1: Get Latest Profiles (Trending/New)
         profiles = await self.get_latest_token_profiles()
         if not profiles:
@@ -104,8 +104,8 @@ class DexScout:
         candidates = []
         skipped_pump = 0
         # Step 2: Fetch detailed pair data for candidates
-        # We limit to scanning top 30 profiles to find enough non-pump.fun tokens
-        for p in sol_profiles[:30]:
+        # Increased scan depth from 30 to 100 to find more non-pump.fun tokens
+        for p in sol_profiles[:100]:
             addr = p.get('tokenAddress')
             if not addr: continue
             

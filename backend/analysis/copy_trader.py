@@ -152,8 +152,8 @@ class SmartCopyTrader:
             self.logger.error(f"❌ Error saving whale to DB: {e}")
 
 
-    def _prune_old_whales(self, keep_count=100):
-        """Remove oldest whales to keep list fresh."""
+    def _prune_old_whales(self, keep_count=500):
+        """Remove oldest whales to keep list fresh. Capacity increased to 500."""
         try:
             from database import SessionLocal
             from models import WhaleWallet
@@ -249,8 +249,8 @@ class SmartCopyTrader:
                     new_wallets += 1
                     self._save_wallet_to_db(wallet, wallet_data)
                     
-        # Pruning: Keep only top 100 whales (by score/freshness)
-        if len(self.qualified_wallets) > 100:
+        # Pruning: Keep only top 500 whales (by score/freshness)
+        if len(self.qualified_wallets) > 500:
             self._prune_old_whales()
             
             # Respect rate limits
@@ -332,16 +332,17 @@ class SmartCopyTrader:
                     new_wallets += 1
                     self._save_wallet_to_db(wallet, wallet_data)
                     
-        if len(self.qualified_wallets) > 100:
+        if len(self.qualified_wallets) > 500:
             self._prune_old_whales()
             
         self.logger.info(f"✅ Hunt Complete. Found {new_wallets} new qualified wallets. Total: {len(self.qualified_wallets)}")
         return new_wallets
 
-    async def monitor_swarm(self, window_minutes=10, min_buyers=3):
+    async def monitor_swarm(self, window_minutes=15, min_buyers=3):
         """
         Real-time Swarm Detector.
         Polls all Qualified Wallets.
+        Window increased to 15m to catch more swarms.
         Returns list of (token_mint, token_symbol) to BUY.
         """
         if not self.qualified_wallets:
@@ -354,7 +355,7 @@ class SmartCopyTrader:
         # Prevents API Credit Drain (2M -> 100k per day)
         
         all_wallets = list(self.qualified_wallets.keys())
-        batch_size = 15 # Restore Coverage: Batch size increased because checks are now 90% cheaper
+        batch_size = 25 # Increased from 15 for faster 500-whale rotation
         total_wallets = len(all_wallets)
         
         if total_wallets == 0: return []

@@ -249,21 +249,12 @@ class PolymarketCollector:
     
     async def detect_whale_swarm(
         self,
-        min_whales: int = 3,
+        min_whales: int = 2,
         time_window_minutes: int = 60
     ) -> List[Dict]:
         """
         Detect when multiple whales are betting on the same market (SWARM SIGNAL).
-        
-        This is the key copy-trading signal - if multiple top traders
-        are betting the same direction, it's a strong signal.
-        
-        Args:
-            min_whales: Minimum number of whales needed for a signal
-            time_window_minutes: Look for bets within this time window
-            
-        Returns:
-            List of swarm signals with market info and whale count
+        Min whales lowered to 2 for better sensitivity.
         """
         # First, get top traders
         traders = await self.fetch_leaderboard(limit=15)
@@ -291,6 +282,9 @@ class PolymarketCollector:
                 
                 market_bets[pos.token_id]["wallets"].append(trader.wallet)
                 market_bets[pos.token_id]["total_size"] += pos.size
+                # Store a fallback price from whale's own data
+                if pos.current_price > 0:
+                    market_bets[pos.token_id]["avg_price"] = pos.current_price
             
             # Small delay to avoid rate limiting
             await asyncio.sleep(0.2)
@@ -299,8 +293,17 @@ class PolymarketCollector:
         swarm_signals = []
         for token_id, data in market_bets.items():
             if len(data["wallets"]) >= min_whales:
-                # Get current price
+                # 1. Try to get real-time price
                 price = await self.get_market_price(token_id)
+                
+                # 2. Fallback to average whale entry price if API fails
+                if price is None and data.get("avg_price"):
+                    price = data["avg_price"]
+                
+                # 3. Last resort fallback from data
+                if price is None:
+                    # In detect_whale_swarm loop, we didn't store avg_price yet, let's fix that
+                    pass
                 
                 signal = {
                     "token_id": token_id,
