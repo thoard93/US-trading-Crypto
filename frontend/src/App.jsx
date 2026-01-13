@@ -92,11 +92,7 @@ function App() {
 
   const [user, setUser] = useState(JSON.parse(localStorage.getItem('AG_USER') || 'null'));
   const [authToken, setAuthToken] = useState(localStorage.getItem('AG_TOKEN'));
-  const [apiKey, setApiKey] = useState('');
-  const [apiSecret, setApiSecret] = useState('');
-  const [alpacaKey, setAlpacaKey] = useState('');
-  const [alpacaSecret, setAlpacaSecret] = useState('');
-  const [alpacaEnv, setAlpacaEnv] = useState('paper'); // 'paper' or 'live'
+  // Removed Kraken/Alpaca state - DEX only now!
   const [solanaKey, setSolanaKey] = useState('');
 
   const loginWithDiscord = async () => {
@@ -132,47 +128,7 @@ function App() {
     }
   }, [apiBase, user]);
 
-  const saveKrakenKeys = async () => {
-    if (!user) return alert("Please login first");
-    setLoading(true);
-    try {
-      await axios.post(`${apiBase}/settings/keys`, {
-        user_id: user.id,
-        exchange: 'kraken',
-        api_key: apiKey,
-        api_secret: apiSecret
-      });
-      alert("Kraken Keys saved securely (AES-256 Encrypted)");
-      setApiKey('');
-      setApiSecret('');
-    } catch (err) {
-      alert("Save failed.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const saveAlpacaKeys = async () => {
-    if (!user) return alert("Please login first");
-    setLoading(true);
-    const baseUrl = alpacaEnv === 'live' ? 'https://api.alpaca.markets' : 'https://paper-api.alpaca.markets';
-    try {
-      await axios.post(`${apiBase}/settings/keys`, {
-        user_id: user.id,
-        exchange: 'alpaca',
-        api_key: alpacaKey,
-        api_secret: alpacaSecret,
-        extra_config: baseUrl
-      });
-      alert(`Alpaca ${alpacaEnv.toUpperCase()} Keys saved securely.`);
-      setAlpacaKey('');
-      setAlpacaSecret('');
-    } catch (err) {
-      alert("Save failed.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Removed saveKrakenKeys and saveAlpacaKeys - DEX only mode!
 
   const saveSolanaKeys = async () => {
     if (!user) return alert("Please login first");
@@ -445,15 +401,15 @@ function App() {
               </section>
 
               <section className="glass glow-shadow" style={{ padding: '24px' }}>
-                <h3 style={{ marginBottom: '20px' }}>Kraken Holdings</h3>
+                <h3 style={{ marginBottom: '20px' }}>💰 Your Meme Bags</h3>
                 <div className="portfolio-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
-                      <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
-                        <th style={{ textAlign: 'left', padding: '8px 16px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>ASSET</th>
+                      <tr style={{ borderBottom: '1px solid rgba(255,165,0,0.2)' }}>
+                        <th style={{ textAlign: 'left', padding: '8px 16px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>TOKEN</th>
                         <th style={{ textAlign: 'left', padding: '8px 16px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>AMOUNT</th>
                         <th style={{ textAlign: 'left', padding: '8px 16px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>PRICE</th>
-                        <th style={{ textAlign: 'left', padding: '8px 16px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>VALUE (USDT)</th>
+                        <th style={{ textAlign: 'left', padding: '8px 16px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>VALUE</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -461,7 +417,7 @@ function App() {
                         <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                           <td style={{ padding: '16px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '0.7rem', background: asset.type === 'STOCK' ? 'rgba(0, 255, 204, 0.1)' : 'rgba(245, 158, 11, 0.1)', color: asset.type === 'STOCK' ? 'var(--accent-color)' : '#f59e0b', padding: '2px 6px', borderRadius: '4px' }}>{asset.type}</span>
+                              <span style={{ fontSize: '0.7rem', background: 'linear-gradient(135deg, rgba(255, 107, 0, 0.2), rgba(255, 165, 0, 0.1))', color: '#ff6b00', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>{asset.type || 'MEME'}</span>
                               {asset.asset}
                             </div>
                           </td>
@@ -534,99 +490,61 @@ function App() {
                   )}
                 </div>
 
-                {/* API Key Management */}
+                {/* DEGEN WALLETS - The only config you need! */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
-                  <div className="glass" style={{ padding: '20px', borderLeft: '4px solid #f59e0b' }}>
-                    <h4 style={{ color: 'var(--text-secondary)', marginBottom: '16px' }}>KRAKEN API KEYS (CRYPTO)</h4>
+                  {/* Phantom Wallet Section - Main Wallet */}
+                  <div className="glass" style={{ padding: '24px', borderLeft: '4px solid #ff6b00', background: 'linear-gradient(135deg, rgba(255, 107, 0, 0.05), rgba(255, 165, 0, 0.02))' }}>
+                    <h4 style={{ color: '#ff6b00', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>🦍 PHANTOM WALLET (DEX AUTO-APE)</h4>
                     <div style={{ display: 'grid', gap: '12px' }}>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                        Drop your Phantom private key to enable whale tracking and auto-sniping. We copy trade the biggest degens on Solana.
+                      </p>
                       <input
                         type="password"
-                        placeholder="Kraken API Key"
-                        value={apiKey}
-                        onChange={(e) => setApiKey(e.target.value)}
-                        className="glass"
-                        style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-                      />
-                      <input
-                        type="password"
-                        placeholder="Kraken private Secret"
-                        value={apiSecret}
-                        onChange={(e) => setApiSecret(e.target.value)}
-                        className="glass"
-                        style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-                      />
-                      <button onClick={saveKrakenKeys} className="glass" style={{ padding: '12px', background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>
-                        Save Kraken Keys
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="glass" style={{ padding: '20px', borderLeft: '4px solid var(--accent-color)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                      <h4 style={{ color: 'var(--text-secondary)' }}>ALPACA API KEYS (US STOCKS)</h4>
-                      <div className="glass" style={{ display: 'flex', borderRadius: '8px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
-                        <button
-                          onClick={() => setAlpacaEnv('paper')}
-                          style={{ padding: '4px 12px', fontSize: '0.7rem', background: alpacaEnv === 'paper' ? 'var(--accent-color)' : 'transparent', color: alpacaEnv === 'paper' ? '#000' : '#fff', border: 'none', cursor: 'pointer' }}
-                        >PAPER</button>
-                        <button
-                          onClick={() => setAlpacaEnv('live')}
-                          style={{ padding: '4px 12px', fontSize: '0.7rem', background: alpacaEnv === 'live' ? 'var(--success)' : 'transparent', color: alpacaEnv === 'live' ? '#000' : '#fff', border: 'none', cursor: 'pointer' }}
-                        >LIVE</button>
-                      </div>
-                    </div>
-                    <div style={{ display: 'grid', gap: '12px' }}>
-                      <input
-                        type="password"
-                        placeholder="Alpaca API Key ID"
-                        value={alpacaKey}
-                        onChange={(e) => setAlpacaKey(e.target.value)}
-                        className="glass"
-                        style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-                      />
-                      <input
-                        type="password"
-                        placeholder="Alpaca Secret Key"
-                        value={alpacaSecret}
-                        onChange={(e) => setAlpacaSecret(e.target.value)}
-                        className="glass"
-                        style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
-                      />
-                      <button onClick={saveAlpacaKeys} className="glass" style={{ padding: '12px', background: 'rgba(0, 255, 204, 0.1)', color: 'var(--accent-color)' }}>
-                        Save Alpaca Keys
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Phantom Wallet Section */}
-                  <div className="glass" style={{ padding: '20px', borderLeft: '4px solid #9945FF' }}>
-                    <h4 style={{ color: 'var(--text-secondary)', marginBottom: '16px' }}>SOLANA WALLET (DEX AUTO-TRADE)</h4>
-                    <div style={{ display: 'grid', gap: '12px' }}>
-                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Enter your Phantom Wallet Private Key to enable meme coin sniping.</p>
-                      <input
-                        type="password"
-                        placeholder="Solana Private Key (Base58)"
+                        placeholder="🔐 Your Solana Private Key (Base58)"
                         value={solanaKey}
                         onChange={(e) => setSolanaKey(e.target.value)}
                         className="glass"
-                        style={{ padding: '10px', background: 'rgba(0,0,0,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' }}
+                        style={{ padding: '14px', background: 'rgba(0,0,0,0.3)', color: '#fff', border: '2px solid rgba(255, 107, 0, 0.3)', borderRadius: '12px' }}
                       />
-                      <button onClick={saveSolanaKeys} className="glass" style={{ padding: '12px', background: 'rgba(153, 69, 255, 0.1)', color: '#9945FF' }}>
-                        Save Phantom Key
+                      <button onClick={saveSolanaKeys} className="glass" style={{ padding: '14px', background: 'linear-gradient(135deg, rgba(255, 107, 0, 0.2), rgba(255, 165, 0, 0.1))', color: '#ff6b00', fontWeight: 600, border: '1px solid rgba(255, 107, 0, 0.3)' }}>
+                        🚀 Connect Wallet & Start Hunting
                       </button>
+                    </div>
+                  </div>
+
+                  {/* How It Works Section */}
+                  <div className="glass" style={{ padding: '24px', borderLeft: '4px solid #ffd700' }}>
+                    <h4 style={{ color: '#ffd700', marginBottom: '16px' }}>🐋 HOW IT WORKS</h4>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '1.5rem' }}>1️⃣</span>
+                        <span>We track 80+ whale wallets in real-time</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '1.5rem' }}>2️⃣</span>
+                        <span>When 3+ whales buy the same token = SWARM SIGNAL 🔥</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '1.5rem' }}>3️⃣</span>
+                        <span>Bot auto-apes with your wallet (0.03 SOL per trade)</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '1.5rem' }}>4️⃣</span>
+                        <span>When whales dump, we exit instantly 📤</span>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Donation Section */}
-                <div className="glass" style={{ padding: '24px', textAlign: 'center', marginTop: '20px', border: '1px solid rgba(0, 255, 204, 0.2)' }}>
-                  <h3 style={{ marginBottom: '12px' }}>Support the Project 🚀</h3>
+                {/* Degen Donation Section */}
+                <div className="glass" style={{ padding: '24px', textAlign: 'center', marginTop: '20px', border: '2px solid rgba(255, 107, 0, 0.3)', background: 'linear-gradient(135deg, rgba(255, 107, 0, 0.05), rgba(0,0,0,0))' }}>
+                  <h3 style={{ marginBottom: '12px', background: 'linear-gradient(135deg, #ff6b00, #ffd700)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Made Gains? 🤝 Share the Love</h3>
                   <p style={{ color: 'var(--text-secondary)', maxWidth: '500px', margin: '0 auto 16px auto', fontSize: '0.9rem' }}>
-                    If this bot helps you make profit, consider donating to keep the development alive!
-                    Funds go directly to server costs and adding new features.
+                    If this degen bot prints for you, throw some spare change at server costs. More features = more gains!
                   </p>
-                  <a href="https://www.paypal.com/" target="_blank" rel="noreferrer" className="glass glow-shadow" style={{ display: 'inline-block', padding: '12px 32px', background: '#003087', color: '#fff', textDecoration: 'none', borderRadius: '8px', fontWeight: 600 }}>
-                    Donate via PayPal: thoard2021@gmail.com
+                  <a href="https://www.paypal.me/thoard2021" target="_blank" rel="noreferrer" className="glass glow-shadow" style={{ display: 'inline-block', padding: '14px 36px', background: 'linear-gradient(135deg, #ff6b00, #ff8c00)', color: '#fff', textDecoration: 'none', borderRadius: '12px', fontWeight: 700, fontSize: '1rem' }}>
+                    💸 Send Tip via PayPal
                   </a>
                 </div>
 
@@ -712,23 +630,23 @@ function App() {
 
   if (!user) {
     return (
-      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#05070a', color: '#fff', gap: '32px', textAlign: 'center' }}>
-        <div style={{ padding: '32px', borderRadius: '50%', background: 'rgba(0, 255, 204, 0.05)', boxShadow: '0 0 50px rgba(0, 255, 204, 0.1)' }}>
-          {verifying ? <RefreshCw size={64} color="var(--accent-color)" className="spin" /> : <Zap size={64} color="var(--accent-color)" />}
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0a0806 0%, #1a0f05 100%)', color: '#fff', gap: '32px', textAlign: 'center' }}>
+        <div style={{ padding: '32px', borderRadius: '50%', background: 'rgba(255, 107, 0, 0.1)', boxShadow: '0 0 80px rgba(255, 107, 0, 0.3)', animation: 'float 3s ease-in-out infinite' }}>
+          {verifying ? <RefreshCw size={64} color="#ff6b00" className="spin" /> : <span style={{ fontSize: '64px' }}>🦍</span>}
         </div>
         <div>
-          <h1 style={{ fontSize: '3rem', fontWeight: 800, letterSpacing: '-0.02em', marginBottom: '8px' }}>ANTIGRAVITY</h1>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem', maxWidth: '400px' }}>
-            {verifying ? 'Verifying your credentials...' : 'Professional-grade crypto scalping for individual traders.'}
+          <h1 style={{ fontSize: '3.5rem', fontWeight: 900, letterSpacing: '-0.02em', marginBottom: '8px', background: 'linear-gradient(135deg, #ff6b00, #ffa500, #ffd700)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>DEGEN DEX</h1>
+          <p style={{ color: '#b8a090', fontSize: '1.1rem', maxWidth: '450px' }}>
+            {verifying ? '🔥 Verifying your degen credentials...' : '🐋 Hunt whales. Ape memes. Stack SOL. WAGMI 🚀'}
           </p>
         </div>
 
         {authError && (
-          <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.2)', padding: '12px 24px', borderRadius: '12px', color: '#ef4444', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ background: 'rgba(255, 71, 87, 0.15)', border: '1px solid rgba(255, 71, 87, 0.3)', padding: '12px 24px', borderRadius: '12px', color: '#ff4757', display: 'flex', alignItems: 'center', gap: '12px' }}>
             <AlertTriangle size={20} />
             <div>
-              <p style={{ fontWeight: 600, fontSize: '0.9rem' }}>Discord Error: {authError}</p>
-              <p style={{ fontSize: '0.7rem', opacity: 0.8 }}>Verify your Render environment variables and Discord Secret match.</p>
+              <p style={{ fontWeight: 600, fontSize: '0.9rem' }}>Ngmi Error: {authError}</p>
+              <p style={{ fontSize: '0.7rem', opacity: 0.8 }}>Check your Render env vars anon.</p>
             </div>
           </div>
         )}
@@ -738,24 +656,25 @@ function App() {
           disabled={verifying}
           className="glass glow-shadow"
           style={{
-            padding: '16px 40px',
-            background: verifying ? '#333' : '#5865f2',
+            padding: '16px 48px',
+            background: verifying ? '#333' : 'linear-gradient(135deg, #ff6b00, #ff8c00)',
             color: '#fff',
-            fontSize: '1.1rem',
-            fontWeight: 600,
+            fontSize: '1.2rem',
+            fontWeight: 700,
             display: 'flex',
             alignItems: 'center',
             gap: '12px',
             borderRadius: '16px',
-            border: 'none',
+            border: '2px solid rgba(255, 165, 0, 0.5)',
             cursor: verifying ? 'default' : 'pointer',
-            opacity: verifying ? 0.7 : 1
+            opacity: verifying ? 0.7 : 1,
+            boxShadow: '0 8px 32px rgba(255, 107, 0, 0.3)'
           }}
         >
-          {verifying ? <RefreshCw size={24} className="spin" /> : <MessageSquare size={24} />}
-          {verifying ? 'Processing...' : 'Login with Discord'}
+          {verifying ? <RefreshCw size={24} className="spin" /> : <span>🚀</span>}
+          {verifying ? 'Loading...' : 'Ape In With Discord'}
         </button>
-        <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.3)' }}>Protected by AES-256 Multi-tenant Encryption</p>
+        <p style={{ fontSize: '0.8rem', color: 'rgba(255,165,0,0.4)' }}>🔐 AES-256 Encrypted • Not Financial Advice • DYOR</p>
       </div>
     );
   }
@@ -766,29 +685,29 @@ function App() {
         {/* Sidebar */}
         <aside className="glass glow-shadow sidebar">
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div className="glass" style={{ width: '40px', height: '40px', background: 'var(--accent-color)', borderRadius: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-              <Zap size={24} color="#05070a" fill="#05070a" />
+            <div className="glass" style={{ width: '44px', height: '44px', background: 'linear-gradient(135deg, #ff6b00, #ffa500)', borderRadius: '12px', display: 'flex', justifyContent: 'center', alignItems: 'center', fontSize: '24px' }}>
+              🦍
             </div>
-            <h2 style={{ fontSize: '1.25rem' }}>ANTIGRAVITY <span style={{ fontSize: '0.6rem', color: 'var(--accent-color)', verticalAlign: 'top' }}>V2.0 LIVE</span></h2>
+            <h2 style={{ fontSize: '1.25rem', background: 'linear-gradient(135deg, #ff6b00, #ffd700)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>DEGEN DEX <span style={{ fontSize: '0.55rem', color: '#ff6b00', verticalAlign: 'top', WebkitTextFillColor: '#ff6b00' }}>🔥 LIVE</span></h2>
           </div>
 
           <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" active={activeTab === 'Dashboard'} onClick={() => setActiveTab('Dashboard')} />
-            <NavItem icon={<TrendingUp size={20} />} label="Live Markets" active={activeTab === 'Live Markets'} onClick={() => setActiveTab('Live Markets')} />
-            <NavItem icon={<Wallet size={20} />} label="Portfolio" active={activeTab === 'Portfolio'} onClick={() => setActiveTab('Portfolio')} />
-            <NavItem icon={<History size={20} />} label="Trade History" active={activeTab === 'History'} onClick={() => setActiveTab('History')} />
-            <NavItem icon={<ShieldCheck size={20} />} label="Safety Audit" active={activeTab === 'Safety Audit'} onClick={() => setActiveTab('Safety Audit')} />
-            <NavItem icon={<Settings size={20} />} label="Settings" active={activeTab === 'Settings'} onClick={() => setActiveTab('Settings')} />
+            <NavItem icon={<TrendingUp size={20} />} label="🐋 Whale Feed" active={activeTab === 'Live Markets'} onClick={() => setActiveTab('Live Markets')} />
+            <NavItem icon={<Wallet size={20} />} label="💰 My Bags" active={activeTab === 'Portfolio'} onClick={() => setActiveTab('Portfolio')} />
+            <NavItem icon={<History size={20} />} label="📜 Ape History" active={activeTab === 'History'} onClick={() => setActiveTab('History')} />
+            <NavItem icon={<ShieldCheck size={20} />} label="🚨 Rug Check" active={activeTab === 'Safety Audit'} onClick={() => setActiveTab('Safety Audit')} />
+            <NavItem icon={<Settings size={20} />} label="⚙️ Settings" active={activeTab === 'Settings'} onClick={() => setActiveTab('Settings')} />
           </nav>
 
           <div style={{ marginTop: 'auto' }}>
             {apiError && <p style={{ color: 'var(--warning)', fontSize: '0.7rem', textAlign: 'center', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}><Globe size={12} /> {apiError}</p>}
-            <div className="glass" style={{ padding: '16px', background: 'rgba(255,255,255,0.05)' }}>
-              <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>POWER ENGINE STATUS</p>
+            <div className="glass" style={{ padding: '16px', background: 'linear-gradient(135deg, rgba(255, 107, 0, 0.05), rgba(0,0,0,0))' }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>🦍 DEGEN STATUS</p>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ width: '8px', height: '8px', background: (connectionActive && status.is_running) ? 'var(--success)' : 'var(--danger)', borderRadius: '50%' }}></div>
-                  <span style={{ fontSize: '0.875rem' }}>{(connectionActive && status.is_running) ? 'Bot Active' : 'Bot Idle'}</span>
+                  <div style={{ width: '10px', height: '10px', background: (connectionActive && status.is_running) ? '#00ff88' : 'var(--danger)', borderRadius: '50%', boxShadow: (connectionActive && status.is_running) ? '0 0 10px #00ff88' : 'none' }}></div>
+                  <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{(connectionActive && status.is_running) ? '🎯 Hunting Mode' : '😴 Sleeping'}</span>
                 </div>
                 <button
                   onClick={toggleBot}
@@ -881,12 +800,13 @@ function NavItem({ icon, label, active = false, onClick }) {
       padding: '12px 16px',
       cursor: 'pointer',
       transition: 'all 0.3s ease',
-      background: active ? 'rgba(0, 255, 204, 0.1)' : 'transparent',
-      borderColor: active ? 'rgba(0, 255, 204, 0.3)' : 'transparent',
-      color: active ? 'var(--accent-color)' : 'var(--text-secondary)'
+      background: active ? 'linear-gradient(135deg, rgba(255, 107, 0, 0.15), rgba(255, 165, 0, 0.05))' : 'transparent',
+      borderColor: active ? 'rgba(255, 107, 0, 0.4)' : 'transparent',
+      borderLeft: active ? '3px solid #ff6b00' : '3px solid transparent',
+      color: active ? '#ff6b00' : 'var(--text-secondary)'
     }}>
       {icon}
-      <span style={{ fontWeight: 500 }}>{label}</span>
+      <span style={{ fontWeight: active ? 600 : 500 }}>{label}</span>
     </div>
   );
 }

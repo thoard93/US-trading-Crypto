@@ -1,16 +1,19 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
 
 :root {
-  --bg-color: #05070a;
-  --card-bg: rgba(17, 25, 40, 0.75);
-  --glass-border: rgba(255, 255, 255, 0.125);
-  --primary-glow: rgba(0, 255, 204, 0.15);
-  --accent-color: #00ffcc;
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --success: #10b981;
-  --danger: #ef4444;
-  --warning: #f59e0b;
+  --bg-color: #0a0806;
+  --card-bg: rgba(25, 18, 10, 0.85);
+  --glass-border: rgba(255, 165, 0, 0.2);
+  --primary-glow: rgba(255, 107, 0, 0.2);
+  --accent-color: #ff6b00;
+  --accent-secondary: #ffa500;
+  --accent-gold: #ffd700;
+  --text-primary: #fff8f0;
+  --text-secondary: #b8a090;
+  --success: #00ff88;
+  --danger: #ff4757;
+  --warning: #ffa500;
+  --purple-solana: #9945ff;
   --font-main: 'Outfit', sans-serif;
 }
 
@@ -20,7 +23,6 @@
   box-sizing: border-box;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
-  /* Remove blue highlight */
 }
 
 body {
@@ -28,7 +30,10 @@ body {
   color: var(--text-primary);
   font-family: var(--font-main);
   overflow-x: hidden;
-  background: radial-gradient(circle at top right, #111827, #05070a);
+  background: 
+    radial-gradient(circle at 20% 20%, rgba(255, 107, 0, 0.08) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(255, 165, 0, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at top right, #1a0f05, #0a0806);
   min-height: 100vh;
 }
 
@@ -40,14 +45,18 @@ body {
 }
 
 .glow-shadow {
-  box-shadow: 0 8px 32px 0 var(--primary-glow);
+  box-shadow: 
+    0 8px 32px 0 var(--primary-glow),
+    0 0 60px -20px rgba(255, 165, 0, 0.3);
 }
 
-h1,
-h2,
-h3 {
-  font-weight: 600;
+h1, h2, h3 {
+  font-weight: 700;
   letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #ff6b00, #ffa500, #ffd700);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 button {
@@ -55,6 +64,11 @@ button {
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   border: none;
   font-family: var(--font-main);
+}
+
+button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(255, 107, 0, 0.3);
 }
 
 button:active {
@@ -81,7 +95,6 @@ button:active {
   flex-direction: column;
   gap: 24px;
   overflow-y: auto;
-  /* Allow scrolling content */
 }
 
 .right-panel {
@@ -101,18 +114,28 @@ button:active {
   padding: 4px 12px;
   border-radius: 99px;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .badge-success {
-  background: rgba(16, 185, 129, 0.1);
+  background: rgba(0, 255, 136, 0.15);
   color: var(--success);
+  border: 1px solid rgba(0, 255, 136, 0.3);
 }
 
 .badge-danger {
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(255, 71, 87, 0.15);
   color: var(--danger);
+  border: 1px solid rgba(255, 71, 87, 0.3);
+}
+
+.badge-degen {
+  background: linear-gradient(135deg, rgba(255, 107, 0, 0.2), rgba(255, 165, 0, 0.2));
+  color: var(--accent-gold);
+  border: 1px solid rgba(255, 165, 0, 0.4);
+  animation: pulse-glow 2s infinite;
 }
 
 ::-webkit-scrollbar {
@@ -124,26 +147,60 @@ button:active {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 107, 0, 0.3);
   border-radius: 10px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 107, 0, 0.5);
 }
 
 @keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
-.spin {
-  animation: spin 1s linear infinite;
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 5px rgba(255, 107, 0, 0.3); }
+  50% { box-shadow: 0 0 20px rgba(255, 165, 0, 0.6); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-5deg); }
+  75% { transform: rotate(5deg); }
+}
+
+.spin { animation: spin 1s linear infinite; }
+.float { animation: float 3s ease-in-out infinite; }
+.shake { animation: shake 0.5s ease-in-out infinite; }
+
+/* Degen-specific styles */
+.degen-glow {
+  text-shadow: 0 0 10px rgba(255, 107, 0, 0.5), 0 0 20px rgba(255, 165, 0, 0.3);
+}
+
+.whale-badge {
+  background: linear-gradient(135deg, #1a0f05, #2a1a0a);
+  border: 2px solid var(--accent-color);
+  padding: 8px 16px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.fire-text {
+  background: linear-gradient(180deg, #ff6b00 0%, #ff4500 50%, #ff0000 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 /* --- MOBILE OPTIMIZATION --- */
@@ -155,7 +212,6 @@ button:active {
     min-height: 100vh;
     padding: 16px;
     padding-bottom: 80px;
-    /* Space for bottom nav */
   }
 
   .sidebar {
@@ -168,18 +224,15 @@ button:active {
     flex-direction: row;
     justify-content: space-around;
     padding: 12px;
-    background: rgba(17, 25, 40, 0.95);
+    background: rgba(25, 18, 10, 0.98);
     backdrop-filter: blur(20px);
-    border-top: 1px solid var(--glass-border);
+    border-top: 2px solid var(--accent-color);
     border-radius: 0;
     z-index: 100;
     gap: 0;
   }
 
-  /* Hide Logo in Bottom Nav, maybe show smaller */
-  .sidebar h2 {
-    display: none;
-  }
+  .sidebar h2 { display: none; }
 
   .sidebar button {
     flex-direction: column;
@@ -189,26 +242,17 @@ button:active {
     background: transparent !important;
   }
 
-  /* Adjust SVG icons in sidebar buttons */
   .sidebar button svg {
     margin-right: 0;
     width: 24px;
     height: 24px;
   }
 
-  /* Make active tab indicator subtle bottom border instead of full background */
   .sidebar button.active {
     background: transparent !important;
     color: var(--accent-color) !important;
   }
 
-  .right-panel {
-    display: none;
-    /* Hide right panel stats on mobile to declutter, or move to a 'Stats' tab */
-  }
-
-  /* Show right panel content if we are in Dashboard tab? Or just stack it */
-  /* For now, let's stack it below main content */
   .right-panel {
     display: flex;
     order: 3;
