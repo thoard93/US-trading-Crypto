@@ -318,8 +318,8 @@ function App() {
             </section>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
-              <StatCard label="Live Performance" value={stats.total_profit || '$0.00'} sub="Total realized gains" color="var(--success)" />
-              <StatCard label="Active Loop" value={stats.active_bot_names || 'None'} sub={`${stats.active_bots_count || 0} engine(s) scanning`} color="var(--accent-color)" />
+              <StatCard label="💰 Meme Gains" value={stats.total_profit || '$0.00'} sub="Total realized from meme trades" color="#ff6b00" />
+              <StatCard label="🐋 Whale Hunter" value={stats.active_bot_names || 'Connecting...'} sub={`${stats.whales_tracked || 0} whales tracked`} color="#ffa500" />
             </div>
           </>
         );
@@ -745,12 +745,12 @@ function App() {
           {renderTabContent()}
         </main>
 
-        {/* Right Panel */}
+        {/* Right Panel - DEX POSITIONS & WHALE ACTIVITY */}
         <aside className="right-panel">
           <section className="glass glow-shadow" style={{ padding: '24px', flex: 1, minHeight: '320px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h3>Active Positions</h3>
-              {positions.length > 0 && <span className="badge badge-success">{positions.length}</span>}
+              <h3>🎒 Meme Positions</h3>
+              {positions.length > 0 && <span className="badge badge-success" style={{ background: 'linear-gradient(135deg, #ff6b00, #ffa500)' }}>{positions.length}</span>}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
               {connectionActive && Array.isArray(positions) && positions.length > 0 ? (
@@ -760,28 +760,38 @@ function App() {
                   </div>
                 ))
               ) : (
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>{connectionActive ? 'No open trades found.' : 'Bridge syncing...'}</p>
+                <div style={{ textAlign: 'center', padding: '20px' }}>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '8px' }}>
+                    {connectionActive ? '🐋 No active meme positions' : '🔌 Connecting to whale tracker...'}
+                  </p>
+                  <p style={{ color: 'rgba(255,165,0,0.5)', fontSize: '0.75rem' }}>
+                    {connectionActive ? 'Waiting for 3+ whale swarm signal...' : ''}
+                  </p>
+                </div>
               )}
             </div>
           </section>
 
           <section className="glass glow-shadow" style={{ padding: '24px', flex: 1, marginTop: '24px' }}>
-            <h3 style={{ marginBottom: '20px' }}>Market Radar</h3>
+            <h3 style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>🐋 Whale Radar</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {marketData.length > 0 ? (
                 marketData.slice(0, 5).map((m, i) => (
-                  <div key={i} className="glass" style={{ padding: '12px', display: 'flex', justifyContent: 'space-between', background: 'rgba(255,255,255,0.02)' }}>
+                  <div key={i} className="glass" style={{ padding: '12px', display: 'flex', justifyContent: 'space-between', background: 'rgba(255,255,255,0.02)', borderLeft: m.change >= 3 ? '3px solid #ff6b00' : '3px solid transparent' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div style={{ width: '4px', height: '4px', background: m.change > 0 ? 'var(--success)' : 'var(--danger)', borderRadius: '50%' }}></div>
+                      <span style={{ fontSize: '1rem' }}>{m.change >= 3 ? '🔥' : '👀'}</span>
                       <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{m.symbol}</span>
                     </div>
-                    <span style={{ color: m.change > 0 ? 'var(--success)' : 'var(--danger)', fontSize: '0.8rem' }}>
-                      {m.change > 0 ? '+' : ''}{m.change}%
+                    <span style={{ color: m.change >= 3 ? '#ff6b00' : 'var(--text-secondary)', fontSize: '0.8rem', fontWeight: 600 }}>
+                      {m.change} {m.change >= 3 ? '🐋 SWARM!' : '🐋'}
                     </span>
                   </div>
                 ))
               ) : (
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>Scanning markets...</p>
+                <div style={{ textAlign: 'center', padding: '16px' }}>
+                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>🔍 Scanning whale wallets...</p>
+                  <p style={{ color: 'rgba(255,165,0,0.4)', fontSize: '0.7rem', marginTop: '4px' }}>Tracking 80+ top traders</p>
+                </div>
               )}
             </div>
           </section>
