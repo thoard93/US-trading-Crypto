@@ -70,7 +70,7 @@ class AlertSystem(commands.Cog):
         # Trading Configuration (Settings)
         self.dex_auto_trade = False
         self.dex_min_safety_score = 50
-        self.dex_min_liquidity = 20000  # Lowered from $25k to $20k to catch borderline cases
+        self.dex_min_liquidity = 14000  # Lowered from $20k to $14k to catch more tokens
 
         self.dex_max_positions = 15
 
@@ -132,32 +132,32 @@ class AlertSystem(commands.Cog):
         """Wait for bot to be ready and sync existing positions."""
         if not self.bot.is_ready():
             await self.bot.wait_until_ready()
-        print("📥 Bot ready. Synchronizing live positions from Kraken...")
-        self.trader.sync_positions()
+        # print("📥 Bot ready. Synchronizing live positions from Kraken...")
+        # self.trader.sync_positions()  # DISABLED - Kraken removed
         
         # Log DEX trading status
         if self.dex_trader and self.dex_trader.wallet_address:
             sol_balance = self.dex_trader.get_sol_balance()
             print(f"💰 DEX Wallet SOL Balance: {sol_balance:.4f} SOL")
         
-        # Sync Stock positions from Alpaca (CRITICAL: prevents wash trade errors)
-        if self.stocks and self.stocks.api:
-            try:
-                positions = self.stocks.api.list_positions()
-                for pos in positions:
-                    symbol = pos.symbol
-                    self.stock_positions[symbol] = {
-                        'qty': float(pos.qty),
-                        'avg_entry_price': float(pos.avg_entry_price),
-                        'market_value': float(pos.market_value)
-                    }
-                print(f"📈 Synced {len(positions)} Alpaca positions: {list(self.stock_positions.keys())}")
-                
-                account = self.stocks.get_account()
-                if account:
-                    print(f"💵 Alpaca - Cash: ${account['cash']:.2f}, Buying Power: ${account['buying_power']:.2f}")
-            except Exception as e:
-                print(f"⚠️ Failed to sync Alpaca: {e}")
+        # Sync Stock positions from Alpaca - DISABLED (Alpaca removed)
+        # if self.stocks and self.stocks.api:
+        #     try:
+        #         positions = self.stocks.api.list_positions()
+        #         for pos in positions:
+        #             symbol = pos.symbol
+        #             self.stock_positions[symbol] = {
+        #                 'qty': float(pos.qty),
+        #                 'avg_entry_price': float(pos.avg_entry_price),
+        #                 'market_value': float(pos.market_value)
+        #             }
+        #         print(f"📈 Synced {len(positions)} Alpaca positions: {list(self.stock_positions.keys())}")
+        #         
+        #         account = self.stocks.get_account()
+        #         if account:
+        #             print(f"💵 Alpaca - Cash: ${account['cash']:.2f}, Buying Power: ${account['buying_power']:.2f}")
+        #     except Exception as e:
+        #         print(f"⚠️ Failed to sync Alpaca: {e}")
         
         # 🚀 START BACKGROUND LOOPS (must be started explicitly!)
         if not self.auto_hunt_loop.is_running():
@@ -255,30 +255,30 @@ class AlertSystem(commands.Cog):
                         await self._check_and_alert(symbol, channel_stocks, a_type)
                     self.trader = original_trader  # Restore
 
-        # 1. Monitor Majors
-        print(f"Checking major crypto: {self.majors_watchlist}")
-        if channel_crypto:
-            for symbol in self.majors_watchlist:
-                if symbol not in self.restricted_assets:
-                    await self._check_and_alert(symbol, channel_crypto, "Crypto")
+        # 1. Monitor Majors - DISABLED (Kraken removed)
+        # print(f"Checking major crypto: {self.majors_watchlist}")
+        # if channel_crypto:
+        #     for symbol in self.majors_watchlist:
+        #         if symbol not in self.restricted_assets:
+        #             await self._check_and_alert(symbol, channel_crypto, "Crypto")
 
-        # 2. Monitor Memes (on Kraken)
-        print(f"Checking memecoins: {self.memes_watchlist}")
-        if channel_memes:
-            for symbol in self.memes_watchlist:
-                if symbol not in self.restricted_assets:
-                    await self._check_and_alert(symbol, channel_memes, "Meme")
+        # 2. Monitor Memes (on Kraken) - DISABLED (Kraken removed)
+        # print(f"Checking memecoins: {self.memes_watchlist}")
+        # if channel_memes:
+        #     for symbol in self.memes_watchlist:
+        #         if symbol not in self.restricted_assets:
+        #             await self._check_and_alert(symbol, channel_memes, "Meme")
 
 
 
-        # 3. Monitor Stocks
-        print(f"Checking stock markets: {self.stock_watchlist}")
-        if channel_stocks:
-            for symbol in self.stock_watchlist:
-                # Skip restricted assets
-                if symbol not in self.restricted_assets:
-                    await self._check_and_alert(symbol, channel_stocks, "Stock")
-                await asyncio.sleep(1)
+        # 3. Monitor Stocks - DISABLED (Alpaca removed)
+        # print(f"Checking stock markets: {self.stock_watchlist}")
+        # if channel_stocks:
+        #     for symbol in self.stock_watchlist:
+        #         # Skip restricted assets
+        #         if symbol not in self.restricted_assets:
+        #             await self._check_and_alert(symbol, channel_stocks, "Stock")
+        #         await asyncio.sleep(1)
 
     async def sync_all_dex_positions(self):
         """Syncs on-chain positions for all traders, loading entry prices from DB."""
