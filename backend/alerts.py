@@ -70,7 +70,7 @@ class AlertSystem(commands.Cog):
         # Trading Configuration (Settings)
         self.dex_auto_trade = False
         self.dex_min_safety_score = 50
-        self.dex_min_liquidity = 14000  # Lowered from $20k to $14k to catch more tokens
+        self.dex_min_liquidity = 10000  # Lowered from $14k to $10k to catch more memes
 
         self.dex_max_positions = 15
 
