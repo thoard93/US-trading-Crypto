@@ -237,12 +237,18 @@ async def get_positions(user_id: int):
 
 @app.get("/trades/{user_id}")
 async def get_trades(user_id: int, db: Session = Depends(get_db)):
-    """Get DEX trade history."""
+    """Get DEX trade history (excluding old Kraken trades)."""
     import models
+    from datetime import datetime
     
-    # Fetch trades from database, filtering for DEX trades
+    # DEX-only mode started 2026-01-13 - filter out older Kraken trades
+    dex_start_date = datetime(2026, 1, 13)
+    
     trades = db.query(models.Trade).filter(
-        models.Trade.user_id == user_id
+        models.Trade.user_id == user_id,
+        models.Trade.timestamp >= dex_start_date,
+        # Exclude Kraken format symbols (contain /USDT)
+        ~models.Trade.symbol.contains('/USDT')
     ).order_by(models.Trade.timestamp.desc()).limit(20).all()
     
     formatted = []
@@ -259,10 +265,19 @@ async def get_trades(user_id: int, db: Session = Depends(get_db)):
 
 @app.get("/stats/{user_id}")
 async def get_stats(user_id: int, db: Session = Depends(get_db)):
-    """Get trading stats focused on DEX."""
+    """Get trading stats focused on DEX (excluding old Kraken trades)."""
     import models
+    from datetime import datetime
     
-    trades = db.query(models.Trade).filter(models.Trade.user_id == user_id).all()
+    # DEX-only mode - start fresh from 2026-01-13
+    dex_start_date = datetime(2026, 1, 13)
+    
+    trades = db.query(models.Trade).filter(
+        models.Trade.user_id == user_id,
+        models.Trade.timestamp >= dex_start_date,
+        ~models.Trade.symbol.contains('/USDT')
+    ).all()
+    
     total_profit = 0
     if trades:
         sells = sum([float(t.cost or 0) for t in trades if t.side == 'SELL'])

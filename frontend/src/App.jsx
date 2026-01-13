@@ -262,12 +262,12 @@ function App() {
             <section className="glass glow-shadow chart-container" style={{ display: 'flex', flexDirection: 'column' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '24px' }}>
                 <div>
-                  <h1 style={{ fontSize: '2rem' }}>{activeSymbol}</h1>
+                  <h1 style={{ fontSize: '2rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    🐋 Whale Hunting Mode
+                    <span style={{ fontSize: '0.9rem', color: '#ff6b00', background: 'rgba(255, 107, 0, 0.1)', padding: '4px 12px', borderRadius: '20px' }}>LIVE</span>
+                  </h1>
                   <p style={{ color: 'var(--text-secondary)' }}>
-                    {chartData.length > 0 && chartData[chartData.length - 1]?.price
-                      ? `$${chartData[chartData.length - 1].price.toLocaleString()}`
-                      : 'Connecting to Market...'}
-                    <span style={{ color: 'var(--success)', marginLeft: '8px', fontSize: '0.8rem', textTransform: 'uppercase' }}>LIVE {chartTimeframe}</span>
+                    Monitoring Solana meme tokens for 3+ whale swarm signals
                   </p>
                 </div>
                 <div className="glass" style={{ display: 'flex', padding: '4px' }}>
@@ -310,8 +310,10 @@ function App() {
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
-                    <Activity size={32} className="spin" style={{ opacity: 0.5 }} />
+                  <div style={{ height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)', gap: '16px' }}>
+                    <div style={{ fontSize: '4rem', animation: 'float 3s ease-in-out infinite' }}>🐋</div>
+                    <p style={{ fontSize: '1.2rem', color: '#ff6b00' }}>Scanning for whale swarms...</p>
+                    <p style={{ fontSize: '0.9rem', opacity: 0.7 }}>Auto-buy triggers when 3+ whales buy the same token</p>
                   </div>
                 )}
               </div>
