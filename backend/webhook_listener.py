@@ -18,10 +18,27 @@ logging.getLogger("uvicorn.access").addFilter(NoWebhookFilter())
 logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
 
-app = FastAPI(title="Helius Webhook Listener")
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(title="DEGEN DEX API + Webhook Listener")
+
+# CORS - Allow frontend to connect
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Global reference to the bot/cog - will be set during bot startup
 bot_instance = None
+
+# Mount all routes from main.py
+from main import app as main_app
+for route in main_app.routes:
+    if hasattr(route, 'path') and route.path != '/':
+        app.routes.append(route)
 
 @app.get("/")
 async def health_check():
