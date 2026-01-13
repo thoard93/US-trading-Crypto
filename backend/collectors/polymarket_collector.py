@@ -277,6 +277,7 @@ class PolymarketCollector:
             positions = await self.fetch_whale_positions(trader.wallet)
             
             for pos in positions:
+                if pos.token_id not in market_bets:
                     market_bets[pos.token_id] = {
                         "token_id": pos.token_id,
                         "market_id": pos.market_id,

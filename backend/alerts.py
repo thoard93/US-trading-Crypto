@@ -1369,6 +1369,9 @@ class AlertSystem(commands.Cog):
             "• `!rugcheck <addr>` - Audit a token safety"
         )
         await ctx.send(help_text)
+
+    @commands.command()
+    async def hunt(self, ctx):
         """Manually trigger whale wallet discovery."""
         if not self.ready:
             await ctx.send("⏳ **System warming up...** Copy-trader data is loading. Please wait.")
