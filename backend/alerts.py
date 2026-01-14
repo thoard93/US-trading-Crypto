@@ -1940,9 +1940,9 @@ class AlertSystem(commands.Cog):
                 print(f"⏳ Skipping {mint[:16]}... (on cooldown after failed trade)")
                 return
         
-        # 🚫 SKIP PUMP.FUN TOKENS - Near 0% success rate with Jupiter
+        # 🚫 SKIP PUMP.FUN TOKENS - High slippage failure rate
         if mint.lower().endswith('pump'):
-            print(f"🚫 Skipping pump.fun token: {mint[:16]}... (not tradeable via Jupiter)")
+            print(f"🚫 Skipping pump.fun token: {mint[:16]}... (slippage risk high)")
             return
         
         # 1. Get Token Info (Symbol, Liquidity)

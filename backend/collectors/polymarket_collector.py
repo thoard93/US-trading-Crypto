@@ -270,7 +270,7 @@ class PolymarketCollector:
         market_bets: Dict[str, Dict] = {}  # token_id -> {wallets: [], outcome: str, market_title: str, ...}
         
         # 0. Fetch top markets to map names
-        markets = await self.fetch_markets(limit=100)
+        markets = await self.fetch_markets(limit=500)
         market_map = {m.get('conditionId'): m.get('question', 'Unknown Market') for m in markets}
         
         for trader in traders:

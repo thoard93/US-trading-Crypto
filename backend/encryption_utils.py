@@ -27,5 +27,6 @@ def decrypt_key(encrypted_data: str) -> str:
     try:
         return cipher_suite.decrypt(encrypted_data.encode()).decode()
     except Exception as e:
-        print(f"❌ Decryption failed: {e}")
+        # Silencing noise for users with missing/invalid keys at startup
+        # print(f"❌ Decryption failed: {e}")
         return ""
