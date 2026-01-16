@@ -549,8 +549,12 @@ class SmartCopyTrader:
 
     def detect_whale_sells(self, transactions, held_tokens):
         """
-        Detect if any tracked whale is SELLING a token we currently hold.
+        Detect if any ORIGINAL SWARM participant is SELLING a token we currently hold.
         Returns list of token mints where sells were detected.
+        
+        IMPORTANT: Only triggers exit if the selling whale was part of the 
+        original swarm that triggered our buy. Random whales selling does NOT
+        trigger an exit.
         
         Args:
             transactions: List of Helius Enhanced Transactions
@@ -580,11 +584,19 @@ class SmartCopyTrader:
                 if t.get('fromUserAccount') == wallet:
                     sold_mint = t.get('mint')
                     if sold_mint and sold_mint in held_tokens:
-                        self.logger.warning(f"📉 WHALE SELL DETECTED: {wallet[:8]}... sold {sold_mint[:8]}...")
+                        # FIX: Only trigger if this whale was part of the ORIGINAL SWARM
+                        swarm_participants = self.active_swarms.get(sold_mint, set())
+                        if wallet not in swarm_participants:
+                            # Random whale selling, NOT our swarm - ignore
+                            self.logger.debug(f"⏭️ Ignoring non-swarm whale sell: {wallet[:8]}... sold {sold_mint[:8]}...")
+                            continue
+                        
+                        self.logger.warning(f"📉 SWARM WHALE SELL DETECTED: {wallet[:8]}... sold {sold_mint[:8]}...")
                         if sold_mint not in sell_signals:
                             sell_signals.append(sold_mint)
                             
         return sell_signals
+
 
 
     def prune_lazy_whales(self, inactive_hours=24):
