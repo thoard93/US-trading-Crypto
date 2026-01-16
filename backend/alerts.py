@@ -1681,6 +1681,14 @@ class AlertSystem(commands.Cog):
 
             
             for mint in signals:
+                # RACE CONDITION FIX: Check dump blacklist FIRST (before position check)
+                # This prevents re-buying a token we just sold due to whale dump
+                if hasattr(self, '_dump_blacklist') and mint in self._dump_blacklist:
+                    now = datetime.datetime.now().timestamp()
+                    if now - self._dump_blacklist[mint] < 3600:  # 60 min cooldown
+                        print(f"🚫 Swarm Monitor Skip: {mint[:16]}... (on dump blacklist)")
+                        continue
+                
                 # Check if ANY user already has a position
                 already_holding = False
                 for trader in self.dex_traders:
@@ -1703,6 +1711,7 @@ class AlertSystem(commands.Cog):
                 if self.dex_traders:
                     print(f"🚨 EXECUTING SWARM BUY: {mint}")
                     await self.execute_swarm_trade(mint)
+
                 else:
                     print(f"⚠️ SWARM DETECTED but no DEX wallet loaded - Alert only mode")
 
@@ -2121,6 +2130,18 @@ class AlertSystem(commands.Cog):
             
             if channel_memes:
                 await channel_memes.send(f"🚨 **WHALE SELL DETECTED!** 📉\n`{symbol}` - Checking positions...")
+            
+            # RACE CONDITION FIX: Add to blacklist IMMEDIATELY before any sell attempts
+            # This prevents swarm_monitor from triggering re-buys during the sell process
+            if not hasattr(self, '_dump_blacklist'):
+                self._dump_blacklist = {}
+            self._dump_blacklist[mint] = datetime.datetime.now().timestamp()
+            
+            # Also remove from active swarms to prevent further signals
+            if mint in self.copy_trader.active_swarms:
+                del self.copy_trader.active_swarms[mint]
+            
+            print(f"🚫 Blacklisted {mint[:16]}... (60min cooldown)")
             
             # Execute sell for ALL traders who hold this token
             for trader in self.dex_traders:
