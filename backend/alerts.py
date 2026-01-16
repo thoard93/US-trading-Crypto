@@ -70,7 +70,7 @@ class AlertSystem(commands.Cog):
         # Trading Configuration (Settings)
         self.dex_auto_trade = False
         self.dex_min_safety_score = 50
-        self.dex_min_liquidity = 10000  # Lowered from $14k to $10k to catch more memes
+        self.dex_min_liquidity = 50000  # $50k min - quality over quantity
 
         self.dex_max_positions = 15
 
@@ -1367,6 +1367,11 @@ class AlertSystem(commands.Cog):
     @commands.command()
     async def help_me(self, ctx):
         """Custom help for degen mode."""
+        # Only respond in trading channels
+        trading_channels = [self.STOCKS_CHANNEL_ID, self.CRYPTO_CHANNEL_ID, self.MEMECOINS_CHANNEL_ID]
+        if ctx.channel.id not in trading_channels:
+            return  # Silently ignore in non-trading channels
+        
         help_text = (
             "🚀 **DEGEN DEX Commands:**\n"
             "• `!hunt` - Scan for new whale wallets\n"
@@ -2027,8 +2032,8 @@ class AlertSystem(commands.Cog):
                 print(f"🚫 Swarm analysis blocked for {symbol}: Liq/Safety/Vol failed.")
                 return
                 
-            # 5. Sizing (Reduced to 0.03 SOL for less price impact on pump.fun)
-            amount_sol = 0.03
+            # 5. Sizing (0.08 SOL per trade - quality tokens w/ $50k+ liquidity)
+            amount_sol = 0.08
             print(f"✅ All checks passed! Executing swarm buy for {symbol}...")
 
             
