@@ -439,10 +439,16 @@ class SmartCopyTrader:
                 added_count += 1
         return added_count
 
-    def analyze_swarms(self, min_buyers=3, window_minutes=10):
-        """Analyzes recent activity for swarms."""
+    def analyze_swarms(self, min_buyers=3, window_minutes=10, held_tokens=None):
+        """Analyzes recent activity for swarms.
+        
+        Args:
+            held_tokens: Set of token mints we currently hold. These swarms will NOT be pruned
+                         even if activity expires, to prevent false positive orphan detection.
+        """
         signals = []
         now = datetime.utcnow()
+        held_tokens = held_tokens or set()
         
         # 1. PRUNE RECENT ACTIVITY
         self._recent_whale_activity = [
@@ -460,15 +466,20 @@ class SmartCopyTrader:
         
         # 🔍 SWARM PRUNING (Phase 42 Improvement)
         # Remove tokens from active_swarms (and DB) if they no longer meet the threshold
-        # This allows them to "re-signal" if a new swarm forms later.
+        # CRITICAL: Don't prune swarms for tokens we still hold (prevents false orphan exits)
         active_mint_list = list(self.active_swarms.keys())
         for mint in active_mint_list:
+            # SKIP PRUNING if we still hold this token
+            if mint in held_tokens:
+                continue
+                
             if cluster.get(mint, set()) == set(): # No activity at all in the window
                 self.logger.info(f"🧹 Pruning dead swarm: {mint[:16]}... (cooled down)")
                 if mint in self.active_swarms:
                     del self.active_swarms[mint]
                 # Cleanup DB so it doesn't restore on next reboot
                 self._delete_swarm_from_db(mint)
+
 
         # 🔍 DIAGNOSTIC: Show top tokens by whale interest
         if cluster:

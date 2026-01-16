@@ -70,7 +70,7 @@ class AlertSystem(commands.Cog):
         # Trading Configuration (Settings)
         self.dex_auto_trade = False
         self.dex_min_safety_score = 50
-        self.dex_min_liquidity = 50000  # $50k min - quality over quantity
+        self.dex_min_liquidity = 40000  # $40k min - balanced quality/opportunity
 
         self.dex_max_positions = 15
 
@@ -1672,7 +1672,11 @@ class AlertSystem(commands.Cog):
             self._swarm_diag_tick += 1
             
             # Lowered min_buyers from 3 to 2 for better sensitivity as requested
-            signals = self.copy_trader.analyze_swarms(min_buyers=2)
+            # CRITICAL: Pass held tokens so swarms aren't pruned while we still hold
+            held_tokens = set()
+            for trader in self.dex_traders:
+                held_tokens.update(trader.positions.keys())
+            signals = self.copy_trader.analyze_swarms(min_buyers=2, held_tokens=held_tokens)
             
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
             
@@ -1834,23 +1838,23 @@ class AlertSystem(commands.Cog):
                     should_exit = False
                     exit_reason = ""
                     
-                    # 30 min + any profit = take it
-                    if age_mins >= 30 and pnl > 0:
+                    # 45 min + any profit = take it (extended from 30 to give whales time)
+                    if age_mins >= 45 and pnl > 0:
                         should_exit = True
-                        exit_reason = f"⏰ 30min Profit Take: +{pnl:.1f}%"
+                        exit_reason = f"⏰ 45min Profit Take: +{pnl:.1f}%"
                     
-                    # 30 min + deep loss = cut
-                    elif age_mins >= 30 and pnl <= -20:
+                    # 45 min + deep loss = cut
+                    elif age_mins >= 45 and pnl <= -20:
                         should_exit = True
-                        exit_reason = f"⏰ 30min Stop: {pnl:.1f}% (cut loser)"
+                        exit_reason = f"⏰ 45min Stop: {pnl:.1f}% (cut loser)"
                     
-                    # 60 min = force exit regardless
-                    elif age_mins >= 60:
+                    # 90 min = force exit regardless (extended from 60 to give whales time)
+                    elif age_mins >= 90:
                         should_exit = True
-                        exit_reason = f"🛡️ 60min Force Exit: {pnl:+.1f}% (orphan protection)"
+                        exit_reason = f"🛡️ 90min Force Exit: {pnl:+.1f}% (orphan protection)"
                     
-                    # Orphan check: whale no longer holding
-                    if not should_exit and age_mins >= 15:
+                    # Orphan check: whale no longer holding (after 20 min to give time for swarm tracking)
+                    if not should_exit and age_mins >= 20:
                         # Check if any whale still holds this token
                         whale_still_holding = token_addr in self.copy_trader.active_swarms
                         if not whale_still_holding:
