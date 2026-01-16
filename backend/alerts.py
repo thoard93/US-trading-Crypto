@@ -654,12 +654,13 @@ class AlertSystem(commands.Cog):
                                             reason = f"🛑 Stop Loss ({pnl:.1f}%)"
                                         
                                         # --- SWARM DUMP EXIT (Smart Copy) ---
-                                        # If the whales are dumping, we dump.
-                                        elif not should_sell:
-                                            is_swarm_dump = await self.copy_trader.check_swarm_exit(token_address)
-                                            if is_swarm_dump:
-                                                should_sell = True
-                                                reason = f"📉 Swarm Dump (Whales exiting)"
+                                        # DISABLED: Now using webhook-based instant exits (detect_whale_sells)
+                                        # This polling method is redundant and wastes Helius API credits
+                                        # elif not should_sell:
+                                        #     is_swarm_dump = await self.copy_trader.check_swarm_exit(token_address)
+                                        #     if is_swarm_dump:
+                                        #         should_sell = True
+                                        #         reason = f"📉 Swarm Dump (Whales exiting)"
 
                                         # PSYCHOLOGICAL RESISTANCE EXITS (Research Phase 9)
                                         mc = info.get('market_cap', 0)
