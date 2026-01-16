@@ -121,6 +121,11 @@ async def analyze(ctx, symbol: str):
 @bot.command()
 async def help(ctx):
     """Custom help command."""
+    # Only respond in trading channels
+    TRADING_CHANNEL_IDS = [1456078814567202960, 1456078864684945531, 1456439911896060028]
+    if ctx.channel.id not in TRADING_CHANNEL_IDS:
+        return  # Silently ignore in non-trading channels
+    
     embed = discord.Embed(
         title="🤖 US trading Crypto Bot Help",
         description="Here are the available commands:",
