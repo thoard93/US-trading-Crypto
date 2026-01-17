@@ -1865,12 +1865,40 @@ class AlertSystem(commands.Cog):
                     if should_exit:
                         print(f"🛡️ Orphan Guard: {exit_reason} - {symbol} (User {user_label})")
                         
+                        # Calculate USD P/L for alert
+                        usd_pnl = 0
+                        tokens = pos.get('tokens_received', 0)
+                        if tokens > 0 and entry_price > 0 and current_price > 0:
+                            usd_pnl = tokens * (current_price - entry_price)
+                        
+                        hold_time_str = "Unknown"
+                        if entry_time:
+                            age_sec = datetime.datetime.now().timestamp() - entry_time
+                            if age_sec < 60:
+                                hold_time_str = f"{int(age_sec)}s"
+                            else:
+                                hold_time_str = f"{int(age_sec // 60)}m {int(age_sec % 60)}s"
+
                         loop = asyncio.get_running_loop()
                         result = await loop.run_in_executor(None, trader.sell_token, token_addr)
                         
                         if result.get('success'):
+                            sig = result.get('signature', 'Unknown')
+                            pnl_emoji = "🟢" if pnl >= 0 else "🔴"
+                            pnl_sign = "+" if pnl >= 0 else ""
+                            usd_sign = "+" if usd_pnl >= 0 else "-"
+
                             if channel_memes:
-                                await channel_memes.send(f"🛡️ **Orphan Guard**: {exit_reason} - Sold {symbol}")
+                                embed = discord.Embed(
+                                    title=f"🛡️ Orphan Guard: {symbol}",
+                                    description=f"Automated Safety Exit\n**Reason:** {exit_reason}",
+                                    color=discord.Color.blue()
+                                )
+                                embed.add_field(name="P/L %", value=f"{pnl_emoji} {pnl_sign}{pnl:.1f}%", inline=True)
+                                embed.add_field(name="P/L USD", value=f"`{usd_sign}${abs(usd_pnl):.2f}`", inline=True)
+                                embed.add_field(name="Hold Time", value=f"`{hold_time_str}`", inline=True)
+                                embed.add_field(name="TX", value=f"[`{sig[:32]}...`](https://solscan.io/tx/{sig})", inline=False)
+                                await channel_memes.send(embed=embed)
                             
                             # Clear position and set cooldown
                             if token_addr in trader.positions:
@@ -1896,41 +1924,6 @@ class AlertSystem(commands.Cog):
             print(f"❌ Orphan Guard Error: {e}")
             traceback.print_exc()
 
-    async def trigger_instant_exit(self, mint):
-        """
-        Instantly sell a token when a whale dump is detected via webhook.
-        Called directly from webhook_listener.py for real-time exits.
-        """
-        channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
-        
-        for trader in self.dex_traders:
-            if mint not in trader.positions:
-                continue
-                
-            print(f"🚨 INSTANT EXIT: Selling {mint[:16]}...")
-            
-            # IMMEDIATELY add to blacklist and clear swarm (BEFORE sell attempt!)
-            # This prevents buy-sell loop even if sell fails
-            if not hasattr(self, '_dump_blacklist'):
-                self._dump_blacklist = {}
-            self._dump_blacklist[mint] = datetime.datetime.now().timestamp()
-            if mint in self.copy_trader.active_swarms:
-                del self.copy_trader.active_swarms[mint]
-            print(f"🚫 Blacklisted {mint[:16]}... (60min cooldown)")
-            
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(None, trader.sell_token, mint)
-            
-            if result.get('success'):
-                # Alert Discord
-                if channel_memes:
-                    await channel_memes.send(
-                        f"📉 **INSTANT WHALE EXIT!**\n"
-                        f"Sold `{mint[:16]}...` - Following smart money OUT!\n"
-                        f"TX: `{result.get('signature', 'N/A')[:32]}...`"
-                    )
-            else:
-                print(f"❌ Instant exit sell failed: {result.get('error')}")
 
     async def execute_swarm_trade(self, mint):
         """Executes a BUY for a Swarm Signal."""
@@ -2089,12 +2082,16 @@ class AlertSystem(commands.Cog):
                         embed.add_field(name="TX", value=f"`{sig[:32]}...`", inline=False)
                         await channel_memes.send(embed=embed)
                          
-                    # Track Position
-                    trader.positions[mint] = {
+                    # Track Position - MERGE with dex_trader results to keep tokens_received
+                    if mint not in trader.positions:
+                        trader.positions[mint] = {}
+                    
+                    trader.positions[mint].update({
                         'entry_price_usd': float(pair.get('priceUsd', 0)),
                         'entry_time': datetime.datetime.now().timestamp(),
-                        'amount_sol': amount_sol
-                    }
+                        'amount_sol': amount_sol,
+                        'symbol': symbol
+                    })
                 else:
                     # Buy failed - log to Discord and add to cooldown
                     error_msg = result.get('error', 'Unknown error')
@@ -2145,6 +2142,7 @@ class AlertSystem(commands.Cog):
             # Also remove from active swarms to prevent further signals
             if mint in self.copy_trader.active_swarms:
                 del self.copy_trader.active_swarms[mint]
+                self.copy_trader._delete_swarm_from_db(mint)
             
             print(f"🚫 Blacklisted {mint[:16]}... (60min cooldown)")
             
@@ -2181,25 +2179,61 @@ class AlertSystem(commands.Cog):
                 
                 if result.get('success'):
                     sig = result.get('signature', 'Unknown')
-                    pnl = result.get('pnl_percent', 0)
-                    pnl_emoji = "🟢" if pnl >= 0 else "🔴"
                     
+                    # USD P/L Calculation
+                    entry_price = position.get('entry_price_usd', 0)
+                    exit_price = 0
+                    try:
+                        import requests
+                        resp = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{mint}", timeout=5)
+                        if resp.status_code == 200:
+                            exit_pairs = resp.json().get('pairs', [])
+                            if exit_pairs:
+                                exit_price = float(exit_pairs[0].get('priceUsd', 0))
+                    except:
+                        pass
+                    
+                    pnl_pct = 0
+                    usd_pnl = 0
+                    if entry_price > 0 and exit_price > 0:
+                        pnl_pct = (exit_price / entry_price - 1) * 100
+                        tokens = position.get('tokens_received', 0)
+                        if tokens > 0:
+                            # Use tokens if available for precision
+                            usd_pnl = tokens * (exit_price - entry_price)
+                        else:
+                            # Fallback to SOL-based calculation
+                            entry_sol = position.get('amount_sol', 0.08)
+                            sol_price_est = entry_price / (entry_sol / tokens) if tokens > 0 else 240 # rough SOL price
+                            usd_pnl = (pnl_pct / 100) * (entry_sol * sol_price_est)
+
+                    pnl_emoji = "🟢" if pnl_pct >= 0 else "🔴"
+                    pnl_sign = "+" if pnl_pct >= 0 else ""
+                    usd_sign = "+" if usd_pnl >= 0 else "-"
+                    
+                    # Format hold time
+                    hold_time_str = "Unknown"
+                    if position.get('entry_time'):
+                        age_sec = datetime.datetime.now().timestamp() - position['entry_time']
+                        if age_sec < 60:
+                            hold_time_str = f"{int(age_sec)}s"
+                        else:
+                            hold_time_str = f"{int(age_sec // 60)}m {int(age_sec % 60)}s"
+
                     # Remove from positions
                     if mint in trader.positions:
                         del trader.positions[mint]
                     
-                    # Cleanup swarm tracking
-                    if mint in self.copy_trader.active_swarms:
-                        del self.copy_trader.active_swarms[mint]
-                        self.copy_trader._delete_swarm_from_db(mint)
-                    
                     if channel_memes:
                         embed = discord.Embed(
                             title=f"📉 WHALE EXIT: {symbol}",
-                            description=f"Following Smart Money EXIT!\n**User:** {user_label}\n**P/L:** {pnl_emoji} {pnl:+.1f}%",
+                            description=f"Following Smart Money EXIT!\n**User:** {user_label}",
                             color=discord.Color.orange()
                         )
-                        embed.add_field(name="TX", value=f"`{sig[:32]}...`", inline=False)
+                        embed.add_field(name="P/L %", value=f"{pnl_emoji} {pnl_sign}{pnl_pct:.1f}%", inline=True)
+                        embed.add_field(name="P/L USD", value=f"`{usd_sign}${abs(usd_pnl):.2f}`", inline=True)
+                        embed.add_field(name="Hold Time", value=f"`{hold_time_str}`", inline=True)
+                        embed.add_field(name="TX", value=f"[`{sig[:32]}...`](https://solscan.io/tx/{sig})", inline=False)
                         await channel_memes.send(embed=embed)
                 else:
                     error_msg = result.get('error', 'Unknown error')
