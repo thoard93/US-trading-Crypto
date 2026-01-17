@@ -131,6 +131,11 @@ class AlertSystem(commands.Cog):
         
         # Note: Loops and Webhook setup moved to cog_load for speed
 
+    async def run_sync(self, func, *args, **kwargs):
+        """Helper to run a synchronous blocking function in a background thread."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
+
     async def _startup_sync(self):
         """Wait for bot to be ready and sync existing positions."""
         if not self.bot.is_ready():
@@ -140,7 +145,7 @@ class AlertSystem(commands.Cog):
         
         # Log DEX trading status
         if self.dex_trader and self.dex_trader.wallet_address:
-            sol_balance = self.dex_trader.get_sol_balance()
+            sol_balance = await self.run_sync(self.dex_trader.get_sol_balance)
             print(f"💰 DEX Wallet SOL Balance: {sol_balance:.4f} SOL")
         
         # Sync Stock positions from Alpaca - DISABLED (Alpaca removed)
@@ -209,7 +214,7 @@ class AlertSystem(commands.Cog):
                 whales = ["11111111111111111111111111111111"]
 
         print(f"📡 Registering Helius Webhook at {webhook_url} (Monitoring top {len(whales)} freshest whales)...")
-        result = self.copy_trader.collector.upsert_helius_webhook(webhook_url, whales)
+        result = await self.run_sync(self.copy_trader.collector.upsert_helius_webhook, webhook_url, whales)
         
         if result:
             print(f"✅ Helius Webhook Setup SUCCESS: {result.get('webhookID', 'Unknown ID')}")
@@ -316,7 +321,7 @@ class AlertSystem(commands.Cog):
         for trader in self.dex_traders:
             try:
                 # 2. Get raw on-chain tokens
-                wallet_tokens = trader.get_all_tokens()
+                wallet_tokens = await self.run_sync(trader.get_all_tokens)
                 if not wallet_tokens: continue
 
                 user_label = getattr(trader, 'user_id', 'Main')
@@ -417,7 +422,7 @@ class AlertSystem(commands.Cog):
         
         # --- SOL LOW BALANCE ALERT (every loop) ---
         for trader in self.dex_traders:
-            sol_bal = trader.get_sol_balance()
+            sol_bal = await self.run_sync(trader.get_sol_balance)
             if sol_bal < 0.05:  # Refined threshold: 0.05 SOL
                 user_label = getattr(trader, 'user_id', 'Main')
                 # Alert cooldown: 1 hour per user
@@ -1631,13 +1636,13 @@ class AlertSystem(commands.Cog):
         for trader in self.dex_traders:
             user_id = getattr(trader, 'user_id', 'Unknown')
             
-            # Get all tokens in wallet
-            holdings = trader.get_all_tokens()
+            # Get all tokens in wallet - NON BLOCKING
+            holdings = await self.run_sync(trader.get_all_tokens)
             
             for mint, balance in holdings.items():
                 if balance > 0:
                     print(f"🔥 Selling {mint[:16]}... for User {user_id}")
-                    result = trader.sell_token(mint)
+                    result = await self.run_sync(trader.sell_token, mint)
                     
                     if result.get('success'):
                         sold_count += 1
@@ -1782,11 +1787,7 @@ class AlertSystem(commands.Cog):
                 
                 print(f"🔄 Retry Queue: Selling {token_addr[:16]}... (attempt {attempts + 1}, slippage {slippage // 100}%)")
                 
-                loop = asyncio.get_running_loop()
-                result = await loop.run_in_executor(
-                    None, 
-                    lambda: trader.sell_token(token_addr, override_slippage=slippage)
-                )
+                result = await self.run_sync(trader.sell_token, token_addr, override_slippage=slippage)
                 
                 if result.get('success'):
                     print(f"✅ Retry SUCCESS: {token_addr[:16]}...")
@@ -1881,8 +1882,7 @@ class AlertSystem(commands.Cog):
                             else:
                                 hold_time_str = f"{int(age_sec // 60)}m {int(age_sec % 60)}s"
 
-                        loop = asyncio.get_running_loop()
-                        result = await loop.run_in_executor(None, trader.sell_token, token_addr)
+                        result = await self.run_sync(trader.sell_token, token_addr)
                         
                         if result.get('success'):
                             sig = result.get('signature', 'Unknown')
@@ -2164,8 +2164,8 @@ class AlertSystem(commands.Cog):
                     del trader.positions[mint]  # Clean up ghost position
                     continue
                 
-                # SAFETY CHECK 3: Verify we actually have tokens to sell
-                actual_balance = trader.get_token_balance(mint)
+                # SAFETY CHECK 3: Verify we actually have tokens to sell - NON BLOCKING
+                actual_balance = await self.run_sync(trader.get_token_balance, mint)
                 if actual_balance <= 0:
                     print(f"⚠️ Exit skipped (User {user_label}): {symbol} balance is 0 (already sold or dust)")
                     del trader.positions[mint]  # Clean up ghost position
@@ -2176,8 +2176,7 @@ class AlertSystem(commands.Cog):
 
                 
                 # Run sync trading in executor - USE PRIORITY FOR INSTANT EXITS
-                loop = asyncio.get_running_loop()
-                result = await loop.run_in_executor(None, trader.sell_token, mint, 100, None, True)
+                result = await self.run_sync(trader.sell_token, mint, 100, None, True)
                 
                 if result.get('success'):
                     sig = result.get('signature', 'Unknown')
@@ -2186,12 +2185,10 @@ class AlertSystem(commands.Cog):
                     entry_price = position.get('entry_price_usd', 0)
                     exit_price = 0
                     try:
-                        import requests
-                        resp = requests.get(f"https://api.dexscreener.com/latest/dex/tokens/{mint}", timeout=5)
-                        if resp.status_code == 200:
-                            exit_pairs = resp.json().get('pairs', [])
-                            if exit_pairs:
-                                exit_price = float(exit_pairs[0].get('priceUsd', 0))
+                        # Use DexScout (Async) instead of requests
+                        pair_data = await self.dex_scout.get_pair_data("solana", mint)
+                        if pair_data:
+                            exit_price = float(pair_data.get('priceUsd', 0))
                     except:
                         pass
                     
