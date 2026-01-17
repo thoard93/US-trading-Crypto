@@ -246,7 +246,7 @@ class DexTrader:
             print(f"❌ Error fetching wallet holdings: {e}")
             return {}
     
-    def execute_swap(self, input_mint, output_mint, amount_lamports, override_slippage=None, use_jito=False):
+    def execute_swap(self, input_mint, output_mint, amount_lamports, override_slippage=None, use_jito=False, priority=False):
         """Execute a swap via Jupiter with optional Jito bundle support."""
         if not self.keypair:
             return {"error": "Wallet not initialized"}
@@ -259,6 +259,10 @@ class DexTrader:
             jito_tip_lamports = 0
             if use_jito:
                 jito_tip_lamports = self.get_jito_tip_amount_lamports()
+                if priority:
+                    # PRIORITY EXIT: 2x the normal tip to ensure we land first
+                    jito_tip_lamports = int(jito_tip_lamports * 2.0)
+                    print(f"⚡ PRIORITY TIP ENABLED: {jito_tip_lamports / 1e9:.6f} SOL")
             
             # 1. Get quote with freshness tracking
             quote = self.get_jupiter_quote(input_mint, output_mint, amount_lamports, override_slippage)
@@ -280,6 +284,7 @@ class DexTrader:
             swap_data = None
             hosts = [
                 ("quote-api.jup.ag", "/v6/swap"),
+                ("jupiter-quote-api.jup.ag", "/v6/swap"),
                 ("public.jupiterapi.com", "/swap")
             ]
             
@@ -860,13 +865,14 @@ class DexTrader:
         
         return result
     
-    def sell_token(self, token_mint, percentage=100, override_slippage=None):
+    def sell_token(self, token_mint, percentage=100, override_slippage=None, priority=False):
         """Sell token back to SOL.
         
         Args:
             token_mint: Token address to sell
             percentage: Percentage of holdings to sell (default 100%)
             override_slippage: Optional custom slippage in BPS (for retry queue)
+            priority: If True, use higher Jito tip for fast exit
         """
         token_balance = self.get_token_balance(token_mint)
         
@@ -882,12 +888,12 @@ class DexTrader:
         # Use provided slippage or default to 100% for meme coin exits
         slippage = override_slippage if override_slippage else 10000
         
-        print(f"🔄 SELLING {token_mint} | Amount: {sell_amount} | Pct: {percentage}% | Slippage: {slippage // 100}%")
+        print(f"🔄 SELLING {token_mint} | Amount: {sell_amount} | Pct: {percentage}% | Slippage: {slippage // 100}% | Priority: {priority}")
         print(f"DEBUG: Wallet: {self.wallet_address}")
 
 
         # Aggressive Sell: Use provided slippage + Jito for atomic exit (no fee on fail)
-        result = self.execute_swap(token_mint, self.SOL_MINT, sell_amount, override_slippage=slippage, use_jito=True)
+        result = self.execute_swap(token_mint, self.SOL_MINT, sell_amount, override_slippage=slippage, use_jito=True, priority=priority)
         
         if result.get('success') and percentage == 100:
             # Remove from positions

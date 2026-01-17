@@ -485,9 +485,15 @@ class SmartCopyTrader:
         if cluster:
             sorted_tokens = sorted(cluster.items(), key=lambda x: len(x[1]), reverse=True)[:3]
             top_info = ", ".join([f"{m[:8]}...({len(w)} whales)" for m, w in sorted_tokens])
-            # Lowered visibility threshold to 2 whales so user can see "Near Swarms"
-            if sorted_tokens and len(sorted_tokens[0][1]) >= 2:
-                self.logger.info(f"📊 Top Tokens: {top_info}")
+            # Show Near Swarms (2 whales) vs Potential Swarms (3+)
+            if sorted_tokens:
+                main_token = sorted_tokens[0]
+                if len(main_token[1]) >= 3:
+                    self.logger.info(f"📊 Potential Swarms: {top_info}")
+                elif len(main_token[1]) == 2:
+                    self.logger.info(f"👀 Near Swarm (2/3): {top_info}")
+                else:
+                    self.logger.debug(f"📊 Market Activity: {top_info}")
             
         # 3. FILTER / SIGNAL
         for mint, buyers in cluster.items():

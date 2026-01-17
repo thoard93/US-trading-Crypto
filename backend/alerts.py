@@ -415,21 +415,23 @@ class AlertSystem(commands.Cog):
 
         channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
         
-        # --- SOL LOW BALANCE ALERT (every ~5 mins) ---
-        if not hasattr(self, 'sol_alert_tick'): self.sol_alert_tick = 0
-        self.sol_alert_tick += 1
-        if self.sol_alert_tick % 20 == 0:  # Every ~5 mins (20 * 15s)
-            for trader in self.dex_traders:
-                sol_bal = trader.get_sol_balance()
-                if sol_bal < 0.1:  # Low SOL threshold
-                    user_label = getattr(trader, 'user_id', 'Main')
+        # --- SOL LOW BALANCE ALERT (every loop) ---
+        for trader in self.dex_traders:
+            sol_bal = trader.get_sol_balance()
+            if sol_bal < 0.05:  # Refined threshold: 0.05 SOL
+                user_label = getattr(trader, 'user_id', 'Main')
+                # Alert cooldown: 1 hour per user
+                cooldown_key = f"bal_alert_{user_label}"
+                last_alert = getattr(self, cooldown_key, 0)
+                if datetime.datetime.now().timestamp() - last_alert > 3600:
+                    setattr(self, cooldown_key, datetime.datetime.now().timestamp())
                     addr = trader.wallet_address[:8] + "..." + trader.wallet_address[-4:]
                     if channel_memes:
                         await channel_memes.send(
-                            f"⚠️ **LOW SOL ALERT** | User {user_label}\n"
-                            f"Balance: `{sol_bal:.4f} SOL` (< 0.1 SOL)\n"
+                            f"🛑 **CRITICAL LOW SOL ALERT** | User {user_label}\n"
+                            f"Balance: `{sol_bal:.4f} SOL` (< 0.05 SOL)\n"
                             f"Wallet: `{addr}`\n"
-                            f"Top up to continue trading!"
+                            f"Top up IMMEDIATELY to continue trading and landed exits!"
                         )
         
         # Monitor DEX Scout (New Gems) + Auto-Trade
@@ -1672,12 +1674,12 @@ class AlertSystem(commands.Cog):
             if not hasattr(self, '_swarm_diag_tick'): self._swarm_diag_tick = 0
             self._swarm_diag_tick += 1
             
-            # Lowered min_buyers from 3 to 2 for better sensitivity as requested
-            # CRITICAL: Pass held tokens so swarms aren't pruned while we still hold
+            # Min Buyers threshold set to 3 for stronger signal consensus
+            # Pass held tokens so swarms aren't pruned while we still hold
             held_tokens = set()
             for trader in self.dex_traders:
                 held_tokens.update(trader.positions.keys())
-            signals = self.copy_trader.analyze_swarms(min_buyers=2, held_tokens=held_tokens)
+            signals = self.copy_trader.analyze_swarms(min_buyers=3, held_tokens=held_tokens)
             
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
             
@@ -2173,9 +2175,9 @@ class AlertSystem(commands.Cog):
                 
 
                 
-                # Run sync trading in executor
+                # Run sync trading in executor - USE PRIORITY FOR INSTANT EXITS
                 loop = asyncio.get_running_loop()
-                result = await loop.run_in_executor(None, trader.sell_token, mint)
+                result = await loop.run_in_executor(None, trader.sell_token, mint, 100, None, True)
                 
                 if result.get('success'):
                     sig = result.get('signature', 'Unknown')
