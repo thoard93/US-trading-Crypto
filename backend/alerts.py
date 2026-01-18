@@ -1721,9 +1721,10 @@ class AlertSystem(commands.Cog):
                 # ALERT MODE: Always send Discord alert for swarms
                 if channel_memes:
                     await channel_memes.send(
-                        f"🐋🐋🐋 **WHALE SWARM DETECTED!** 🐋🐋🐋\n"
+                        f"🚀🚀🚀 **DEGEN SWARM DETECTED!** 🚀🚀🚀\n"
                         f"Token: `{mint[:16]}...`\n"
-                        f"3+ Whales are buying! Check DEXScreener: https://dexscreener.com/solana/{mint}"
+                        f"3+ Whales are APING IN! To the moon? 🌕\n"
+                        f"Check DEXScreener: https://dexscreener.com/solana/{mint}"
                     )
                 
                 # Only execute trade if we have a valid DEX wallet
@@ -1852,7 +1853,7 @@ class AlertSystem(commands.Cog):
                     # 🛡️ GLOBAL HARD TAKE PROFIT: exit if PNL >= 30% regardless of whales
                     if pnl >= 30:
                         should_exit = True
-                        exit_reason = f"📈 30% Hard Take Profit: +{pnl:.1f}%"
+                        exit_reason = f"💰 30% Hard Take Profit: +{pnl:.1f}% (Banked it, Degen!)"
 
                     # 45 min + any profit = take it (extended from 30 to give whales time)
                     elif age_mins >= 45 and pnl > 0:
