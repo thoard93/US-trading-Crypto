@@ -196,13 +196,13 @@ class AlertSystem(commands.Cog):
         else:
             webhook_url = clean_url
 
-        # Get whale addresses (Limit to top 100 for Helius free tier mindfulness)
+        # Get whale addresses (Monitoring all qualified whales up to 500)
         sorted_whales = sorted(
             self.copy_trader.qualified_wallets.items(),
             key=lambda x: x[1].get('discovered_at', ''),
             reverse=True
         )
-        whales = [w[0] for w in sorted_whales[:100]]
+        whales = [w[0] for w in sorted_whales[:500]]
         
         # If no whales, use the bot's own wallet as a placeholder to ensure the URL is registered in Helius
         if not whales:
@@ -1701,6 +1701,13 @@ class AlertSystem(commands.Cog):
                         print(f"🚫 Swarm Monitor Skip: {mint[:16]}... (on dump blacklist)")
                         continue
                 
+                # Anti-Churn: Check re-buy cooldown (2 hours)
+                now = datetime.datetime.now().timestamp()
+                last_exit = self.dex_exit_cooldowns.get(mint, 0)
+                if now - last_exit < 7200: # 2 hour cooldown
+                    # self.logger.debug(f"🚫 Skipping re-buy: {mint[:12]}... is on cooldown")
+                    continue
+                
                 # Check if ANY user already has a position
                 already_holding = False
                 for trader in self.dex_traders:
@@ -1842,8 +1849,13 @@ class AlertSystem(commands.Cog):
                     should_exit = False
                     exit_reason = ""
                     
+                    # 🛡️ GLOBAL HARD TAKE PROFIT: exit if PNL >= 30% regardless of whales
+                    if pnl >= 30:
+                        should_exit = True
+                        exit_reason = f"📈 30% Hard Take Profit: +{pnl:.1f}%"
+
                     # 45 min + any profit = take it (extended from 30 to give whales time)
-                    if age_mins >= 45 and pnl > 0:
+                    elif age_mins >= 45 and pnl > 0:
                         should_exit = True
                         exit_reason = f"⏰ 45min Profit Take: +{pnl:.1f}%"
                     

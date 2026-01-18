@@ -355,7 +355,7 @@ class SmartCopyTrader:
         # Prevents API Credit Drain (2M -> 100k per day)
         
         all_wallets = list(self.qualified_wallets.keys())
-        batch_size = 25 # Increased from 15 for faster 500-whale rotation
+        batch_size = 50 # Increased from 25 to reduce scan lag for large pools
         total_wallets = len(all_wallets)
         
         if total_wallets == 0: return []
