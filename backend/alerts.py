@@ -1691,7 +1691,7 @@ class AlertSystem(commands.Cog):
             held_tokens = set()
             for trader in self.dex_traders:
                 held_tokens.update(trader.positions.keys())
-            signals = self.copy_trader.analyze_swarms(min_buyers=3, held_tokens=held_tokens)
+            signals = self.copy_trader.analyze_swarms(min_buyers=3, window_minutes=20, held_tokens=held_tokens)
             
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
             
@@ -1745,16 +1745,18 @@ class AlertSystem(commands.Cog):
             
             # 📉 EXIT HANDLING: Now handled by webhooks (see trigger_instant_exit)
                 
-            # 3. AUTO-HUNTER: Runs every 24 hours to refresh the whale pool.
+            # 3. AUTO-HUNTER: Runs periodically to refresh the whale pool.
             if not hasattr(self, 'swarm_tick'): self.swarm_tick = 0
             self.swarm_tick += 1
-            if self.swarm_tick % 1440 == 0:
-                print("🦈 Ultimate Hunter: Scanning for the freshest whales...")
-                new_wallets = await self.copy_trader.scan_market_for_whales(max_pairs=10, max_traders_per_pair=3)
+            # Run every 2 hours (240 ticks @ 30s) instead of 12 hours
+            if self.swarm_tick % 240 == 0:
+                print("🦈 Alpha Expansion: Scanning for fresh top-tier whales...")
+                # Increase breadth: 25 pairs, 5 traders each
+                new_wallets = await self.copy_trader.scan_market_for_whales(max_pairs=25, max_traders_per_pair=5)
                 if new_wallets > 0:
                     print(f"✅ Auto-Hunter found {new_wallets} new top-tier alpha wallets!")
                     if channel_memes:
-                        await channel_memes.send(f"🦈 **Ultimate Hunter** found {new_wallets} new Top PNL whales! Signal pool refreshed. 🦾")
+                        await channel_memes.send(f"🦈 **Alpha Expansion** found {new_wallets} new Top PNL whales! Net widened. 🦾")
 
                 
         except Exception as e:
@@ -1978,8 +1980,15 @@ class AlertSystem(commands.Cog):
         
         now = datetime.datetime.now().timestamp()
         
-        # Check dump blacklist FIRST (higher priority than failed tokens)
-        if mint in self._dump_blacklist:
+        # ULTIMATE BOT: RE-ENTRY COOLDOWN
+        # If we exited this token recently, don't ape back in for 60 minutes
+        if mint in self.dex_exit_cooldowns:
+            last_exit = self.dex_exit_cooldowns[mint]
+            if now - last_exit < 3600:
+                print(f"🚫 Skipping {mint[:16]}... (sold recently, 60min re-entry cooldown)")
+                return
+
+        # Check dump blacklist FIRST
             last_dump = self._dump_blacklist[mint]
             if now - last_dump < 3600:  # 60 minute cooldown after dump
                 print(f"🚫 Skipping {mint[:16]}... (dumped recently, 60min cooldown)")

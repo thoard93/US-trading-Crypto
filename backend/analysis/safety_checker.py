@@ -107,6 +107,8 @@ class SafetyChecker:
             level = r.get("level", "warn")
             name = r.get("name", "")
             
+            name_lower = name.lower()
+
             if level == "danger":
                 score -= 30
                 risks.append(f"🚨 {name}")
@@ -120,7 +122,6 @@ class SafetyChecker:
                 risks.append("🚨 CREATOR DUMPED")
 
             # 2a. Anti-Whale / Freeze Checks
-            name_lower = name.lower()
             if "holder" in name_lower or "concentration" in name_lower:
                     score -= 50 # Heavy Penalty
                     risks.append(f"🚨 WHALE ALERT: {name}")

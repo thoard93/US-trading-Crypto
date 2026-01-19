@@ -128,7 +128,10 @@ class SmartCopyTrader:
         """Increase or decrease a whale's score based on trade outcome."""
         if address in self.qualified_wallets:
             old_score = self.qualified_wallets[address].get('score', 10.0)
-            new_score = max(0.0, old_score + delta)
+            # ULTIMATE BOT: ASYMMETRIC SCORING
+            # Losses hurt more than wins to prune "churny" alpha
+            adj_delta = delta if delta > 0 else (delta * 2.5)
+            new_score = max(0.0, old_score + adj_delta)
             self.qualified_wallets[address]['score'] = new_score
             
             # Sync to DB
@@ -860,7 +863,8 @@ class SmartCopyTrader:
 
     async def replace_lazy_whales(self, limit=50):
         """Prunes the lowest scoring whales to make room for fresh ones."""
-        if len(self.qualified_wallets) < 200: return
+        # Lower threshold to 100 to keep the alpha pool fresh and rotating
+        if len(self.qualified_wallets) < 100: return
         
         # Sort by score ascending
         sorted_whales = sorted(self.qualified_wallets.items(), key=lambda x: x[1].get('score', 10.0))
