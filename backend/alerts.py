@@ -1691,7 +1691,7 @@ class AlertSystem(commands.Cog):
             held_tokens = set()
             for trader in self.dex_traders:
                 held_tokens.update(trader.positions.keys())
-            signals = self.copy_trader.analyze_swarms(min_buyers=3, window_minutes=20, held_tokens=held_tokens)
+            signals = self.copy_trader.analyze_swarms(min_buyers=3, window_minutes=10, held_tokens=held_tokens)
             
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
             

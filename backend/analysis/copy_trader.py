@@ -339,14 +339,9 @@ class SmartCopyTrader:
                 stats = self.collector.analyze_wallet(wallet, lookback_txs=50)
                 checked_count += 1
                 
-                # Log pump.fun trader rejections
-                if stats and stats.get('is_pump_fun_trader'):
-                    pf_ratio = stats.get('pump_fun_ratio', 0) * 100
-                    self.logger.info(f"    ⏭️ SKIP pump.fun trader: {wallet[:16]}... ({pf_ratio:.0f}% pump.fun trades)")
-                    continue
-                
+                # ALL TRADERS NOW ALLOWED (Alpha Unlock)
                 if stats and stats.get('is_qualified'):
-                    self.logger.info(f"    🔥 FOUND DEX WHALE: {wallet}")
+                    self.logger.info(f"    🔥 FOUND ALPHA WHALE: {wallet}")
                     wallet_data = {
                         "discovered_on": token_address[:16],
                         "discovered_at": datetime.now().isoformat(),
@@ -363,7 +358,7 @@ class SmartCopyTrader:
         self.logger.info(f"✅ Hunt Complete. Found {new_wallets} new qualified wallets. Total: {len(self.qualified_wallets)}")
         return new_wallets
 
-    async def monitor_swarm(self, window_minutes=15, min_buyers=3):
+    async def monitor_swarm(self, window_minutes=10, min_buyers=3):
         """
         Real-time Swarm Detector.
         Polls all Qualified Wallets.
@@ -414,7 +409,7 @@ class SmartCopyTrader:
         # 2. ANALYZE cache for swarms
         return self.analyze_swarms(min_buyers=min_buyers, window_minutes=window_minutes)
 
-    def process_transactions(self, transactions, window_minutes=60):
+    def process_transactions(self, transactions, window_minutes=10):
         """Processes a list of transactions and updates the recent activity cache."""
         now = datetime.utcnow()
         added_count = 0
