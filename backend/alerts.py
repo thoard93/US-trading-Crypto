@@ -1989,6 +1989,7 @@ class AlertSystem(commands.Cog):
                 return
 
         # Check dump blacklist FIRST
+        if mint in self._dump_blacklist:
             last_dump = self._dump_blacklist[mint]
             if now - last_dump < 3600:  # 60 minute cooldown after dump
                 print(f"🚫 Skipping {mint[:16]}... (dumped recently, 60min cooldown)")
