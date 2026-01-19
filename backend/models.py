@@ -60,6 +60,8 @@ class DexPosition(Base):
     symbol = Column(String)
     entry_price_usd = Column(Float)  # ACTUAL entry price (not current)
     amount = Column(Float)
+    highest_pnl = Column(Float, default=0.0) # For Trailing Stop
+    trade_count = Column(Integer, default=1) # For Churn Prevention
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
 
 class WhaleWallet(Base):

@@ -6,6 +6,10 @@ class SafetyChecker:
         # GoPlus endpoint for multi-chain (EVM)
         self.BASE_URL = "https://api.gopluslabs.io/api/v1/token_security"
 
+    async def check_solana_token(self, token_address):
+        """Unified entry for Solana safety checks."""
+        return await self.check_token(token_address, chain="solana")
+
     async def check_token(self, token_address, chain="solana"):
         """
         Check token safety using RugCheck.xyz (Solana) or GoPlus (EVM).
@@ -109,6 +113,11 @@ class SafetyChecker:
             elif level == "warn":
                 score -= 10
                 risks.append(f"⚠️ {name}")
+
+            # 2a. ULTIMATE BOT: CREATOR SHADOWING
+            if "creator" in name_lower and "sold" in name_lower:
+                score -= 60
+                risks.append("🚨 CREATOR DUMPED")
 
             # 2a. Anti-Whale / Freeze Checks
             name_lower = name.lower()

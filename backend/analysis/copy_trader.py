@@ -124,6 +124,28 @@ class SmartCopyTrader:
             self.logger.error(f"❌ Error loading wallets from DB: {e}")
             return {}
     
+    def update_whale_score(self, address, delta):
+        """Increase or decrease a whale's score based on trade outcome."""
+        if address in self.qualified_wallets:
+            old_score = self.qualified_wallets[address].get('score', 10.0)
+            new_score = max(0.0, old_score + delta)
+            self.qualified_wallets[address]['score'] = new_score
+            
+            # Sync to DB
+            try:
+                from database import SessionLocal
+                from models import WhaleWallet
+                db = SessionLocal()
+                existing = db.query(WhaleWallet).filter(WhaleWallet.address == address).first()
+                if existing:
+                    existing.score = new_score
+                    db.commit()
+                db.close()
+            except: pass
+            
+            return new_score
+        return None
+
     def _save_wallet_to_db(self, address, data):
         """Save a single wallet to DB."""
         try:
@@ -779,3 +801,80 @@ class SmartCopyTrader:
         if found_whales:
             self.logger.info(f"🩹 Healed: Found {len(found_whales)} whales for {token_mint[:8]}")
         return found_whales
+
+    async def scan_market_for_whales(self, max_pairs=5, max_traders_per_pair=3):
+        """
+        ULTIMATE WHALE HUNT: Finds the 50 best whales of the last 24h.
+        1. Gets trending Solana pairs.
+        2. Inspects top buyers.
+        3. Qualifies them via Helius.
+        """
+        print(f"🦈 Ultimate Hunt: Scanning market for fresh Alpha...")
+        try:
+            # 1. Get Trending Tokens
+            trending = await self.dex_scout.get_trending("solana")
+            if not trending: return 0
+            
+            new_found = 0
+            for pair in trending[:max_pairs]:
+                mint = pair.get('baseToken', {}).get('address')
+                if not mint: continue
+                
+                # 2. Get Recent Signatures for this token
+                sigs = self.collector.crawl_token(mint)
+                if not sigs: continue
+                
+                # Extract unique signers from first 50 sigs (parsed)
+                # Note: collector.crawl_token returns sig objects, need to fetch parsed txs
+                parsed_txs = self.collector.batch_fetch_parsed_txs([s.get('signature') for s in sigs[:50]])
+                if not parsed_txs: continue
+                
+                potential_whales = set()
+                for tx in parsed_txs:
+                    signer = tx.get('feePayer') # Usually the signer
+                    if signer and signer not in self.qualified_wallets:
+                        potential_whales.add(signer)
+                
+                # 3. Qualify them
+                for wallet in list(potential_whales)[:max_traders_per_pair]:
+                    analysis = self.collector.analyze_wallet(wallet)
+                    if analysis.get('is_qualified'):
+                        score = 15.0 # New whales start with bonus score to prove themselves
+                        self.qualified_wallets[wallet] = {
+                            "score": score,
+                            "discovered_on": mint,
+                            "stats": analysis
+                        }
+                        self._save_wallet_to_db(wallet, self.qualified_wallets[wallet])
+                        new_found += 1
+                        print(f"🦈 Hunt Found: {wallet[:12]}... (Qualified Alpha)")
+            
+            # 4. Prune if we have too many (Keep best 500)
+            if len(self.qualified_wallets) > 500:
+                await self.replace_lazy_whales(limit=100)
+                
+            return new_found
+        except Exception as e:
+            self.logger.error(f"Error during whale hunt: {e}")
+            return 0
+
+    async def replace_lazy_whales(self, limit=50):
+        """Prunes the lowest scoring whales to make room for fresh ones."""
+        if len(self.qualified_wallets) < 200: return
+        
+        # Sort by score ascending
+        sorted_whales = sorted(self.qualified_wallets.items(), key=lambda x: x[1].get('score', 10.0))
+        to_prune = sorted_whales[:limit]
+        
+        for addr, data in to_prune:
+            del self.qualified_wallets[addr]
+            try:
+                from database import SessionLocal
+                from models import WhaleWallet
+                db = SessionLocal()
+                db.query(WhaleWallet).filter(WhaleWallet.address == addr).delete()
+                db.commit()
+                db.close()
+            except: pass
+            
+        print(f"🧹 Pruned {len(to_prune)} lazy whales from the pool.")

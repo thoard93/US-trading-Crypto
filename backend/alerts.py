@@ -73,6 +73,13 @@ class AlertSystem(commands.Cog):
         self.dex_min_liquidity = 40000  # $40k min - balanced quality/opportunity
 
         self.dex_max_positions = 15
+        
+        # Ultimate Bot Configuration
+        self.whale_confidence_threshold = 30 # Sum of whale scores
+        self.trailing_stop_pnl_trigger = 20.0 # Activates at 20% profit
+        self.trailing_stop_distance = 10.0 # Trails 10% behind ATH
+        self.dev_shadow_enabled = True
+        self.dynamic_sizing_enabled = True
 
         
         self.stock_auto_trade = False
@@ -1738,17 +1745,16 @@ class AlertSystem(commands.Cog):
             
             # 📉 EXIT HANDLING: Now handled by webhooks (see trigger_instant_exit)
                 
-            # 3. AUTO-HUNTER DISABLED: Consumes too many credits. Use !hunt manually instead.
-            # To re-enable, uncomment the code below after upgrading your Helius plan.
-            # if not hasattr(self, 'swarm_tick'): self.swarm_tick = 0
-            # self.swarm_tick += 1
-            # if self.swarm_tick % 1440 == 0:
-            #     print("🦈 Auto-Hunter: Scanning for fresh whales...")
-            #     new_wallets = await self.copy_trader.scan_market_for_whales(max_pairs=5, max_traders_per_pair=3)
-            #     if new_wallets > 0:
-            #         print(f"✅ Auto-Hunter found {new_wallets} new wallets! List updated.")
-            #         if channel_memes:
-            #             await channel_memes.send(f"🦈 **Auto-Hunter** found {new_wallets} new profitable wallets to track!")
+            # 3. AUTO-HUNTER: Runs every 24 hours to refresh the whale pool.
+            if not hasattr(self, 'swarm_tick'): self.swarm_tick = 0
+            self.swarm_tick += 1
+            if self.swarm_tick % 1440 == 0:
+                print("🦈 Ultimate Hunter: Scanning for the freshest whales...")
+                new_wallets = await self.copy_trader.scan_market_for_whales(max_pairs=10, max_traders_per_pair=3)
+                if new_wallets > 0:
+                    print(f"✅ Auto-Hunter found {new_wallets} new top-tier alpha wallets!")
+                    if channel_memes:
+                        await channel_memes.send(f"🦈 **Ultimate Hunter** found {new_wallets} new Top PNL whales! Signal pool refreshed. 🦾")
 
                 
         except Exception as e:
@@ -1847,36 +1853,47 @@ class AlertSystem(commands.Cog):
                     else:
                         pnl = 0
                     
+                    # 🛡️ ULTIMATE BOT: TRAILING STOP LOSS
+                    # 1. Update ATH PNL
+                    highest_pnl = pos.get('highest_pnl', 0)
+                    if pnl > highest_pnl:
+                        pos['highest_pnl'] = pnl
+                        highest_pnl = pnl
+                        # TODO: Persist pos['highest_pnl'] to DB for restarts
+                    
                     should_exit = False
                     exit_reason = ""
                     
-                    # 🛡️ GLOBAL HARD TAKE PROFIT: exit if PNL >= 30% regardless of whales
-                    if pnl >= 30:
-                        should_exit = True
-                        exit_reason = f"💰 30% Hard Take Profit: +{pnl:.1f}% (Banked it, Degen!)"
-
-                    # 45 min + any profit = take it (extended from 30 to give whales time)
-                    elif age_mins >= 45 and pnl > 0:
-                        should_exit = True
-                        exit_reason = f"⏰ 45min Profit Take: +{pnl:.1f}%"
-                    
-                    # 45 min + deep loss = cut
-                    elif age_mins >= 45 and pnl <= -20:
-                        should_exit = True
-                        exit_reason = f"⏰ 45min Stop: {pnl:.1f}% (cut loser)"
-                    
-                    # 90 min = force exit regardless (extended from 60 to give whales time)
-                    elif age_mins >= 90:
-                        should_exit = True
-                        exit_reason = f"🛡️ 90min Force Exit: {pnl:+.1f}% (orphan protection)"
-                    
-                    # Orphan check: whale no longer holding (after 20 min to give time for swarm tracking)
-                    if not should_exit and age_mins >= 20:
-                        # Check if any whale still holds this token
-                        whale_still_holding = token_addr in self.copy_trader.active_swarms
-                        if not whale_still_holding:
+                    # 2. Check for Trailing Trigger (Trigger at +20%)
+                    if highest_pnl >= 20.0:
+                        # If price drops 10% from the peak
+                        stop_level = highest_pnl - 10.0
+                        if pnl < stop_level:
                             should_exit = True
-                            exit_reason = f"👻 Orphan Exit: Whales sold, we didn't ({pnl:+.1f}%)"
+                            exit_reason = f"📉 Trailing Stop: {pnl:.1f}% (Peak was +{highest_pnl:.1f}%)"
+                    
+                    # 🛡️ GLOBAL HARD TAKE PROFIT (Fallback for parabolic moves)
+                    if not should_exit and pnl >= 100:
+                        should_exit = True
+                        exit_reason = f"🌋 100% Moon Exit: +{pnl:.1f}% (Ultimate Bag Secured!)"
+
+                    # ⏰ Time-based exits (Degen mode: don't marry the coin)
+                    if not should_exit:
+                        if age_mins >= 45 and pnl > 0:
+                            should_exit = True
+                            exit_reason = f"⏰ 45min Profit Take: +{pnl:.1f}%"
+                        elif age_mins >= 45 and pnl <= -25:
+                            should_exit = True
+                            exit_reason = f"⏰ 45min Stop: {pnl:.1f}%"
+                        elif age_mins >= 120:
+                            should_exit = True
+                            exit_reason = f"🛡️ 120min Force Exit: {pnl:+.1f}%"
+                    
+                    # Check if whales are still in (Orphan detection)
+                    if not should_exit and age_mins >= 30:
+                        if token_addr not in self.copy_trader.active_swarms:
+                            should_exit = True
+                            exit_reason = f"👻 Orphan Exit: Whales sold ({pnl:+.1f}%)"
                     
                     if should_exit:
                         print(f"🛡️ Orphan Guard: {exit_reason} - {symbol} (User {user_label})")
@@ -1915,10 +1932,20 @@ class AlertSystem(commands.Cog):
                                 embed.add_field(name="TX", value=f"[`{sig[:32]}...`](https://solscan.io/tx/{sig})", inline=False)
                                 await channel_memes.send(embed=embed)
                             
+                            # 🛡️ ULTIMATE BOT: WHALE SCORE UPDATE
+                            # Reward/Penalize the whales who signaled this trade
+                            score_delta = 1.0 if pnl >= 0 else -1.0
+                            whales_to_update = self.copy_trader.active_swarms.get(token_addr, set())
+                            for addr in whales_to_update:
+                                self.copy_trader.update_whale_score(addr, score_delta)
+                            
                             # Clear position and set cooldown
                             if token_addr in trader.positions:
                                 del trader.positions[token_addr]
                             self.dex_exit_cooldowns[token_addr] = now
+                            # Diversity Engine: Clean up active swarm so participants can re-signal later
+                            if token_addr in self.copy_trader.active_swarms:
+                                del self.copy_trader.active_swarms[token_addr]
                         else:
                             # Add to retry queue
                             print(f"⚠️ Orphan Guard sell failed, adding to retry queue: {token_addr[:16]}...")
@@ -1996,67 +2023,78 @@ class AlertSystem(commands.Cog):
             print(f"📊 Swarm Token: {symbol} | Liq: ${liquidity:,.0f} | MinReq: ${self.dex_min_liquidity:,.0f}")
             
             # 2. Safety Check (do this first for the embed)
-            safety_result = await self.safety.check_token(mint)
+            # 1. ULTIMATE BOT: CONFIDENCE SCORE
+            # Calculate total score of all whales in this swarm
+            whales = self.copy_trader.active_swarms.get(mint, set())
+            total_confidence = 0
+            for addr in whales:
+                score = self.copy_trader.qualified_wallets.get(addr, {}).get('score', 10.0)
+                total_confidence += score
+            
+            print(f"Ultimate Bot: Analyzed swarm for {symbol}. Confidence: {total_confidence:.1f} ({len(whales)} whales)")
+            
+            if total_confidence < self.whale_confidence_threshold:
+                print(f"🚫 Skipped {symbol}: Confidence {total_confidence:.1f} < {self.whale_confidence_threshold}")
+                return
+
+            safety_result = await self.safety.check_solana_token(mint)
             safety_score = safety_result.get('safety_score', 0)
             risks = safety_result.get('risks', [])
             print(f"🛡️ Safety Check: {symbol} scored {safety_score}/100")
             
-            # 3. Build Analysis Embed
-            liq_pass = liquidity >= self.dex_min_liquidity
-            safety_pass = safety_score >= 50  # Lowered from 60 - whales provide extra confidence
-            # Get price change data FIRST (needed for volatility filter)
+            # 2. Build Analysis Embed
+            # ULTIMATE BOT: TIERED LIQUIDITY
+            # $15k+ if 10+ whales, $25k+ if 5+ whales, $40k+ otherwise.
+            whale_count = len(self.copy_trader.active_swarms.get(mint, set()))
+            
+            liq_threshold = 40000 # Default
+            if whale_count >= 10: liq_threshold = 15000
+            elif whale_count >= 5: liq_threshold = 25000
+            
+            liq_pass = liquidity >= liq_threshold
+            safety_pass = safety_score >= 50  
+            
             price_change_24h = float(pair.get('priceChange', {}).get('h24', 0) or 0)
             change_emoji = "📈" if price_change_24h >= 0 else "📉"
             change_color = "+" if price_change_24h >= 0 else ""
             
-            # VOLATILITY FILTER: DISABLED
-            # 24h change doesn't reflect current volatility (token could have pumped yesterday, stable now)
-            # +1000-2000% in 24h is NORMAL for pump.fun tokens
-            # We trust whale judgment - if 4+ whales are buying, it's a valid signal
-            volatility_pass = True  # Always pass - whales = confidence
-            
-            # NOTE: Pump.fun tokens now use JITO BUNDLES (atomic - zero fee on failure)
-            # No longer blocking pump.fun tokens since Jito handles them properly
+            volatility_pass = True  # We trust whale judgment
             
             all_pass = liq_pass and safety_pass and volatility_pass
             
             embed_color = discord.Color.green() if all_pass else discord.Color.red()
-            decision = "✅ EXECUTING BUY" if all_pass else "🚫 SKIPPED"
+            decision = "Ultimate Buy Activated" if all_pass else "Skipped"
             
             embed = discord.Embed(
-                title=f"🐋 Swarm Analysis: {symbol}",
-                description=f"**Decision:** {decision}",
+                title=f"Ultimate Bot: {symbol}",
+                description=f"**Decision:** {decision} ({whale_count} Whales)",
                 color=embed_color
             )
-            embed.add_field(name="💰 Liquidity", value=f"${liquidity:,.0f}", inline=True)
+            embed.add_field(name="💰 Liquidity", value=f"${liquidity:,.0f} (Req: ${liq_threshold:,.0f})", inline=True)
             embed.add_field(name="🛡️ Safety", value=f"{safety_score}/100", inline=True)
             embed.add_field(name="💵 Price", value=f"${price:.8f}" if price < 0.01 else f"${price:.4f}", inline=True)
-            embed.add_field(name=f"{change_emoji} 24h Change", value=f"{change_color}{price_change_24h:.1f}%", inline=True)
             
-            # Show why skipped
             if not liq_pass:
-                embed.add_field(name="❌ Blocked By", value=f"Liq ${liquidity:,.0f} < ${self.dex_min_liquidity:,.0f}", inline=False)
+                embed.add_field(name="❌ Blocked", value=f"Liq too low for {whale_count} whales", inline=False)
             elif not safety_pass:
-                embed.add_field(name="❌ Blocked By", value=f"Safety {safety_score} < 50", inline=False)
-            # Note: Volatility filter is disabled (we trust whale judgment)
+                embed.add_field(name="❌ Blocked", value=f"Safety score fail", inline=False)
 
-
-            
             embed.add_field(name="🔗 DEX", value=f"[View on DexScreener]({dex_url})", inline=False)
             
-            # ALWAYS send the analysis embed so user sees blocked trades too
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
             if channel_memes:
                 await channel_memes.send(embed=embed)
             
-            # 4. Return if blocked
             if not all_pass:
-                print(f"🚫 Swarm analysis blocked for {symbol}: Liq/Safety/Vol failed.")
                 return
                 
-            # 5. Sizing (0.08 SOL per trade - quality tokens w/ $50k+ liquidity)
+            # 5. ULTIMATE BOT: CONVICTION SIZING
+            # 10+ Whales = 0.25 SOL, 5+ Whales = 0.15 SOL, 3+ Whales = 0.08 SOL
             amount_sol = 0.08
-            print(f"✅ All checks passed! Executing swarm buy for {symbol}...")
+            if whale_count >= 10: amount_sol = 0.25
+            elif whale_count >= 5: amount_sol = 0.15
+            
+            print(f"Ultimate Bot: Executing {amount_sol} SOL buy for {symbol} ({whale_count} whales)")
 
             
             # 5. Execute for ALL traders (multi-user support)
@@ -2368,9 +2406,12 @@ class AlertSystem(commands.Cog):
 
     async def cog_load(self):
         """Called when the cog is loaded - start the monitoring loops."""
-        print("🚀 AlertSystem: Cog loaded. Starting background initialization task...")
+        print("Ultimate Bot: Cog loaded. Full Meme Focus active.")
+        # DISABLE POLYMARKET (User request: Full memes only)
+        global POLYMARKET_ENABLED
+        POLYMARKET_ENABLED = False
+        
         # INSTANT Handshake: Schedule the heavy loading in a separate background task
-        # This allows add_cog to return IMMEDIATELY so the Webhook Listener finds us.
         self._init_task = asyncio.create_task(self._async_background_init())
         
     async def _async_background_init(self):

@@ -10,14 +10,14 @@ SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "").strip() or None
 if SQLALCHEMY_DATABASE_URL:
     # DEBUG: Masked connection string (Safe for logs)
     db_host = SQLALCHEMY_DATABASE_URL.split('@')[-1] if '@' in SQLALCHEMY_DATABASE_URL else "internal"
-    print(f"🗄️ Connecting to Database: {db_host}")
+    print(f"DATABASE: Connecting to Database: {db_host}")
     
     if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
         SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 if not SQLALCHEMY_DATABASE_URL:
     SQLALCHEMY_DATABASE_URL = "sqlite:///./trading_platform.db"
-    print("⚠️ DATABASE_URL not found. Falling back to SQLite.")
+    print("DATABASE: DATABASE_URL not found. Falling back to SQLite.")
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, 
@@ -32,7 +32,7 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def init_db():
-    print("🛠️ Initializing Database Connection...")
+    print("DATABASE: Initializing Database Connection...")
     try:
         from migrate import run_migrations
         run_migrations()
@@ -45,14 +45,14 @@ def init_db():
                 user = User(id=1, username="demo_trader", hashed_password="not_needed_for_now")
                 db.add(user)
                 db.commit()
-                print("👤 Demo User created.")
-            print("✅ Database Connection: STABLE")
+                print("DATABASE: Demo User created.")
+            print("DATABASE: Connection STABLE")
         except Exception as e:
-            print(f"⚠️ Error seeding DB: {e}")
+            print(f"DATABASE: Error seeding DB: {e}")
         finally:
             db.close()
     except Exception as e:
-        print(f"❌ CRITICAL DATABASE ERROR: {e}")
+        print(f"DATABASE: CRITICAL ERROR: {e}")
         print("💡 TIP: Verify your DATABASE_URL in Render. If you recently reset the DB password, you must update the environment variable.")
         # We don't raise here so the bot can at least keep the Webhook Listener alive for health checks
         # But most functions will fail.
