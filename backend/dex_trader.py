@@ -841,15 +841,15 @@ class DexTrader:
             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000, use_jito=True)
         
         # BEAST MODE: Single FAST retry with fresh quote for slippage failures
-        # Because Jito = zero fee on failure, we can retry once immediately with a fresh quote
-        if 'error' in result and ('0x177e' in str(result['error']) or '6014' in str(result['error'])):
-            print("⚡ Slippage exceeded! BEAST MODE: Retrying ONCE with fresh quote...")
+        # Added '6001' (Custom 6001) and '0x1' for better success rates on pump.fun
+        if 'error' in result and any(err in str(result['error']) for err in ['0x177e', '6014', '6001', '0x1']):
+            print(f"⚡ Entry failure ({result['error'][:20]}). BEAST MODE: Retrying ONCE with fresh quote...")
             import time
-            time.sleep(0.3)  # Tiny pause for price to settle
+            time.sleep(0.5)  # Increased pause for price to settle on low-liq tokens
             # Retry with fresh quote (the execute_swap gets a new quote internally)
             result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000, use_jito=True)
             if 'error' in result:
-                print("🛑 Retry also failed. Potential HONEYPOT (100% slippage failure). Aborting to prevent drain.")
+                print("🛑 Retry also failed. Potential HONEYPOT or High Volatility. Aborting.")
 
         
         if result.get('success'):

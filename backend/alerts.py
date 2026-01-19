@@ -2004,10 +2004,7 @@ class AlertSystem(commands.Cog):
                 print(f"⏳ Skipping {mint[:16]}... (on cooldown after failed trade)")
                 return
         
-        # 🚫 SKIP PUMP.FUN TOKENS - High slippage failure rate
-        if mint.lower().endswith('pump'):
-            print(f"🚫 Skipping pump.fun token: {mint[:16]}... (slippage risk high)")
-            return
+        # ALL TOKENS ALLOWED (Alpha Unlock)
         
         # 1. Get Token Info (Symbol, Liquidity)
         try:
@@ -2058,9 +2055,9 @@ class AlertSystem(commands.Cog):
             whale_count = len(self.copy_trader.active_swarms.get(mint, set()))
             
             liq_threshold = 40000 # Default
-            if whale_count >= 10: liq_threshold = 15000
-            elif whale_count >= 5: liq_threshold = 25000
-            elif whale_count >= 3: liq_threshold = 30000
+            if whale_count >= 10: liq_threshold = 10000 # Ultra-early (was 15k)
+            elif whale_count >= 5: liq_threshold = 20000 # Aggressive (was 25k)
+            elif whale_count >= 3: liq_threshold = 25000 # Standard (was 30k)
             
             liq_pass = liquidity >= liq_threshold
             safety_pass = safety_score >= 50  
