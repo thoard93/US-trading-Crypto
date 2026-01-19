@@ -293,10 +293,15 @@ class SmartCopyTrader:
         # 1. Get Trending Pairs (sync call)
         import requests
         try:
-            resp = requests.get("https://api.dexscreener.com/token-boosts/top/v1", timeout=10)
+            # Use Token Profiles for broader discovery (same as async)
+            resp = requests.get("https://api.dexscreener.com/token-profiles/latest/v1", timeout=10)
             if resp.status_code != 200:
+                self.logger.error(f"DexScreener API error: {resp.status_code}")
                 return 0
-            pairs = resp.json()[:max_pairs]
+            
+            data = resp.json()
+            # Filter for Solana and limit
+            pairs = [p for p in data if p.get('chainId') == 'solana'][:max_pairs]
         except Exception as e:
             self.logger.error(f"Error fetching trending: {e}")
             return 0
@@ -807,7 +812,7 @@ class SmartCopyTrader:
         print(f"🦈 Ultimate Hunt: Scanning market for fresh Alpha...")
         try:
             # 1. Get Trending Tokens
-            trending = await self.dex_scout.get_trending("solana")
+            trending = await self.dex_scout.get_trending_solana_pairs(limit=max_pairs)
             if not trending: return 0
             
             new_found = 0

@@ -102,7 +102,6 @@ class DexScout:
         sol_profiles = [p for p in profiles if p.get('chainId') == 'solana']
         
         candidates = []
-        skipped_pump = 0
         # Step 2: Fetch detailed pair data for candidates
         # Increased scan depth from 30 to 100 to find more non-pump.fun tokens
         for p in sol_profiles[:100]:
@@ -110,7 +109,6 @@ class DexScout:
             if not addr: continue
             
             # ALL TOKENS ALLOWED (Alpha Unlock)
-            pass
             
             # Fetch Pair Data (Price, Liquidity)
             # This uses the 'tokens/{addr}' endpoint which is reliable
@@ -129,8 +127,6 @@ class DexScout:
             if len(candidates) >= limit:
                 break
         
-        if skipped_pump > 0:
-            self.logger.info(f"⏭️ Skipped {skipped_pump} pump.fun tokens (focus on Raydium/Orca)")
                 
         return candidates
 
