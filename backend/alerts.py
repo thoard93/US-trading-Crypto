@@ -2044,12 +2044,13 @@ class AlertSystem(commands.Cog):
             
             # 2. Build Analysis Embed
             # ULTIMATE BOT: TIERED LIQUIDITY
-            # $15k+ if 10+ whales, $25k+ if 5+ whales, $40k+ otherwise.
+            # 10+ Whales = $15k, 5+ Whales = $25k, 3+ Whales = $30k
             whale_count = len(self.copy_trader.active_swarms.get(mint, set()))
             
             liq_threshold = 40000 # Default
             if whale_count >= 10: liq_threshold = 15000
             elif whale_count >= 5: liq_threshold = 25000
+            elif whale_count >= 3: liq_threshold = 30000
             
             liq_pass = liquidity >= liq_threshold
             safety_pass = safety_score >= 50  
@@ -2335,9 +2336,8 @@ class AlertSystem(commands.Cog):
 
     @tasks.loop(minutes=10)
     async def polymarket_monitor(self):
-        """Monitor Polymarket for whale swarm signals."""
-        if not POLYMARKET_ENABLED or not self.polymarket_collector or not self.polymarket_trader:
-            return
+        """Monitor Polymarket for whale swarm signals. DISABLED for Ultimate Bot."""
+        return # FULL DISABLE - Ultimate Bot focus is memes only.
         
         try:
             # 1. Detect whale swarms

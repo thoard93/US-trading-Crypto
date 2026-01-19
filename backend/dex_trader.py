@@ -500,7 +500,7 @@ class DexTrader:
                     msg = result['error'].get('message', str(result['error']))
                     code = result['error'].get('code', 'unknown')
                     print(f"❌ Swap Failed [code={code}]: {msg}")
-                    if '0x177e' in str(msg) or '6014' in str(msg):
+                    if '0x177e' in str(msg) or '6014' in str(msg) or '6001' in str(msg):
                         msg += " (Slippage Tolerance Exceeded)"
                     elif '0x1' in str(msg):
                         msg += " (Likely Insufficient SOL for Rent/Fees)"
