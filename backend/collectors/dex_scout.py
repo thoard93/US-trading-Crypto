@@ -91,44 +91,62 @@ class DexScout:
             self.logger.error(f"Error fetching token profiles: {e}")
             return []
 
+    async def get_token_pairs_bulk(self, token_addresses):
+        """Fetch data for multiple tokens in a single request (Max 30)."""
+        if not token_addresses:
+            return []
+            
+        addrs_str = ",".join(token_addresses)
+        url = f"{self.base_url}/tokens/{addrs_str}"
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data.get('pairs', [])
+                    elif response.status == 429:
+                        self.logger.warning("🛑 DexScreener Rate Limit (429) hit in bulk lookup.")
+                        return "429"
+                    else:
+                        self.logger.error(f"DexScreener Bulk API error: {response.status}")
+                        return []
+        except Exception as e:
+            self.logger.error(f"Error fetching bulk DexScreener data: {e}")
+            return []
+
     async def get_trending_solana_pairs(self, min_liquidity=2000, limit=50):
-        """Fetch trending Solana pairs from DexScreener (Expanded scan)."""
-        # Step 1: Get Latest Profiles (Trending/New)
+        """Fetch trending Solana pairs from DexScreener using Bulk Lookups."""
         profiles = await self.get_latest_token_profiles()
         if not profiles:
             return []
             
-        # Filter for Solana
         sol_profiles = [p for p in profiles if p.get('chainId') == 'solana']
+        addrs = [p.get('tokenAddress') for p in sol_profiles[:100] if p.get('tokenAddress')]
         
         candidates = []
-        # Step 2: Fetch detailed pair data for candidates
-        # Increased scan depth from 30 to 100 to find more non-pump.fun tokens
-        for p in sol_profiles[:100]:
-            addr = p.get('tokenAddress')
-            if not addr: continue
+        # Step 2: Fetch detailed pair data in batches of 30 (API limit)
+        for i in range(0, len(addrs), 30):
+            batch = addrs[i:i+30]
+            pairs = await self.get_token_pairs_bulk(batch)
             
-            # ALL TOKENS ALLOWED (Alpha Unlock)
-            
-            # Fetch Pair Data (Price, Liquidity)
-            # This uses the 'tokens/{addr}' endpoint which is reliable
-            pair = await self.get_pair_data('solana', addr)
-            
-            if not pair: continue
-            
-            # Apply Filters
-            liq = float(pair.get('liquidity', {}).get('usd', 0))
-            if liq < min_liquidity:
-                continue
+            if pairs == "429":
+                print("🛑 DexScreener Rate Limit hit. Cooling down for 30s...")
+                await asyncio.sleep(30)
+                break # Exit early but return what we have
                 
-            # Allow it
-            candidates.append(pair)
+            if not pairs: continue
+            
+            for pair in pairs:
+                liq = float(pair.get('liquidity', {}).get('usd', 0))
+                if liq >= min_liquidity:
+                    candidates.append(pair)
             
             if len(candidates) >= limit:
                 break
-        
                 
-        return candidates
+            await asyncio.sleep(1) # Tiny pause between batches for safety
+                
+        return candidates[:limit]
 
     async def get_new_solana_pairs(self, max_age_hours=6, limit=10):
         """Fetch newly created Solana pairs (just launched gems)."""

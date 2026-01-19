@@ -295,6 +295,11 @@ class SmartCopyTrader:
         try:
             # Use Token Profiles for broader discovery (same as async)
             resp = requests.get("https://api.dexscreener.com/token-profiles/latest/v1", timeout=10)
+            if resp.status_code == 429:
+                self.logger.warning("🛑 DexScreener Rate Limit (429) hit in Whale Hunt. Cooling down...")
+                import time
+                time.sleep(30)
+                return 0
             if resp.status_code != 200:
                 self.logger.error(f"DexScreener API error: {resp.status_code}")
                 return 0
