@@ -109,11 +109,8 @@ class DexScout:
             addr = p.get('tokenAddress')
             if not addr: continue
             
-            # 🚫 SKIP PUMP.FUN TOKENS - They end with 'pump' in the address
-            # Focus on Raydium/Orca tokens for reliable trading
-            if addr.lower().endswith('pump'):
-                skipped_pump += 1
-                continue
+            # ALL TOKENS ALLOWED (Alpha Unlock)
+            pass
             
             # Fetch Pair Data (Price, Liquidity)
             # This uses the 'tokens/{addr}' endpoint which is reliable

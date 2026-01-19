@@ -301,11 +301,12 @@ class WalletCollector:
         total_trades = pump_fun_trades + regular_dex_trades
         pump_fun_ratio = pump_fun_trades / total_trades if total_trades > 0 else 0
         
-        # 🚫 REJECT PUMP.FUN HEAVY TRADERS (>50% pump.fun trades)
-        is_pump_fun_trader = pump_fun_ratio > 0.5
+        # ALL WHALES ALLOWED (Alpha Unlock)
+        # We value pump.fun expertise just as much as DEX expertise
+        is_pump_fun_trader = False 
         
-        # Only qualify if: good holding time + enough trades + NOT a pump.fun trader
-        is_qualified = p10 > 60 and len(holding_times) > 5 and not is_pump_fun_trader
+        # Only qualify if: good holding time + enough trades
+        is_qualified = p10 > 60 and len(holding_times) > 5
 
         return {
             "address": address,
