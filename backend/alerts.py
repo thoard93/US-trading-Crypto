@@ -1879,14 +1879,15 @@ class AlertSystem(commands.Cog):
                 slippage = item.get('slippage_bps', 5000)
                 reason = item.get('reason', 'Retry')
                 
-                # Progressive slippage: 50% -> 75% -> 100%
-                if attempts == 0:
-                    slippage = 5000
-                elif attempts == 1:
-                    slippage = 7500
-                else:
-                    slippage = 10000
-                
+                # 🛡️ Hardened Check: Verify actual wallet balance before attempting sell
+                bal_info = await self.run_sync(trader.get_token_balance, token_addr)
+                if bal_info.get('ui_amount', 0) < 0.0001:
+                    print(f"🧹 Detecting on-chain exit for {token_addr[:8]}. Clearing retry item.")
+                    retry_items_to_remove.append(item)
+                    if token_addr in trader.positions:
+                        del trader.positions[token_addr]
+                    continue
+
                 print(f"🔄 Retry Queue: Selling {token_addr[:16]}... (attempt {attempts + 1}, slippage {slippage // 100}%)")
                 
                 result = await self.run_sync(trader.sell_token, token_addr, override_slippage=slippage)
@@ -1936,9 +1937,16 @@ class AlertSystem(commands.Cog):
                 positions_to_check = list(trader.positions.items())
                 
                 for token_addr, pos in positions_to_check:
+                    # 🛡️ Hardened Check: Verify actual wallet balance (ignore DUST)
+                    actual_bal = await self.run_sync(trader.get_token_balance, token_addr)
+                    if actual_bal.get('ui_amount', 0) < 0.0001:
+                        if actual_bal.get('ui_amount', 0) > 0:
+                            print(f"🧹 Detecting DUST position ({actual_bal.get('ui_amount'):.8f}) for {token_addr[:8]}. Pruning.")
+                        if token_addr in trader.positions:
+                             del trader.positions[token_addr]
+                        continue
+
                     entry_time = pos.get('entry_time', 0)
-                    if not entry_time:
-                        continue  # Legacy position without timestamp
                     
                     age_mins = (now - entry_time) / 60
                     entry_price = pos.get('entry_price_usd', 0)

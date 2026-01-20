@@ -453,10 +453,11 @@ class DexTrader:
                 
                 # Burst resubmission for 15 seconds
                 # Simultaneous fallback to standard RPC after first burst
-                for attempt in range(5):
+                for jito_loop_idx in range(5):
                     success_current_attempt = False
                     for jito_base in JITO_BLOCK_ENGINES:
                         try:
+                            # ... (rest of Jito logic) ...
                             jito_url = f"{jito_base}/api/v1/transactions?bundleOnly=true"
                             resp = requests.post(jito_url, json=tx_payload, timeout=5)
                             if resp.status_code == 200:
@@ -477,9 +478,9 @@ class DexTrader:
                     
                     # DUAL SUBMISSION FALLBACK: Also send to standard RPC after second attempt
                     # This ensures that even if Jito is dropping it, a standard leader might catch it
-                    if attempt >= 1:
+                    if jito_loop_idx >= 1:
                         try:
-                            print(f"📡 Sending standard RPC fallback (Attempt {attempt})...")
+                            print(f"📡 Sending standard RPC fallback (Burst {jito_loop_idx})...")
                             requests.post(self.rpc_url, json={
                                 "jsonrpc": "2.0", "id": 1, "method": "sendTransaction",
                                 "params": [signed_tx_base64, {"encoding": "base64", "skipPreflight": True}]
@@ -487,7 +488,7 @@ class DexTrader:
                         except Exception as e:
                             print(f"⚠️ Fallback RPC send failed: {e}")
 
-                    if attempt == 0 and not success_current_attempt:
+                    if jito_loop_idx == 0 and not success_current_attempt:
                         # If Jito failed initially, don't alert, try the standard RPC as a direct fallback
                         try:
                             print(f"📡 Jito initial fail. Attempting direct RPC fallback...")
@@ -505,13 +506,13 @@ class DexTrader:
                         except Exception as e:
                             print(f"⚠️ Direct RPC fallback error: {e}")
                     
-                    if attempt == 0 and not success_current_attempt:
+                    if jito_loop_idx == 0 and not success_current_attempt:
                         return {"error": "Failed initial submission to all Jito Block Engines and RPC"}
                     
-                    if attempt == 0:
+                    if jito_loop_idx == 0:
                         print(f"📤 sentTransaction: {tx_signature}. Starting burst resubmission...")
                     
-                    if attempt < 4: time.sleep(3) 
+                    if jito_loop_idx < 4: time.sleep(3) 
                 
                 print(f"✅ Burst complete. Waiting for confirmation: {tx_signature}")
             else:
@@ -939,8 +940,10 @@ class DexTrader:
         bal_info = self.get_token_balance(token_mint)
         token_balance = bal_info.get('amount', 0) # Use RAW for Jupiter swap
         
-        if token_balance <= 0:
-            return {"error": "No tokens to sell"}
+        if token_balance <= 0 or (bal_info.get('ui_amount', 0) < 0.0001):
+            if bal_info.get('ui_amount', 0) > 0:
+                print(f"🧹 Ignoring DUST sell for {token_mint[:8]}... ({bal_info.get('ui_amount'):.8f} tokens)")
+            return {"error": "No tokens to sell (Dust Filter active)"}
         
         # Calculate amount to sell (Using RAW Integer - Decimals safe)
         if percentage == 100:
