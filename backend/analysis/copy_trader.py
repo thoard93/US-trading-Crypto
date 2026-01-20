@@ -375,7 +375,7 @@ class SmartCopyTrader:
                         "discovered_on": token_address[:16],
                         "discovered_at": datetime.now().isoformat(),
                         "stats": stats,
-                        "score": 10
+                        "score": 12.5 # HUNTER BONUS: Fresh PNL-verified whales start stronger
                     }
                     self.qualified_wallets[wallet] = wallet_data
                     new_wallets += 1

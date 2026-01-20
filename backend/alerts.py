@@ -75,7 +75,7 @@ class AlertSystem(commands.Cog):
         self.dex_max_positions = 15
         
         # Ultimate Bot Configuration
-        self.whale_confidence_threshold = 30 # Sum of whale scores
+        self.whale_confidence_threshold = 25 # Sum of whale scores
         self.trailing_stop_pnl_trigger = 20.0 # Activates at 20% profit
         self.trailing_stop_distance = 10.0 # Trails 10% behind ATH
         self.dev_shadow_enabled = True
@@ -1754,12 +1754,12 @@ class AlertSystem(commands.Cog):
             if not hasattr(self, '_swarm_diag_tick'): self._swarm_diag_tick = 0
             self._swarm_diag_tick += 1
             
-            # Min Buyers threshold set to 3 for stronger signal consensus
+            # Min Buyers threshold set to 2 for stronger Alpha Consensus (Ultimate Bot)
             # Pass held tokens so swarms aren't pruned while we still hold
             held_tokens = set()
             for trader in self.dex_traders:
                 held_tokens.update(trader.positions.keys())
-            signals = self.copy_trader.analyze_swarms(min_buyers=3, window_minutes=10, held_tokens=held_tokens)
+            signals = self.copy_trader.analyze_swarms(min_buyers=2, window_minutes=15, held_tokens=held_tokens)
             
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
             
