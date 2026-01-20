@@ -8,43 +8,48 @@ class DexScout:
         self.base_url = "https://api.dexscreener.com/latest/dex"
         self.logger = logging.getLogger(__name__)
 
-    async def get_pair_data(self, chain_id, token_address):
-        """Fetch data for a specific token/pair from DexScreener."""
-        # Use simple tokens endpoint which is robust for token addresses
-        url = f"{self.base_url}/tokens/{token_address}"
+    async def _get(self, url):
+        """Internal helper for DexScreener GET requests with 429 backoff."""
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url) as response:
                     if response.status == 200:
-                        data = await response.json()
-                        pairs = data.get('pairs', [])
-                        if not pairs:
-                            return None
-                        # Sort by liquidity to get the main pair
-                        pairs.sort(key=lambda x: float(x.get('liquidity', {}).get('usd', 0)), reverse=True)
-                        return pairs[0]
+                        return await response.json()
+                    elif response.status == 429:
+                        self.logger.warning(f"🛑 DexScreener Rate Limit (429) hit. Backing off... URL: {url[:64]}")
+                        # Return a specific marker so callers can handle it
+                        return "429"
                     else:
-                        print(f"❌ DexScreener API error: {response.status} for {token_address}")
+                        self.logger.error(f"DexScreener API error {response.status} for {url[:64]}")
                         return None
         except Exception as e:
-            print(f"❌ Error fetching DexScreener data for {token_address}: {e}")
+            self.logger.error(f"DexScreener connection error: {e}")
             return None
+
+    async def get_pair_data(self, chain_id, token_address):
+        """Fetch data for a specific token/pair from DexScreener."""
+        url = f"{self.base_url}/tokens/{token_address}"
+        data = await self._get(url)
+        
+        if data == "429":
+            return None # Callers handle the lag
+            
+        if data:
+            pairs = data.get('pairs', [])
+            if not pairs:
+                return None
+            # Sort by liquidity to get the main pair
+            pairs.sort(key=lambda x: float(x.get('liquidity', {}).get('usd', 0)), reverse=True)
+            return pairs[0]
+        return None
 
     async def search_tokens(self, query):
         """Search for tokens on DexScreener."""
         url = f"{self.base_url}/search/?q={query}"
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return data.get('pairs', [])
-                    else:
-                        self.logger.error(f"DexScreener Search error: {response.status}")
-                        return []
-        except Exception as e:
-            self.logger.error(f"Error searching DexScreener: {e}")
-            return []
+        data = await self._get(url)
+        if data and data != "429":
+            return data.get('pairs', [])
+        return []
 
     def extract_token_info(self, pair_data):
         """Extract relevant fields from DexScreener pair data."""
@@ -68,28 +73,18 @@ class DexScout:
     async def get_latest_boosted_tokens(self):
         """Fetch tokens with the latest boosts."""
         url = "https://api.dexscreener.com/token-boosts/latest/v1"
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        return await response.json()
-                    return []
-        except Exception as e:
-            self.logger.error(f"Error fetching boosted tokens: {e}")
-            return []
+        data = await self._get(url)
+        if data and data != "429":
+            return data
+        return []
 
     async def get_latest_token_profiles(self):
         """Fetch the latest token profiles."""
         url = "https://api.dexscreener.com/token-profiles/latest/v1"
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        return await response.json()
-                    return []
-        except Exception as e:
-            self.logger.error(f"Error fetching token profiles: {e}")
-            return []
+        data = await self._get(url)
+        if data and data != "429":
+            return data
+        return []
 
     async def get_token_pairs_bulk(self, token_addresses):
         """Fetch data for multiple tokens in a single request (Max 30)."""
@@ -98,21 +93,14 @@ class DexScout:
             
         addrs_str = ",".join(token_addresses)
         url = f"{self.base_url}/tokens/{addrs_str}"
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return data.get('pairs', [])
-                    elif response.status == 429:
-                        self.logger.warning("🛑 DexScreener Rate Limit (429) hit in bulk lookup.")
-                        return "429"
-                    else:
-                        self.logger.error(f"DexScreener Bulk API error: {response.status}")
-                        return []
-        except Exception as e:
-            self.logger.error(f"Error fetching bulk DexScreener data: {e}")
-            return []
+        data = await self._get(url)
+        
+        if data == "429":
+             return "429"
+             
+        if data:
+            return data.get('pairs', [])
+        return []
 
     async def get_trending_solana_pairs(self, min_liquidity=2000, limit=50):
         """Fetch trending Solana pairs from DexScreener using Bulk Lookups."""

@@ -361,7 +361,9 @@ class AlertSystem(commands.Cog):
                                 trader.positions[mint] = {
                                     'entry_price_usd': entry_price,
                                     'amount': amount,
-                                    'symbol': symbol
+                                    'symbol': symbol,
+                                    'highest_pnl': db_pos.highest_pnl if db_pos else 0.0,
+                                    'entry_time': db_pos.timestamp.timestamp() if db_pos else datetime.datetime.now().timestamp()
                                 }
                                 
                                 # --- SWARM HEALING (NEW) ---
@@ -415,6 +417,10 @@ class AlertSystem(commands.Cog):
     @tasks.loop(minutes=3)  # POSITION TRADER MODE: Was 15s, now 3 min (stop churning)
     async def dex_monitor(self):
         """Dedicated high-speed loop for DEX memecoins (30s)."""
+        # Add jitter to prevent API storms from multiple instances
+        import random
+        await asyncio.sleep(random.randint(1, 15))
+        
         if not self.ready:
             return
         if not self.bot.is_ready():
@@ -761,6 +767,10 @@ class AlertSystem(commands.Cog):
     @tasks.loop(minutes=10)  # POSITION TRADER MODE: Was 2 min, now 10 min
     async def discovery_loop(self):
         """Find new trending DEX gems automatically - SNIPER MODE."""
+        # Add jitter to prevent API storms from multiple instances
+        import random
+        await asyncio.sleep(random.randint(5, 45))
+        
         if not self.ready:
             return
         if not self.bot.is_ready(): return
@@ -921,6 +931,10 @@ class AlertSystem(commands.Cog):
     @tasks.loop(minutes=30)
     async def auto_hunt_loop(self):
         """Automatically hunt for new DEX whales every 30 minutes."""
+        # Add jitter to prevent API storms from multiple instances
+        import random
+        await asyncio.sleep(random.randint(10, 60))
+        
         if not self.ready or not self.copy_trader:
             return
         if not self.bot.is_ready():
@@ -1449,6 +1463,34 @@ class AlertSystem(commands.Cog):
 
 
     @commands.command()
+    async def status(self, ctx):
+        """Show bot health and performance stats."""
+        total_wallets = len(self.copy_trader.qualified_wallets)
+        active_positions = sum(len(trader.positions) for trader in self.dex_traders)
+        uptime = datetime.datetime.now() - self.bot.start_time if hasattr(self.bot, 'start_time') else "Active"
+        
+        embed = discord.Embed(
+            title="📊 US Trading Bot Status",
+            color=discord.Color.blue(),
+            timestamp=datetime.datetime.now()
+        )
+        embed.add_field(name="Whales Tracked", value=f"🐋 {total_wallets}", inline=True)
+        embed.add_field(name="Active Trades", value=f"🚀 {active_positions}", inline=True)
+        embed.add_field(name="System State", value="✅ ONLINE", inline=True)
+        
+        # Add balance info if available
+        if self.dex_traders:
+            sol_bal = await self.run_sync(self.dex_traders[0].get_sol_balance)
+            embed.add_field(name="Wallet Balance", value=f"💰 {sol_bal:.4f} SOL", inline=False)
+            
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    async def register(self, ctx):
+        """Onboarding command for new users."""
+        await ctx.send("👋 **Welcome to the Alpha Hunt!** Your account is being synchronized with the Ultimate Bot engine. Please ensure your Helius webhooks are active.")
+
+    @commands.command()
     async def whales(self, ctx):
         """List currently tracked whale wallets."""
         if not self.ready:
@@ -1674,6 +1716,10 @@ class AlertSystem(commands.Cog):
     @tasks.loop(seconds=30) # ⚡ Helius Mindful: Polling slowed to 30s to save credits for top 100 real-time webhooks.
     async def swarm_monitor(self):
         """Polls for Swarm Signals (Copy Trading)."""
+        # Add jitter to prevent API storms from multiple instances
+        import random
+        await asyncio.sleep(random.randint(1, 10))
+        
         # Set heartbeat FIRST so we know loop is alive
         self.last_swarm_scan = datetime.datetime.now()
             
@@ -1827,6 +1873,24 @@ class AlertSystem(commands.Cog):
                     self.sell_retry_queue.remove(item)
             
             # ========== 2. TIME-BASED EXITS AND ORPHAN DETECTION ==========
+            # 2a. PRE-FETCH ALL PRICES (Bulk optimization to avoid 429s)
+            all_mints = set()
+            for trader in self.dex_traders:
+                all_mints.update(trader.positions.keys())
+            
+            price_map = {}
+            if all_mints:
+                # Batch in groups of 30 (API limit)
+                mint_list = list(all_mints)
+                for i in range(0, len(mint_list), 30):
+                    batch = mint_list[i:i+30]
+                    pairs = await self.dex_scout.get_token_pairs_bulk(batch)
+                    if pairs and pairs != "429":
+                        for pair in pairs:
+                            addr = pair.get('baseToken', {}).get('address')
+                            if addr:
+                                price_map[addr] = float(pair.get('priceUsd', 0))
+                
             for trader in self.dex_traders:
                 user_label = getattr(trader, 'user_id', 'Main')
                 positions_to_check = list(trader.positions.items())
@@ -1840,15 +1904,17 @@ class AlertSystem(commands.Cog):
                     entry_price = pos.get('entry_price_usd', 0)
                     symbol = pos.get('symbol', token_addr[:8])
                     
-                    # Get current price (try DexScreener)
-                    try:
-                        pair = await self.dex_scout.get_pair_data("solana", token_addr)
-                        if pair:
-                            current_price = float(pair.get('priceUsd', 0))
-                        else:
-                            current_price = 0
-                    except:
-                        current_price = 0
+                    # 🚀 Bulk Logic: Use pre-fetched price
+                    current_price = price_map.get(token_addr, 0)
+                    
+                    # Fallback for missing prices (one-off check if small set)
+                    if current_price == 0 and len(all_mints) < 5:
+                        try:
+                            pair = await self.dex_scout.get_pair_data("solana", token_addr)
+                            if pair:
+                                current_price = float(pair.get('priceUsd', 0))
+                        except:
+                            pass
                     
                     if entry_price and current_price:
                         pnl = ((current_price - entry_price) / entry_price) * 100
@@ -1861,7 +1927,22 @@ class AlertSystem(commands.Cog):
                     if pnl > highest_pnl:
                         pos['highest_pnl'] = pnl
                         highest_pnl = pnl
-                        # TODO: Persist pos['highest_pnl'] to DB for restarts
+                        #  Moon Engine: Persist highest_pnl to DB
+                        try:
+                            from database import SessionLocal
+                            import models
+                            db_session = SessionLocal()
+                            # Find the matching position in DB
+                            db_pos = db_session.query(models.DexPosition).filter(
+                                models.DexPosition.token_address == token_addr,
+                                models.DexPosition.wallet_address == trader.wallet_address
+                            ).first()
+                            if db_pos:
+                                db_pos.highest_pnl = pnl
+                                db_session.commit()
+                            db_session.close()
+                        except Exception as e:
+                            print(f"⚠️ Failed to persist Moon Engine ATH: {e}")
                     
                     should_exit = False
                     exit_reason = ""
@@ -2151,7 +2232,8 @@ class AlertSystem(commands.Cog):
                         'entry_price_usd': float(pair.get('priceUsd', 0)),
                         'entry_time': datetime.datetime.now().timestamp(),
                         'amount_sol': amount_sol,
-                        'symbol': symbol
+                        'symbol': symbol,
+                        'highest_pnl': 0.0 # Initialize Moon Engine
                     })
                 else:
                     # Buy failed - log to Discord and add to cooldown

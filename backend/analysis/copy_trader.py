@@ -289,6 +289,9 @@ class SmartCopyTrader:
         SYNC version of whale scanner - runs in thread to avoid blocking Discord.
         """
         self.logger.info("🌊 Starting Whale Hunt (Sync)...")
+        # Add jitter to prevent API storms from multiple instances starting simultaneously
+        import time, random
+        time.sleep(random.randint(1, 10))
         
         # 1. Get Trending Pairs (sync call)
         import requests
@@ -296,7 +299,7 @@ class SmartCopyTrader:
             # Use Token Profiles for broader discovery (same as async)
             resp = requests.get("https://api.dexscreener.com/token-profiles/latest/v1", timeout=10)
             if resp.status_code == 429:
-                self.logger.warning("🛑 DexScreener Rate Limit (429) hit in Whale Hunt. Cooling down...")
+                self.logger.warning("🛑 DexScreener Rate Limit (429) hit in Whale Hunt (Profiles). Cooling down...")
                 import time
                 time.sleep(30)
                 return 0
