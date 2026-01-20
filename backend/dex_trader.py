@@ -183,9 +183,11 @@ class DexTrader:
             
             import time
             # We try standard V6 first, then the reliable public proxy used in execute_swap
+            # Fallback strategy: Prefer reliability over speed when DNS is flaky
             hosts = [
+                ("public.jupiterapi.com", "/quote"),
                 ("quote-api.jup.ag", "/v6/quote"),
-                ("public.jupiterapi.com", "/quote")
+                ("jupiter-quote-api.jup.ag", "/v6/quote")
             ]
             
             for host, path in hosts:
@@ -294,10 +296,11 @@ class DexTrader:
             
             # 2. Get swap transaction with retries and fallback
             swap_data = None
+            # Fallback strategy: Prefer reliability over speed when DNS is flaky
             hosts = [
+                ("public.jupiterapi.com", "/swap"),
                 ("quote-api.jup.ag", "/v6/swap"),
-                ("jupiter-quote-api.jup.ag", "/v6/swap"),
-                ("public.jupiterapi.com", "/swap")
+                ("jupiter-quote-api.jup.ag", "/v6/swap")
             ]
             
             # PHASE 45: Adaptive Priority Fee Escalation (BEAST MODE 3.0)
@@ -397,32 +400,38 @@ class DexTrader:
             signed_tx_bytes = bytes(signed_tx)
             signed_tx_base64 = base64.b64encode(signed_tx_bytes).decode('utf-8')
             
-            # Simulate transaction before sending (costs nothing, catches ~80% of slippage failures)
-            try:
-                sim_response = requests.post(self.rpc_url, json={
-                    "jsonrpc": "2.0", "id": 1,
-                    "method": "simulateTransaction",
-                    # PHASE 43.1: Use 'confirmed' commitment for more reliable simulation
-                    "params": [signed_tx_base64, {"encoding": "base64", "commitment": "confirmed"}]
-                }, timeout=10)
+            # Beast Mode 3.2: Skip simulation on retries to save time
+            should_simulate = (attempt == 0)
+            
+            if should_simulate:
+                # Simulate transaction before sending (costs nothing, catches ~80% of slippage failures)
+                try:
+                    sim_response = requests.post(self.rpc_url, json={
+                        "jsonrpc": "2.0", "id": 1,
+                        "method": "simulateTransaction",
+                        # PHASE 43.1: Use 'confirmed' commitment for more reliable simulation
+                        "params": [signed_tx_base64, {"encoding": "base64", "commitment": "confirmed"}]
+                    }, timeout=10)
 
-                sim_result = sim_response.json()
-                sim_err = sim_result.get('result', {}).get('err')
-                
-                if sim_err:
-                    err_str = str(sim_err)
-                    # Check for slippage error (6014 / 0x177e)
-                    if '6014' in err_str or '0x177e' in err_str:
-                        print(f"🛑 PRE-FLIGHT ABORT: Slippage would fail (saved TX fee!)")
-                        return {"error": "Pre-flight simulation: Slippage exceeded", "simulated": True}
+                    sim_result = sim_response.json()
+                    sim_err = sim_result.get('result', {}).get('err')
+                    
+                    if sim_err:
+                        err_str = str(sim_err)
+                        # Check for slippage error (6014 / 0x177e)
+                        if '6014' in err_str or '0x177e' in err_str:
+                            print(f"🛑 PRE-FLIGHT ABORT: Slippage would fail (saved TX fee!)")
+                            return {"error": "Pre-flight simulation: Slippage exceeded", "simulated": True}
+                        else:
+                            print(f"🛑 PRE-FLIGHT ABORT: Simulation failed: {sim_err}")
+                            return {"error": f"Pre-flight simulation failed: {sim_err}", "simulated": True}
                     else:
-                        print(f"🛑 PRE-FLIGHT ABORT: Simulation failed: {sim_err}")
-                        return {"error": f"Pre-flight simulation failed: {sim_err}", "simulated": True}
-                else:
-                    print(f"✅ Pre-flight simulation PASSED (safe to submit)")
-            except Exception as sim_e:
-                # Don't block on simulation failure - proceed with caution
-                print(f"⚠️ Pre-flight simulation error (proceeding anyway): {sim_e}")
+                        print(f"✅ Pre-flight simulation PASSED (safe to submit)")
+                except Exception as sim_e:
+                    # Don't block on simulation failure - proceed with caution
+                    print(f"⚠️ Pre-flight simulation error (proceeding anyway): {sim_e}")
+            else:
+                print(f"⚡ [BEAST MODE] Skipping simulation to save time on retry...")
 
             
             if use_jito:

@@ -7,6 +7,7 @@ class DexScout:
     def __init__(self):
         self.base_url = "https://api.dexscreener.com/latest/dex"
         self.logger = logging.getLogger(__name__)
+        self._last_429_time = 0
 
     async def _get(self, url):
         """Internal helper for DexScreener GET requests with 429 backoff."""
@@ -16,7 +17,9 @@ class DexScout:
                     if response.status == 200:
                         return await response.json()
                     elif response.status == 429:
-                        self.logger.warning(f"🛑 DexScreener Rate Limit (429) hit. Backing off... URL: {url[:64]}")
+                        if time.time() - self._last_429_time > 60:
+                            self.logger.warning(f"🛑 DexScreener Rate Limit (429) hit. Backing off... URL: {url[:64]}")
+                            self._last_429_time = time.time()
                         # Return a specific marker so callers can handle it
                         return "429"
                     else:

@@ -1512,10 +1512,6 @@ class AlertSystem(commands.Cog):
         embed.set_footer(text=f"Uptime: {uptime}")
         await ctx.send(embed=embed)
 
-    @commands.command()
-    async def register(self, ctx):
-        """Onboarding command for new users."""
-        await ctx.send("👋 **Welcome to the Alpha Hunt!** Your account is being synchronized with the Ultimate Bot engine. Please ensure your Helius webhooks are active.")
 
     @commands.command()
     async def whales(self, ctx):
@@ -2140,18 +2136,16 @@ class AlertSystem(commands.Cog):
             price = float(pair.get('priceUsd', 0))
             dex_url = f"https://dexscreener.com/solana/{mint}"
             
-            print(f"📊 Swarm Token: {symbol} | Liq: ${liquidity:,.0f} | MinReq: ${self.dex_min_liquidity:,.0f}")
-            
             # 2. Safety Check (do this first for the embed)
             # 1. ULTIMATE BOT: CONFIDENCE SCORE
-            # Calculate total score of all whales in this swarm
+            whale_count = len(self.copy_trader.active_swarms.get(mint, set()))
             whales = self.copy_trader.active_swarms.get(mint, set())
             total_confidence = 0
             for addr in whales:
                 score = self.copy_trader.qualified_wallets.get(addr, {}).get('score', 10.0)
                 total_confidence += score
             
-            print(f"Ultimate Bot: Analyzed swarm for {symbol}. Confidence: {total_confidence:.1f} ({len(whales)} whales)")
+            print(f"Ultimate Bot: Analyzed swarm for {symbol}. Confidence: {total_confidence:.1f} ({whale_count} whales)")
             
             if total_confidence < self.whale_confidence_threshold:
                 print(f"🚫 Skipped {symbol}: Confidence {total_confidence:.1f} < {self.whale_confidence_threshold}")
@@ -2161,16 +2155,16 @@ class AlertSystem(commands.Cog):
             safety_score = safety_result.get('safety_score', 0)
             risks = safety_result.get('risks', [])
             print(f"🛡️ Safety Check: {symbol} scored {safety_score}/100")
-            
-            # 2. Build Analysis Embed
+
             # ULTIMATE BOT: TIERED LIQUIDITY
-            # 10+ Whales = $15k, 5+ Whales = $25k, 3+ Whales = $30k
-            whale_count = len(self.copy_trader.active_swarms.get(mint, set()))
+            # 10+ Whales = $10k, 5+ Whales = $20k, 3+ Whales = $25k
             
             liq_threshold = 40000 # Default
-            if whale_count >= 10: liq_threshold = 10000 # Ultra-early (was 15k)
-            elif whale_count >= 5: liq_threshold = 20000 # Aggressive (was 25k)
-            elif whale_count >= 3: liq_threshold = 25000 # Standard (was 30k)
+            if whale_count >= 10: liq_threshold = 10000 # Ultra-early
+            elif whale_count >= 5: liq_threshold = 20000 # Aggressive
+            elif whale_count >= 3: liq_threshold = 25000 # Standard
+            
+            print(f"📊 Swarm Token: {symbol} | Liq: ${liquidity:,.0f} | Required: ${liq_threshold:,.0f} ({whale_count} whales)")
             
             liq_pass = liquidity >= liq_threshold
             safety_pass = safety_score >= 50  
