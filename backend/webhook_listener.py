@@ -370,7 +370,15 @@ async def process_helius_data(transactions):
         # 1. Update activity cache in CopyTrader (for BUYs)
         added = alert_system.copy_trader.process_transactions(transactions)
         
-        # 1b. Track whale activity
+        # 1c. SELF-BUY DETECTION: Trigger instant sync if we see our own wallet trading
+        my_wallets = {t.wallet_address for t in alert_system.dex_traders if hasattr(t, 'wallet_address')}
+        for tx in transactions:
+            if tx.get('feePayer') in my_wallets:
+                logger.info(f"💎 SELF-BUY DETECTED: Triggering immediate sync for {tx.get('feePayer')[:8]}...")
+                asyncio.create_task(alert_system.sync_all_dex_positions())
+                break # One sync is enough per batch
+        
+        # 1d. Track whale activity
         for tx in transactions:
             wallet = tx.get('feePayer')
             if wallet and wallet in alert_system.copy_trader.qualified_wallets:

@@ -534,13 +534,13 @@ class SmartCopyTrader:
         if cluster:
             sorted_tokens = sorted(cluster.items(), key=lambda x: len(x[1]), reverse=True)[:3]
             top_info = ", ".join([f"{m[:8]}...({len(w)} whales)" for m, w in sorted_tokens])
-            # Show Near Swarms (2 whales) vs Potential Swarms (3+)
+            # Show Near Swarms vs Potential Swarms based on dynamic min_buyers
             if sorted_tokens:
                 main_token = sorted_tokens[0]
-                if len(main_token[1]) >= 3:
+                if len(main_token[1]) >= min_buyers:
                     self.logger.info(f"📊 Potential Swarms: {top_info}")
-                elif len(main_token[1]) == 2:
-                    self.logger.info(f"👀 Near Swarm (2/3): {top_info}")
+                elif len(main_token[1]) == (min_buyers - 1):
+                    self.logger.info(f"👀 Near Swarm ({min_buyers-1}/{min_buyers}): {top_info}")
                 else:
                     self.logger.debug(f"📊 Market Activity: {top_info}")
             
@@ -675,12 +675,12 @@ class SmartCopyTrader:
             swarm_size = len(participants)
             seller_count = len(batch_sellers[mint])
             
-            # Calculate threshold
+            # Calculate threshold (Ultimate Bot: "Diamond Hands" Consensus)
             threshold = 1
             if swarm_size >= 5:
-                threshold = max(2, swarm_size // 2) # 50%
-            elif swarm_size >= 3:
-                threshold = 2
+                threshold = max(3, swarm_size // 2) # Stronger consensus for large groups
+            elif swarm_size >= 2:
+                threshold = 2 # Require BOTH whales to sell if only 2 bought
                 
             if seller_count >= threshold:
                 self.logger.warning(f"📉 CONSENSUS SELL MET: {seller_count}/{swarm_size} whales sold {mint[:8]}...")

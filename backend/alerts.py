@@ -187,6 +187,14 @@ class AlertSystem(commands.Cog):
         if not self.orphan_guard.is_running():
             self.orphan_guard.start()
             print("🛡️ Orphan Guard Loop STARTED (every 60s)")
+            
+        # 💎 HANDS SYNC: Reconcile memory with blockchain every 5 min
+        if not self.dex_sync_loop.is_running():
+            self.dex_sync_loop.start()
+            print("💎 Diamond Hands Sync Loop STARTED (every 5 min)")
+
+        # ⚡ IMMEDIATE SYNC: Sync current positions on startup
+        asyncio.create_task(self.sync_all_dex_positions())
 
     async def setup_helius_webhook(self):
         """Registers the bot's URL with Helius to receive whale activity."""
@@ -992,6 +1000,16 @@ class AlertSystem(commands.Cog):
             if channel_memes:
                 remaining = len(self.copy_trader.qualified_wallets)
                 await channel_memes.send(f"🧹 **Auto-Pruned {pruned} lazy whales** (inactive > 12h). {remaining} active whales remaining.")
+
+    @tasks.loop(minutes=5)
+    async def dex_sync_loop(self):
+        """Automatically reconcile on-chain positions with memory/DB every 5 minutes."""
+        if not self.ready:
+            return
+        try:
+            await self.sync_all_dex_positions()
+        except Exception as e:
+            print(f"❌ Error in dex_sync_loop: {e}")
 
 
     async def _check_and_alert(self, symbol, channel, asset_type):
@@ -2271,7 +2289,10 @@ class AlertSystem(commands.Cog):
                     self.save_failed_tokens()
                     
                     if channel_memes:
-                        await channel_memes.send(f"❌ **Swarm Buy Failed (User {user_label}):** `{symbol}` - {error_msg[:50]}... (5min cooldown)")
+                        if "timeout" in error_msg.lower():
+                            await channel_memes.send(f"⏳ **Buy Timeout (User {user_label}):** `{symbol}` - TX may have landed. Monitoring wallet for sync... 💎")
+                        else:
+                            await channel_memes.send(f"❌ **Swarm Buy Failed (User {user_label}):** `{symbol}` - {error_msg[:50]}... (5min cooldown)")
 
 
         except Exception as e:
