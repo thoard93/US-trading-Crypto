@@ -2184,10 +2184,10 @@ class AlertSystem(commands.Cog):
             # ULTIMATE BOT: TIERED LIQUIDITY
             # 10+ Whales = $10k, 5+ Whales = $20k, 3+ Whales = $25k
             
-            liq_threshold = 40000 # Default
+            liq_threshold = 25000 # Default (2 whales) - Sensitivity Boost per User
             if whale_count >= 10: liq_threshold = 10000 # Ultra-early
-            elif whale_count >= 5: liq_threshold = 20000 # Aggressive
-            elif whale_count >= 3: liq_threshold = 25000 # Standard
+            elif whale_count >= 5: liq_threshold = 15000 # Aggressive
+            elif whale_count >= 3: liq_threshold = 20000 # Standard
             
             print(f"📊 Swarm Token: {symbol} | Liq: ${liquidity:,.0f} | Required: ${liq_threshold:,.0f} ({whale_count} whales)")
             
