@@ -267,18 +267,23 @@ class DexTrader:
             # Determine slippage for this trade
             slippage_bps = override_slippage if override_slippage else self.slippage_bps
             
-            # PHASE 45: Adaptive Tip Escalation (BEAST MODE 3.3)
+            # PHASE 45: BEAST MODE 3.5 - Aggressive Tip Floor (0.01 SOL for Memes)
             jito_tip_lamports = 0
             if use_jito:
                 jito_tip_lamports = self.get_jito_tip_amount_lamports()
                 
-                # Escalation: 2.0x on attempt 1, 3.5x on attempt 2+ (MAX FORCE)
+                # MEME FLOOR: Start at 0.01 SOL for pump.fun or volatile retries
+                if is_pump and jito_tip_lamports < 10000000:
+                    jito_tip_lamports = 10000000
+                    print(f"🔥 BEAST MODE FLOOR: Setting Jito Tip to 0.01 SOL")
+
+                # Escalation: 2.5x on attempt 1, 4.0x on attempt 2+ (MAX FORCE)
                 if attempt == 1:
-                    jito_tip_lamports = int(jito_tip_lamports * 2.0)
-                    print(f"🔥 ESCALATING JITO TIP (x2.0): {jito_tip_lamports / 1e9:.6f} SOL")
+                    jito_tip_lamports = int(jito_tip_lamports * 2.5)
+                    print(f"🔥 ESCALATING JITO TIP (x2.5): {jito_tip_lamports / 1e9:.6f} SOL")
                 elif attempt >= 2:
-                    jito_tip_lamports = int(jito_tip_lamports * 3.5)
-                    print(f"🔥 ESCALATING JITO TIP (x3.5): {jito_tip_lamports / 1e9:.6f} SOL")
+                    jito_tip_lamports = int(jito_tip_lamports * 4.0)
+                    print(f"🔥 ESCALATING JITO TIP (x4.0): {jito_tip_lamports / 1e9:.6f} SOL")
                 elif priority:
                     # PRIORITY EXIT: 2x the normal tip to ensure we land first
                     jito_tip_lamports = int(jito_tip_lamports * 2.0)
@@ -407,8 +412,10 @@ class DexTrader:
             signed_tx_bytes = bytes(signed_tx)
             signed_tx_base64 = base64.b64encode(signed_tx_bytes).decode('utf-8')
             
-            # Beast Mode 3.2: Skip simulation on retries to save time
-            should_simulate = (attempt == 0)
+            # Beast Mode 3.5: SKIP SIMULATION FOR ALL BUYS
+            # Buys are too time-sensitive. Sells still simulate for safety.
+            is_buy = (input_mint.lower() == "so11111111111111111111111111111111111111112")
+            should_simulate = (attempt == 0 and not is_buy)
             
             if should_simulate:
                 # Simulate transaction before sending (costs nothing, catches ~80% of slippage failures)
@@ -512,7 +519,7 @@ class DexTrader:
                     if jito_loop_idx == 0:
                         print(f"📤 sentTransaction: {tx_signature}. Starting burst resubmission...")
                     
-                    if jito_loop_idx < 4: time.sleep(3) 
+                    if jito_loop_idx < 4: time.sleep(2) # Beast Mode 3.5: Faster burst (2s instead of 3s)
                 
                 print(f"✅ Burst complete. Waiting for confirmation: {tx_signature}")
             else:
@@ -871,14 +878,14 @@ class DexTrader:
         else:
             print(f"🚀 Routing via JUPITER + JITO (atomic execution).")
         
-        # BEAST MODE 2.0: Multi-Retry loop for maximum landing rate
+        # BEAST MODE 3.5: Multi-Retry loop for maximum landing rate
         # 3 attempts total for pump.fun AND any token that hits slippage
         max_attempts = 3
         result = {"error": "No attempts made"}
         
         for attempt in range(max_attempts):
             if attempt > 0:
-                print(f"⚡ BEAST MODE Retry {attempt}/{max_attempts-1} for {token_mint[:8]}...")
+                print(f"⚡ BEAST MODE 3.5 Retry {attempt}/{max_attempts-1} for {token_mint[:8]}...")
                 time.sleep(0.3) # Fast jitter to catch next block
                 
             result = self.execute_swap(
