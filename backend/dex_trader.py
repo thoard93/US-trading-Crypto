@@ -203,15 +203,15 @@ class DexTrader:
                             quote['_timestamp'] = time.time()
                             return quote
                         else:
-                            print(f"⚠️ Jupiter {host} Quote attempt {attempt+1} failed ({response.status_code})")
+                            print(f"⚠️ Jupiter {host} Quote attempt {host_attempt+1} failed ({response.status_code})")
                     except Exception as e:
                         # Log DNS/Connection errors specifically for debugging
                         if "Errno -5" in str(e) or "Max retries exceeded" in str(e):
                             print(f"📡 DNS/Connection Error reaching {host} - trying next...")
                             break # Skip to next host immediately on DNS fail
-                        print(f"⚠️ Jupiter {host} Quote attempt {attempt+1} error: {e}")
+                        print(f"⚠️ Jupiter {host} Quote attempt {host_attempt+1} error: {e}")
                     
-                    if attempt < 1: time.sleep(1)
+                    if host_attempt < 1: time.sleep(1)
             
             return None
         except Exception as e:
@@ -352,14 +352,14 @@ class DexTrader:
                             success = True
                             break
                         else:
-                            print(f"⚠️ Jupiter {host} Swap attempt {attempt+1} failed ({swap_response.status_code})")
+                            print(f"⚠️ Jupiter {host} Swap attempt {swap_attempt+1} (Entry {attempt}) failed ({swap_response.status_code})")
                     except Exception as e:
                         if "Errno -5" in str(e) or "Max retries exceeded" in str(e):
                             print(f"📡 DNS/Connection Error reaching {host} - trying next...")
                             break
-                        print(f"⚠️ Jupiter {host} Swap attempt {attempt+1} error: {e}")
+                        print(f"⚠️ Jupiter {host} Swap attempt {swap_attempt+1} (Entry {attempt}) error: {e}")
                     
-                    if attempt < 1: time.sleep(1)
+                    if swap_attempt < 1: time.sleep(1)
                 
                 if success: break
             
