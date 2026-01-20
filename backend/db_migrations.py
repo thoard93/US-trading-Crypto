@@ -50,6 +50,19 @@ def run_migrations():
         # 5. Update 'dex_positions' table
         safe_execute("dex_positions", "highest_pnl", "ALTER TABLE dex_positions ADD COLUMN highest_pnl FLOAT DEFAULT 0.0", "highest_pnl in dex_positions")
         safe_execute("dex_positions", "trade_count", "ALTER TABLE dex_positions ADD COLUMN trade_count INTEGER DEFAULT 1", "trade_count in dex_positions")
+
+        # 6. One-time Score Bump (Ultimate Bot Consensus Fix)
+        # Brings existing whales (10.0) up to the new Alpha Hunter baseline (12.5)
+        try:
+            with conn.begin():
+                result = conn.execute(text("UPDATE whale_wallets SET score = 12.5 WHERE score = 10.0"))
+                # Use rowcount if available
+                if hasattr(result, 'rowcount') and result.rowcount > 0:
+                    print(f" MIGRATE: Bumped {result.rowcount} whales to 12.5 score.")
+        except Exception as e:
+            # Table might not exist yet if this is a fresh install
+            print(f" MIGRATE: Score bump skipped ({str(e)[:50]}...)")
+
     print("MIGRATE: Migrations Complete.")
 
 if __name__ == "__main__":
