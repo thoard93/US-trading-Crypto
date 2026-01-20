@@ -313,17 +313,17 @@ class SmartCopyTrader:
                 else:
                     break
 
-            # FALLBACK: Standard Trending API (High reliability)
+            # FALLBACK: DexScreener Search API (High reliability for Solana)
             if not pairs:
-                self.logger.info("🔄 Falling back to standard Trending API for whale hunt...")
-                # Fetching trending pairs (Solana)
-                resp = requests.get("https://api.dexscreener.com/latest/dex/tokens/solana", timeout=10)
+                self.logger.info("🔄 Falling back to Search API for whale hunt...")
+                # Search for Solana pairs (broad query)
+                resp = requests.get("https://api.dexscreener.com/latest/dex/search?q=solana", timeout=10)
                 if resp.status_code == 200:
                     data = resp.json()
                     # Standard API returns {'pairs': [...]}
-                    pairs = data.get('pairs', [])[:max_pairs]
+                    pairs = (data.get('pairs') or [])[:max_pairs]
                 else:
-                    self.logger.error(f"❌ Both Profiles and Trending APIs failed (Status: {resp.status_code})")
+                    self.logger.error(f"❌ Both Profiles and Search APIs failed (Status: {resp.status_code})")
                     return 0
         except Exception as e:
             self.logger.error(f"Error fetching trending: {e}")
@@ -334,7 +334,8 @@ class SmartCopyTrader:
         new_wallets = 0
         
         for pair in pairs:
-            token_address = pair.get('tokenAddress')
+            # Normalize Token Address (Profiles vs Pairs API structure)
+            token_address = pair.get('tokenAddress') or pair.get('baseToken', {}).get('address')
             if not token_address: continue
             
             self.logger.info(f"  👉 Scanning {token_address[:16]}...")
