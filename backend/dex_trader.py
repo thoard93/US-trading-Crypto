@@ -145,9 +145,9 @@ class DexTrader:
             return 0
     
     def get_token_balance(self, token_mint):
-        """Get SPL token balance."""
+        """Get SPL token balance. Returns dict with 'amount' (raw) and 'ui_amount' (normalized)."""
         if not self.wallet_address:
-            return 0
+            return {"amount": 0, "ui_amount": 0}
         
         try:
             response = requests.post(self.rpc_url, json={
@@ -163,12 +163,15 @@ class DexTrader:
             result = response.json()
             accounts = result.get('result', {}).get('value', [])
             if accounts:
-                # Return RAW integer amount (handled correctly regardless of decimals)
-                return int(accounts[0]['account']['data']['parsed']['info']['tokenAmount']['amount'] or 0)
-            return 0
+                info = accounts[0]['account']['data']['parsed']['info']['tokenAmount']
+                return {
+                    "amount": int(info['amount'] or 0),
+                    "ui_amount": float(info['uiAmount'] or 0)
+                }
+            return {"amount": 0, "ui_amount": 0}
         except Exception as e:
             print(f"Error getting token balance: {e}")
-            return 0
+            return {"amount": 0, "ui_amount": 0}
     
     def get_jupiter_quote(self, input_mint, output_mint, amount_lamports, override_slippage=None, is_pump=False):
         """Get a quote from Jupiter Aggregator with retries and reliable fallbacks.
@@ -883,14 +886,21 @@ class DexTrader:
 
         
         if result.get('success'):
+            # Fetch normalized balance for P/L calculations
+            bal_info = self.get_token_balance(token_mint)
+            ui_amount = bal_info.get('ui_amount', 0)
+            
             # Track position
             self.positions[token_mint] = {
                 "entry_sol": sol_amount,
-                "tokens_received": int(result.get('output_amount', 0)),
+                "tokens_received": ui_amount, # NORMALIZED (e.g. 100.5)
                 "tx": result.get('signature')
             }
+            # Add ui_amount to result for AlertSystem to pick up
+            result['tokens_received'] = ui_amount
+            
             # REFRESH HOLDINGS IMMEDIATELY for fast-fail selling
-            print("🔄 Refreshing wallet holdings after buy...")
+            print(f"🔄 Bought {ui_amount} tokens. Refreshing holdings...")
             self.get_all_tokens()
         
         return result
@@ -904,7 +914,8 @@ class DexTrader:
             override_slippage: Optional custom slippage in BPS (for retry queue)
             priority: If True, use higher Jito tip for fast exit
         """
-        token_balance = self.get_token_balance(token_mint)
+        bal_info = self.get_token_balance(token_mint)
+        token_balance = bal_info.get('amount', 0) # Use RAW for Jupiter swap
         
         if token_balance <= 0:
             return {"error": "No tokens to sell"}

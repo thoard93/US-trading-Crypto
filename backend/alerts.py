@@ -1994,6 +1994,11 @@ class AlertSystem(commands.Cog):
                         tokens = pos.get('tokens_received', 0)
                         if tokens > 0 and entry_price > 0 and current_price > 0:
                             usd_pnl = tokens * (current_price - entry_price)
+                        elif entry_price > 0 and current_price > 0:
+                            # Fallback if tokens missing
+                            sol_amt = pos.get('amount_sol', 0.08)
+                            pnl_val = (current_price / entry_price - 1)
+                            usd_pnl = pnl_val * (sol_amt * 240)
                         
                         hold_time_str = "Unknown"
                         if entry_time:
@@ -2240,6 +2245,7 @@ class AlertSystem(commands.Cog):
                         'entry_price_usd': float(pair.get('priceUsd', 0)),
                         'entry_time': datetime.datetime.now().timestamp(),
                         'amount_sol': amount_sol,
+                        'tokens_received': result.get('tokens_received', 0), # NORMALIZED
                         'symbol': symbol,
                         'highest_pnl': 0.0 # Initialize Moon Engine
                     })
@@ -2347,12 +2353,12 @@ class AlertSystem(commands.Cog):
                         pnl_pct = (exit_price / entry_price - 1) * 100
                         tokens = position.get('tokens_received', 0)
                         if tokens > 0:
-                            # Use tokens if available for precision
+                            # NORMALIZED CALCULATION: tokens * (exit - entry)
                             usd_pnl = tokens * (exit_price - entry_price)
                         else:
-                            # Fallback to SOL-based calculation
+                            # Fallback (Less accurate)
                             entry_sol = position.get('amount_sol', 0.08)
-                            sol_price_est = entry_price / (entry_sol / tokens) if tokens > 0 else 240 # rough SOL price
+                            sol_price_est = 240 # rough SOL price
                             usd_pnl = (pnl_pct / 100) * (entry_sol * sol_price_est)
 
                     pnl_emoji = "🟢" if pnl_pct >= 0 else "🔴"
