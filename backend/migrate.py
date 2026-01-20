@@ -36,14 +36,16 @@ def run_migrations():
         
         # 5. Update 'dex_positions' table - Add highest_pnl and trade_count for Ultimate Bot
         try:
-            conn.execute(text("ALTER TABLE dex_positions ADD COLUMN highest_pnl FLOAT DEFAULT 0.0"))
+            conn.execute(text("ALTER TABLE dex_positions ADD COLUMN IF NOT EXISTS highest_pnl FLOAT DEFAULT 0.0"))
             print(" MIGRATE: Added 'highest_pnl' to dex_positions")
-        except Exception: pass
+        except Exception as e:
+            print(f" MIGRATE: Could not add highest_pnl (might already exist): {e}")
 
         try:
-            conn.execute(text("ALTER TABLE dex_positions ADD COLUMN trade_count INTEGER DEFAULT 1"))
+            conn.execute(text("ALTER TABLE dex_positions ADD COLUMN IF NOT EXISTS trade_count INTEGER DEFAULT 1"))
             print(" MIGRATE: Added 'trade_count' to dex_positions")
-        except Exception: pass
+        except Exception as e:
+            print(f" MIGRATE: Could not add trade_count (might already exist): {e}")
         
         conn.commit()
     print("MIGRATE: Migrations Complete.")

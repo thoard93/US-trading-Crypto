@@ -1477,20 +1477,39 @@ class AlertSystem(commands.Cog):
         active_positions = sum(len(trader.positions) for trader in self.dex_traders)
         uptime = datetime.datetime.now() - self.bot.start_time if hasattr(self.bot, 'start_time') else "Active"
         
+        # Check DB Health
+        db_status = "STABLE ✅"
+        db_error = ""
+        try:
+            from database import SessionLocal
+            from models import DexPosition
+            db = SessionLocal()
+            count = db.query(DexPosition).count()
+            db.close()
+        except Exception as e:
+            db_status = "ERROR ❌"
+            db_error = str(e)[:40]
+
         embed = discord.Embed(
-            title="📊 US Trading Bot Status",
-            color=discord.Color.blue(),
+            title="📊 DEGEN DEX Bot Status",
+            color=discord.Color.gold(),
             timestamp=datetime.datetime.now()
         )
-        embed.add_field(name="Whales Tracked", value=f"🐋 {total_wallets}", inline=True)
+        embed.add_field(name="Alpha Whales", value=f"🐋 {total_wallets}", inline=True)
         embed.add_field(name="Active Trades", value=f"🚀 {active_positions}", inline=True)
-        embed.add_field(name="System State", value="✅ ONLINE", inline=True)
+        embed.add_field(name="Database", value=f"🏛️ {db_status}", inline=True)
+        
+        if db_error:
+            embed.add_field(name="DB Sync Error", value=f"⚠️ {db_error}", inline=False)
+            
+        embed.add_field(name="Moon Engine", value=f"🌙 PERSISTENT {'✅' if db_status == 'STABLE ✅' else '❌'}", inline=True)
         
         # Add balance info if available
         if self.dex_traders:
             sol_bal = await self.run_sync(self.dex_traders[0].get_sol_balance)
             embed.add_field(name="Wallet Balance", value=f"💰 {sol_bal:.4f} SOL", inline=False)
             
+        embed.set_footer(text=f"Uptime: {uptime}")
         await ctx.send(embed=embed)
 
     @commands.command()

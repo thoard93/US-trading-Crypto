@@ -855,8 +855,8 @@ class DexTrader:
             print(f"🚀 Routing via JUPITER + JITO (atomic execution).")
         
         # BEAST MODE 2.0: Multi-Retry loop for maximum landing rate
-        # 3 attempts total for pump.fun tokens
-        max_attempts = 3 if is_pump else 1
+        # 3 attempts total for pump.fun AND any token that hits slippage
+        max_attempts = 3
         result = {"error": "No attempts made"}
         
         for attempt in range(max_attempts):
@@ -877,9 +877,15 @@ class DexTrader:
             if result.get('success'):
                 break
             
-            # If error is not slippage/volatility related, don't waste retries (e.g. insufficient funds)
-            if not any(err in str(result.get('error', '')) for err in ['0x177e', '6014', '6001', '0x1']):
+            # EXIT EARLY if error is NOT slippage/volatility related (e.g. insufficient funds)
+            # 6014 = Slippage, 6001 = Insufficient Out, 0x177e = Slippage (V4), 0x1 = Unknown fail
+            err_str = str(result.get('error', '')).lower()
+            if not any(err in err_str for err in ['0x177e', '6014', '6001', '0x1', 'slippage']):
+                print(f"🛑 Non-retryable error: {err_str[:40]}")
                 break
+            
+            if attempt == max_attempts - 1:
+                print(f"🛑 Exhausted all {max_attempts} retries for {token_mint[:8]}")
         
         if 'error' in result:
              print(f"🛑 Entry failed after {max_attempts} attempts. Error: {result['error'][:50]}")
