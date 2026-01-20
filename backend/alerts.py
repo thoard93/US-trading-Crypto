@@ -944,7 +944,15 @@ class AlertSystem(commands.Cog):
         if hasattr(self, '_hunt_lock') and self._hunt_lock:
             return
         
+        # 🛡️ Hunt Cooldown: Skip if we hunted in the last 10 minutes (prevents cold start burst)
+        now = datetime.datetime.now().timestamp()
+        last_hunt = getattr(self, '_last_hunt_time', 0)
+        if now - last_hunt < 600:  # 10 minutes
+            print("🦈 Auto-Hunt: Skipping (recently hunted)")
+            return
+        
         self._hunt_lock = True
+        self._last_hunt_time = now
         try:
             print("🦈 Auto-Hunt: Scanning for new whales...")
             import asyncio
