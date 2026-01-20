@@ -34,7 +34,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def init_db():
     print("DATABASE: Initializing Database Connection...")
     try:
-        from migrate import run_migrations
+        from db_migrations import run_migrations
         run_migrations()
         Base.metadata.create_all(bind=engine)
         db = SessionLocal()
