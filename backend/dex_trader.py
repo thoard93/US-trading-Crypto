@@ -170,7 +170,7 @@ class DexTrader:
             print(f"Error getting token balance: {e}")
             return 0
     
-    def get_jupiter_quote(self, input_mint, output_mint, amount_lamports, override_slippage=None):
+    def get_jupiter_quote(self, input_mint, output_mint, amount_lamports, override_slippage=None, is_pump=False):
         """Get a quote from Jupiter Aggregator with retries and reliable fallbacks.
         Returns tuple: (quote_dict, timestamp) for freshness tracking.
         """
@@ -188,7 +188,9 @@ class DexTrader:
             for host, path in hosts:
                 for attempt in range(2):
                     try:
-                        url = f"https://{host}{path}?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}&onlyDirectRoute=false"
+                        # For pump tokens, we strictly want direct routes to decrease latency if possibile
+                        route_param = "&onlyDirectRoute=True" if is_pump else "&onlyDirectRoute=false"
+                        url = f"https://{host}{path}?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}{route_param}"
                         response = requests.get(url, timeout=10)
                         if response.status_code == 200:
                             quote = response.json()
@@ -246,7 +248,7 @@ class DexTrader:
             print(f"❌ Error fetching wallet holdings: {e}")
             return {}
     
-    def execute_swap(self, input_mint, output_mint, amount_lamports, override_slippage=None, use_jito=False, priority=False):
+    def execute_swap(self, input_mint, output_mint, amount_lamports, override_slippage=None, use_jito=False, priority=False, is_pump=False):
         """Execute a swap via Jupiter with optional Jito bundle support."""
         if not self.keypair:
             return {"error": "Wallet not initialized"}
@@ -265,19 +267,21 @@ class DexTrader:
                     print(f"⚡ PRIORITY TIP ENABLED: {jito_tip_lamports / 1e9:.6f} SOL")
             
             # 1. Get quote with freshness tracking
-            quote = self.get_jupiter_quote(input_mint, output_mint, amount_lamports, override_slippage)
+            quote = self.get_jupiter_quote(input_mint, output_mint, amount_lamports, override_slippage, is_pump=is_pump)
             if not quote:
                 return {"error": "Failed to get quote"}
             
-            # PHASE 43: Quote Freshness Guard - Reject stale quotes (> 2 seconds old)
+            # PHASE 44: Turbo-Quote Guard - Reject stale quotes
+            # 0.5s for pump.fun (extreme volatility) | 1.0s for everything else
+            staleness_threshold = 0.5 if is_pump else 1.0
             quote_age = time.time() - quote.get('_timestamp', 0)
-            if quote_age > 2.0:
-                print(f"⚠️ Quote too stale ({quote_age:.1f}s old). Fetching fresh quote...")
-                quote = self.get_jupiter_quote(input_mint, output_mint, amount_lamports, override_slippage)
+            if quote_age > staleness_threshold:
+                print(f"⚠️ Quote too stale ({quote_age:.1f}s old). Fetching fresh turbo quote...")
+                quote = self.get_jupiter_quote(input_mint, output_mint, amount_lamports, override_slippage, is_pump=is_pump)
                 if not quote:
                     return {"error": "Failed to get fresh quote"}
             
-            print(f"🔄 Jupiter Quote: slippage={slippage_bps}bps, outAmount={quote.get('outAmount')}, age={quote_age:.2f}s")
+            print(f"🔄 {'[TURBO] ' if is_pump else ''}Jupiter Quote: slippage={slippage_bps}bps, outAmount={quote.get('outAmount')}, age={quote_age:.2f}s")
 
             
             # 2. Get swap transaction with retries and fallback
@@ -306,11 +310,12 @@ class DexTrader:
                     "dynamicComputeUnitLimit": True,
                     "prioritizationFeeLamports": initial_fee if not use_jito else None, 
                     "jitoTipLamports": jito_tip_lamports if use_jito else None,
-                    "dynamicSlippage": True if override_slippage and override_slippage >= 5000 else False, 
+                    # Disable dynamicSlippage for pump.fun or high-conviction 100% swaps to force execution
+                    "dynamicSlippage": False if (is_pump or (override_slippage and override_slippage >= 10000)) else True, 
                 }
                 
-                # For high slippage retries, enforce direct route if possible to avoid hop failures
-                if override_slippage and override_slippage >= 9000:
+                # For high slippage or pump retries, enforce direct route to minimize hops
+                if is_pump or (override_slippage and override_slippage >= 9000):
                     swap_body["onlyDirectRoute"] = True
                 
                 success = False
@@ -828,28 +833,40 @@ class DexTrader:
         print(f"🔄 BUYING (User {user_id}) {token_mint} | SOL: {sol_amount:.4f}")
         print(f"DEBUG: SOL Balance: {balance:.6f}, Required: {required:.6f}")
 
-
-        # ALL TOKENS NOW USE JUPITER - PumpPortal transactions never land
-        # Jupiter TXs actually reach the chain (proven with Kaiju trade)
-        # Using maximum slippage (100%) for pump.fun tokens due to volatility
-        if "pump" in token_mint.lower():
-            print(f"🎰 Pump.fun token detected. Routing via JUPITER + JITO (100% slippage, atomic).")
-            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000, use_jito=True)
+        is_pump = "pump" in token_mint.lower()
+        if is_pump:
+            print(f"🎰 Pump.fun token detected. Routing via JUPITER + JITO (100% slippage, Turbo-Quote, Direct).")
         else:
-            # Standard Jupiter Flow for Raydium/etc - also using Jito for atomic safety
             print(f"🚀 Routing via JUPITER + JITO (atomic execution).")
-            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000, use_jito=True)
         
-        # BEAST MODE: Single FAST retry with fresh quote for slippage failures
-        # Added '6001' (Custom 6001) and '0x1' for better success rates on pump.fun
-        if 'error' in result and any(err in str(result['error']) for err in ['0x177e', '6014', '6001', '0x1']):
-            print(f"⚡ Entry failure ({result['error'][:20]}). BEAST MODE: Retrying ONCE with fresh quote...")
-            import time
-            time.sleep(0.5)  # Increased pause for price to settle on low-liq tokens
-            # Retry with fresh quote (the execute_swap gets a new quote internally)
-            result = self.execute_swap(self.SOL_MINT, token_mint, amount_lamports, override_slippage=10000, use_jito=True)
-            if 'error' in result:
-                print("🛑 Retry also failed. Potential HONEYPOT or High Volatility. Aborting.")
+        # BEAST MODE 2.0: Multi-Retry loop for maximum landing rate
+        # 3 attempts total for pump.fun tokens
+        max_attempts = 3 if is_pump else 1
+        result = {"error": "No attempts made"}
+        
+        for attempt in range(max_attempts):
+            if attempt > 0:
+                print(f"⚡ BEAST MODE Retry {attempt}/{max_attempts-1} for {token_mint[:8]}...")
+                time.sleep(0.3) # Fast jitter to catch next block
+                
+            result = self.execute_swap(
+                self.SOL_MINT, 
+                token_mint, 
+                amount_lamports, 
+                override_slippage=10000, 
+                use_jito=True,
+                is_pump=is_pump
+            )
+            
+            if result.get('success'):
+                break
+            
+            # If error is not slippage/volatility related, don't waste retries (e.g. insufficient funds)
+            if not any(err in str(result.get('error', '')) for err in ['0x177e', '6014', '6001', '0x1']):
+                break
+        
+        if 'error' in result:
+             print(f"🛑 Entry failed after {max_attempts} attempts. Error: {result['error'][:50]}")
 
         
         if result.get('success'):
@@ -892,8 +909,19 @@ class DexTrader:
         print(f"DEBUG: Wallet: {self.wallet_address}")
 
 
+        # Determine if it's a pump token for prioritized routing
+        is_pump = "pump" in token_mint.lower()
+
         # Aggressive Sell: Use provided slippage + Jito for atomic exit (no fee on fail)
-        result = self.execute_swap(token_mint, self.SOL_MINT, sell_amount, override_slippage=slippage, use_jito=True, priority=priority)
+        result = self.execute_swap(
+            token_mint, 
+            self.SOL_MINT, 
+            sell_amount, 
+            override_slippage=slippage, 
+            use_jito=True, 
+            priority=priority,
+            is_pump=is_pump
+        )
         
         if result.get('success') and percentage == 100:
             # Remove from positions
