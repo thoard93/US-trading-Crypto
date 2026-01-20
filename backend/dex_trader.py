@@ -243,8 +243,8 @@ class DexTrader:
                     mint = info['mint']
                     amount = float(info['tokenAmount']['uiAmount'])
                     
-                    # Filter out tiny amounts and SOL wrappers if strictly meme trading
-                    if amount > 0 and mint != self.SOL_MINT:
+                    # Filter out tiny amounts (Dust) and SOL wrappers if strictly meme trading
+                    if amount > 0.00001 and mint != self.SOL_MINT:
                         holdings[mint] = amount
             
             print(f"💰 Found {len(holdings)} existing tokens in wallet.")
