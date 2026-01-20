@@ -294,25 +294,37 @@ class SmartCopyTrader:
         import time, random
         time.sleep(random.randint(1, 10))
         
-        # 1. Get Trending Pairs (sync call)
+        # 1. Get Trending Pairs (sync call) with retry and fallback
         import requests
+        pairs = []
         try:
-            # Use Token Profiles for broader discovery (same as async)
-            resp = requests.get("https://api.dexscreener.com/token-profiles/latest/v1", timeout=10)
-            if resp.status_code == 429:
-                if time.time() - self._last_429_time > 60:
-                    self.logger.warning("🛑 DexScreener Rate Limit (429) hit in Whale Hunt (Profiles). Cooling down...")
-                    self._last_429_time = time.time()
-                import time
-                time.sleep(30)
-                return 0
-            if resp.status_code != 200:
-                self.logger.error(f"DexScreener API error: {resp.status_code}")
-                return 0
-            
-            data = resp.json()
-            # Filter for Solana and limit
-            pairs = [p for p in data if p.get('chainId') == 'solana'][:max_pairs]
+            # TRY 1 & 2: Token Profiles (Deep Discovery)
+            for attempt in range(2):
+                resp = requests.get("https://api.dexscreener.com/token-profiles/latest/v1", timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    pairs = [p for p in data if p.get('chainId') == 'solana'][:max_pairs]
+                    break
+                elif resp.status_code == 429:
+                    if time.time() - self._last_429_time > 60:
+                        self.logger.warning(f"🛑 DexScreener Profiles 429 (Attempt {attempt+1}). {'Retrying in 5s...' if attempt == 0 else 'Falling back to Trending API.'}")
+                        self._last_429_time = time.time()
+                    if attempt == 0: time.sleep(5)
+                else:
+                    break
+
+            # FALLBACK: Standard Trending API (High reliability)
+            if not pairs:
+                self.logger.info("🔄 Falling back to standard Trending API for whale hunt...")
+                # Fetching trending pairs (Solana)
+                resp = requests.get("https://api.dexscreener.com/latest/dex/tokens/solana", timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    # Standard API returns {'pairs': [...]}
+                    pairs = data.get('pairs', [])[:max_pairs]
+                else:
+                    self.logger.error(f"❌ Both Profiles and Trending APIs failed (Status: {resp.status_code})")
+                    return 0
         except Exception as e:
             self.logger.error(f"Error fetching trending: {e}")
             return 0

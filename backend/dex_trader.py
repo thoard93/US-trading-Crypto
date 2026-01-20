@@ -272,13 +272,13 @@ class DexTrader:
             if use_jito:
                 jito_tip_lamports = self.get_jito_tip_amount_lamports()
                 
-                # Escalation: 1.5x on attempt 1, 2.5x on attempt 2+
+                # Escalation: 2.0x on attempt 1, 3.5x on attempt 2+ (MAX FORCE)
                 if attempt == 1:
-                    jito_tip_lamports = int(jito_tip_lamports * 1.5)
-                    print(f"🔥 ESCALATING JITO TIP (x1.5): {jito_tip_lamports / 1e9:.6f} SOL")
+                    jito_tip_lamports = int(jito_tip_lamports * 2.0)
+                    print(f"🔥 ESCALATING JITO TIP (x2.0): {jito_tip_lamports / 1e9:.6f} SOL")
                 elif attempt >= 2:
-                    jito_tip_lamports = int(jito_tip_lamports * 2.5)
-                    print(f"🔥 ESCALATING JITO TIP (x2.5): {jito_tip_lamports / 1e9:.6f} SOL")
+                    jito_tip_lamports = int(jito_tip_lamports * 3.5)
+                    print(f"🔥 ESCALATING JITO TIP (x3.5): {jito_tip_lamports / 1e9:.6f} SOL")
                 elif priority:
                     # PRIORITY EXIT: 2x the normal tip to ensure we land first
                     jito_tip_lamports = int(jito_tip_lamports * 2.0)
@@ -315,8 +315,8 @@ class DexTrader:
             # If this is a retry (attempt > 0), we escalate the priority fee to cut the line.
             initial_fee = "auto"
             if attempt > 0:
-                # Escalation: 150k lamps for attempt 1, 500k for attempt 2+ (CRITICAL ESCALATION)
-                initial_fee = 150000 if attempt == 1 else 500000
+                # Escalation: 250k lamps for attempt 1, 650k for attempt 2+ (MAX FORCE)
+                initial_fee = 250000 if attempt == 1 else 650000
                 print(f"🔥 ESCALATING PRIORITY FEE: {initial_fee} lamports (Attempt {attempt})")
             
             # Low Balance Fee Protection (Ensure we can SELL even if poor)
