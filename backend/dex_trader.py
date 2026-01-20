@@ -191,10 +191,10 @@ class DexTrader:
             ]
             
             for host, path in hosts:
-                for attempt in range(2):
+                for host_attempt in range(2):
                     try:
-                        # BEAST MODE 3.0: We NO LONGER force direct routes, allowing migrated pump.fun tokens 
-                        # to find liquidity on Raydium/Orca if the bonding curve is closed.
+                        # BEAST MODE 3.3: We NEVER force direct routes anymore. Letting Jupiter
+                        # find the best path is always superior for landing trades.
                         url = f"https://{host}{path}?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}&onlyDirectRoute=false"
                         response = requests.get(url, timeout=10)
                         if response.status_code == 200:
@@ -267,11 +267,19 @@ class DexTrader:
             # Determine slippage for this trade
             slippage_bps = override_slippage if override_slippage else self.slippage_bps
             
-            # Dynamic Jito Tip Floor (LAMPS)
+            # PHASE 45: Adaptive Tip Escalation (BEAST MODE 3.3)
             jito_tip_lamports = 0
             if use_jito:
                 jito_tip_lamports = self.get_jito_tip_amount_lamports()
-                if priority:
+                
+                # Escalation: 1.5x on attempt 1, 2.5x on attempt 2+
+                if attempt == 1:
+                    jito_tip_lamports = int(jito_tip_lamports * 1.5)
+                    print(f"🔥 ESCALATING JITO TIP (x1.5): {jito_tip_lamports / 1e9:.6f} SOL")
+                elif attempt >= 2:
+                    jito_tip_lamports = int(jito_tip_lamports * 2.5)
+                    print(f"🔥 ESCALATING JITO TIP (x2.5): {jito_tip_lamports / 1e9:.6f} SOL")
+                elif priority:
                     # PRIORITY EXIT: 2x the normal tip to ensure we land first
                     jito_tip_lamports = int(jito_tip_lamports * 2.0)
                     print(f"⚡ PRIORITY TIP ENABLED: {jito_tip_lamports / 1e9:.6f} SOL")
@@ -303,12 +311,12 @@ class DexTrader:
                 ("jupiter-quote-api.jup.ag", "/v6/swap")
             ]
             
-            # PHASE 45: Adaptive Priority Fee Escalation (BEAST MODE 3.0)
+            # PHASE 45: Adaptive Priority Fee Escalation (BEAST MODE 3.3)
             # If this is a retry (attempt > 0), we escalate the priority fee to cut the line.
             initial_fee = "auto"
             if attempt > 0:
-                # Escalation: 100k lamps for attempt 1, 250k for attempt 2+
-                initial_fee = 100000 if attempt == 1 else 250000
+                # Escalation: 150k lamps for attempt 1, 500k for attempt 2+ (CRITICAL ESCALATION)
+                initial_fee = 150000 if attempt == 1 else 500000
                 print(f"🔥 ESCALATING PRIORITY FEE: {initial_fee} lamports (Attempt {attempt})")
             
             # Low Balance Fee Protection (Ensure we can SELL even if poor)
@@ -332,12 +340,11 @@ class DexTrader:
                     "dynamicSlippage": False if (is_pump or (override_slippage and override_slippage >= 10000)) else True, 
                 }
                 
-                # BEAST MODE 3.0: No longer enforcing onlyDirectRoute for pump.fun in swap body either.
-                if (override_slippage and override_slippage >= 9000):
-                    swap_body["onlyDirectRoute"] = True
+                # BEAST MODE 3.3: REMOVED forced onlyDirectRoute. 
+                # This was potentially causing 6014s on migrated tokens.
                 
                 success = False
-                for attempt in range(2):
+                for swap_attempt in range(2):
                     try:
                         swap_response = requests.post(swap_url, json=swap_body, timeout=15)
                         if swap_response.status_code == 200:
