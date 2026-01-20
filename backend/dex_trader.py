@@ -188,9 +188,9 @@ class DexTrader:
             for host, path in hosts:
                 for attempt in range(2):
                     try:
-                        # For pump tokens, we strictly want direct routes to decrease latency if possibile
-                        route_param = "&onlyDirectRoute=True" if is_pump else "&onlyDirectRoute=false"
-                        url = f"https://{host}{path}?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}{route_param}"
+                        # BEAST MODE 3.0: We NO LONGER force direct routes, allowing migrated pump.fun tokens 
+                        # to find liquidity on Raydium/Orca if the bonding curve is closed.
+                        url = f"https://{host}{path}?inputMint={input_mint}&outputMint={output_mint}&amount={amount_lamports}&slippageBps={slippage_bps}&onlyDirectRoute=false"
                         response = requests.get(url, timeout=10)
                         if response.status_code == 200:
                             quote = response.json()
@@ -248,8 +248,13 @@ class DexTrader:
             print(f"❌ Error fetching wallet holdings: {e}")
             return {}
     
-    def execute_swap(self, input_mint, output_mint, amount_lamports, override_slippage=None, use_jito=False, priority=False, is_pump=False):
-        """Execute a swap via Jupiter with optional Jito bundle support."""
+    def execute_swap(self, input_mint, output_mint, amount_lamports, override_slippage=None, use_jito=False, priority=False, is_pump=False, attempt=0):
+        """Execute a swap via Jupiter with optional Jito bundle support.
+        
+        Args:
+           ...
+           attempt: Retry number (0-based) for adaptive priority fee escalation.
+        """
         if not self.keypair:
             return {"error": "Wallet not initialized"}
         
@@ -292,8 +297,15 @@ class DexTrader:
                 ("public.jupiterapi.com", "/swap")
             ]
             
-            # Low Balance Fee Protection (Ensure we can SELL even if poor)
+            # PHASE 45: Adaptive Priority Fee Escalation (BEAST MODE 3.0)
+            # If this is a retry (attempt > 0), we escalate the priority fee to cut the line.
             initial_fee = "auto"
+            if attempt > 0:
+                # Escalation: 100k lamps for attempt 1, 250k for attempt 2+
+                initial_fee = 100000 if attempt == 1 else 250000
+                print(f"🔥 ESCALATING PRIORITY FEE: {initial_fee} lamports (Attempt {attempt})")
+            
+            # Low Balance Fee Protection (Ensure we can SELL even if poor)
             try:
                  bal = self.get_sol_balance()
                  if bal < 0.005: 
@@ -314,8 +326,8 @@ class DexTrader:
                     "dynamicSlippage": False if (is_pump or (override_slippage and override_slippage >= 10000)) else True, 
                 }
                 
-                # For high slippage or pump retries, enforce direct route to minimize hops
-                if is_pump or (override_slippage and override_slippage >= 9000):
+                # BEAST MODE 3.0: No longer enforcing onlyDirectRoute for pump.fun in swap body either.
+                if (override_slippage and override_slippage >= 9000):
                     swap_body["onlyDirectRoute"] = True
                 
                 success = False
@@ -835,7 +847,7 @@ class DexTrader:
 
         is_pump = "pump" in token_mint.lower()
         if is_pump:
-            print(f"🎰 Pump.fun token detected. Routing via JUPITER + JITO (100% slippage, Turbo-Quote, Direct).")
+            print(f"🎰 Pump.fun token detected. Routing via JUPITER + JITO (100% slippage, Turbo-Quote, Multi-Pool).")
         else:
             print(f"🚀 Routing via JUPITER + JITO (atomic execution).")
         
@@ -855,7 +867,8 @@ class DexTrader:
                 amount_lamports, 
                 override_slippage=10000, 
                 use_jito=True,
-                is_pump=is_pump
+                is_pump=is_pump,
+                attempt=attempt
             )
             
             if result.get('success'):
