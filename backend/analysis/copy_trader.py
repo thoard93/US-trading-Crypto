@@ -27,6 +27,7 @@ class SmartCopyTrader:
         self._recent_whale_activity = [] # List of {wallet, mint, timestamp, signature}
         self._processed_signatures = set() # O(1) duplicate checking
         self._scan_index = 0
+        self._last_429_time = 0
 
     def load_data(self):
         """Heavy lifting: Load wallets and swarms from DB."""
@@ -299,7 +300,9 @@ class SmartCopyTrader:
             # Use Token Profiles for broader discovery (same as async)
             resp = requests.get("https://api.dexscreener.com/token-profiles/latest/v1", timeout=10)
             if resp.status_code == 429:
-                self.logger.warning("🛑 DexScreener Rate Limit (429) hit in Whale Hunt (Profiles). Cooling down...")
+                if time.time() - self._last_429_time > 60:
+                    self.logger.warning("🛑 DexScreener Rate Limit (429) hit in Whale Hunt (Profiles). Cooling down...")
+                    self._last_429_time = time.time()
                 import time
                 time.sleep(30)
                 return 0

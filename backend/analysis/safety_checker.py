@@ -1,10 +1,12 @@
 import aiohttp
 import asyncio
+import time
 
 class SafetyChecker:
     def __init__(self):
         # GoPlus endpoint for multi-chain (EVM)
         self.BASE_URL = "https://api.gopluslabs.io/api/v1/token_security"
+        self._last_429_time = 0
 
     async def check_solana_token(self, token_address):
         """Unified entry for Solana safety checks."""
@@ -26,7 +28,9 @@ class SafetyChecker:
                             data = await response.json()
                             return self._check_solana_rugcheck(data)
                         elif response.status == 429:
-                            print(f"⚠️ RugCheck Rate Limit (429). Assuming SAFE for now.")
+                            if time.time() - self._last_429_time > 60:
+                                print(f"⚠️ RugCheck Rate Limit (429). Assuming SAFE for now.")
+                                self._last_429_time = time.time()
                             # Return a passing score to avoid blocking trades during rate limits
                             return {'safety_score': 80, 'risks': ['Rate Limit - Audit Skipped']}
                         else:
