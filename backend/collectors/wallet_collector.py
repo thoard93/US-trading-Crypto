@@ -28,24 +28,30 @@ class WalletCollector:
         webhook_id = os.getenv('HELIUS_WEBHOOK_ID', '').strip()
         
         if webhook_id:
-            # First, GET the existing webhook to retrieve its current URL
+            # First, GET the existing webhook to retrieve its current config
             get_url = f"https://api.helius.xyz/v0/webhooks/{webhook_id}?api-key={self.helius_key}"
+            existing = {}
             try:
                 get_resp = requests.get(get_url)
                 existing = get_resp.json()
-                existing_webhook_url = existing.get('webhookURL', webhook_url)
-                self.logger.info(f"Found existing webhook URL: {existing_webhook_url}")
-            except:
-                existing_webhook_url = webhook_url
+                self.logger.info(f"Got existing webhook config: {existing.get('webhookURL')}, type={existing.get('webhookType')}")
+            except Exception as e:
+                self.logger.warning(f"Failed to get existing webhook: {e}")
             
-            # Direct update by ID - use the EXACT URL from the existing webhook
+            # Use existing config or fallbacks
+            existing_webhook_url = existing.get('webhookURL', webhook_url)
+            existing_type = existing.get('webhookType', 'enhanced')
+            existing_txn_types = existing.get('transactionTypes', ['SWAP'])
+            
+            # Direct update by ID - preserve ALL existing settings, only change addresses
             update_url = f"https://api.helius.xyz/v0/webhooks/{webhook_id}?api-key={self.helius_key}"
             payload = {
-                "webhookURL": existing_webhook_url,  # Use existing URL to avoid format issues
+                "webhookURL": existing_webhook_url,
                 "accountAddresses": account_addresses,
-                "transactionTypes": ["SWAP"],
-                "webhookType": "enhanced",
+                "transactionTypes": existing_txn_types,
+                "webhookType": existing_type,
             }
+            self.logger.info(f"Updating webhook with: type={existing_type}, txnTypes={existing_txn_types}, addresses={len(account_addresses)}")
             try:
                 r = requests.put(update_url, json=payload)
                 result = r.json()
