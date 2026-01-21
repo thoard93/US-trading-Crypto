@@ -28,13 +28,11 @@ class WalletCollector:
         webhook_id = os.getenv('HELIUS_WEBHOOK_ID', '').strip()
         
         if webhook_id:
-            # Direct update by ID (preferred method)
+            # Direct update by ID (preferred method) - only update addresses, not URL
             update_url = f"https://api.helius.xyz/v0/webhooks/{webhook_id}?api-key={self.helius_key}"
+            # Don't include webhookURL in PUT - Helius rejects URL changes
             payload = {
-                "webhookURL": webhook_url,
-                "transactionTypes": ["SWAP"],
                 "accountAddresses": account_addresses,
-                "webhookType": "enhanced", 
             }
             try:
                 r = requests.put(update_url, json=payload)
