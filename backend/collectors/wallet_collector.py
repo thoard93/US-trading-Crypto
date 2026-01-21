@@ -33,6 +33,8 @@ class WalletCollector:
             # Don't include webhookURL in PUT - Helius rejects URL changes
             payload = {
                 "accountAddresses": account_addresses,
+                "transactionTypes": ["SWAP"],
+                "webhookType": "enhanced",
             }
             try:
                 r = requests.put(update_url, json=payload)
