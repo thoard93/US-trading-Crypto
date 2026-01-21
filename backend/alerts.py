@@ -2010,15 +2010,18 @@ class AlertSystem(commands.Cog):
 
                     # ⏰ Time-based exits (Degen mode: don't marry the coin)
                     if not should_exit:
-                        if age_mins >= 45 and pnl > 0:
+                        # Profit take earlier (30 mins if green)
+                        if age_mins >= 30 and pnl > 0:
                             should_exit = True
-                            exit_reason = f"⏰ 45min Profit Take: +{pnl:.1f}%"
-                        elif age_mins >= 45 and pnl <= -25:
+                            exit_reason = f"⏰ 30min Profit Take: +{pnl:.1f}%"
+                        # Stop loss earlier (30 mins if red)
+                        elif age_mins >= 30 and pnl <= -15:
                             should_exit = True
-                            exit_reason = f"⏰ 45min Stop: {pnl:.1f}%"
-                        elif age_mins >= 120:
+                            exit_reason = f"⏰ 30min Stop: {pnl:.1f}%"
+                        # Hard force exit at 60 mins (was 120)
+                        elif age_mins >= 60:
                             should_exit = True
-                            exit_reason = f"🛡️ 120min Force Exit: {pnl:+.1f}%"
+                            exit_reason = f"🛡️ 60min Force Exit: {pnl:+.1f}%"
                     
                     # Check if whales are still in (Orphan detection)
                     if not should_exit and age_mins >= 30:
@@ -2215,6 +2218,13 @@ class AlertSystem(commands.Cog):
             embed.add_field(name="💵 Price", value=f"${price:.8f}" if price < 0.01 else f"${price:.4f}", inline=True)
             
             if not liq_pass:
+                # SPECIAL CASE: Low liq but 3+ whales usually means a brand-new pump.fun launch
+                if liquidity == 0 and whale_count >= 3:
+                     print(f"🌊 Brand New Launch Detected: {symbol} (Aping in!)")
+                     all_pass = True 
+                else:
+                     print(f"🚫 Skipped {symbol}: Liquidity ${liquidity:,.0f} < ${liq_threshold:,.0f}")
+                     all_pass = False
                 embed.add_field(name="❌ Blocked", value=f"Liq too low for {whale_count} whales", inline=False)
             elif not safety_pass:
                 embed.add_field(name="❌ Blocked", value=f"Safety score fail", inline=False)

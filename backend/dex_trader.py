@@ -320,9 +320,9 @@ class DexTrader:
             # If this is a retry (attempt > 0), we escalate the priority fee to cut the line.
             initial_fee = "auto"
             if attempt > 0:
-                # Escalation: 250k lamps for attempt 1, 650k for attempt 2+ (MAX FORCE)
-                initial_fee = 250000 if attempt == 1 else 650000
-                print(f"🔥 ESCALATING PRIORITY FEE: {initial_fee} lamports (Attempt {attempt})")
+                # BEAST MODE 3.5: Massive Escalation (1M lamps floor for retries)
+                initial_fee = 1000000 if attempt == 1 else 2500000
+                print(f"🔥 MASSIVE PRIORITY ESCALATION: {initial_fee} lamports (Attempt {attempt})")
             
             # Low Balance Fee Protection (Ensure we can SELL even if poor)
             try:
@@ -343,6 +343,7 @@ class DexTrader:
                     "jitoTipLamports": jito_tip_lamports if use_jito else None,
                     # Disable dynamicSlippage for pump.fun or high-conviction 100% swaps to force execution
                     "dynamicSlippage": False if (is_pump or (override_slippage and override_slippage >= 10000)) else True, 
+                    "onlyDirectRoute": True if is_pump else False, # BEAST MODE 3.5: Force direct routes for speed
                 }
                 
                 # BEAST MODE 3.3: REMOVED forced onlyDirectRoute. 
