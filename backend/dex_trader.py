@@ -343,11 +343,8 @@ class DexTrader:
                     "jitoTipLamports": jito_tip_lamports if use_jito else None,
                     # Disable dynamicSlippage for pump.fun or high-conviction 100% swaps to force execution
                     "dynamicSlippage": False if (is_pump or (override_slippage and override_slippage >= 10000)) else True, 
-                    "onlyDirectRoute": True if is_pump else False, # BEAST MODE 3.5: Force direct routes for speed
+                    # NOTE: onlyDirectRoute removed - was breaking pump.fun AMM routes
                 }
-                
-                # BEAST MODE 3.3: REMOVED forced onlyDirectRoute. 
-                # This was potentially causing 6014s on migrated tokens.
                 
                 success = False
                 for swap_attempt in range(2):
@@ -520,7 +517,7 @@ class DexTrader:
                     if jito_loop_idx == 0:
                         print(f"📤 sentTransaction: {tx_signature}. Starting burst resubmission...")
                     
-                    if jito_loop_idx < 4: time.sleep(2) # Beast Mode 3.5: Faster burst (2s instead of 3s)
+                    if jito_loop_idx < 4: time.sleep(1) # ULTRA SPEED: 1s burst
                 
                 print(f"✅ Burst complete. Waiting for confirmation: {tx_signature}")
             else:
