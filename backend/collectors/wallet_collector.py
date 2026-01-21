@@ -28,10 +28,20 @@ class WalletCollector:
         webhook_id = os.getenv('HELIUS_WEBHOOK_ID', '').strip()
         
         if webhook_id:
-            # Direct update by ID (preferred method) - only update addresses, not URL
+            # First, GET the existing webhook to retrieve its current URL
+            get_url = f"https://api.helius.xyz/v0/webhooks/{webhook_id}?api-key={self.helius_key}"
+            try:
+                get_resp = requests.get(get_url)
+                existing = get_resp.json()
+                existing_webhook_url = existing.get('webhookURL', webhook_url)
+                self.logger.info(f"Found existing webhook URL: {existing_webhook_url}")
+            except:
+                existing_webhook_url = webhook_url
+            
+            # Direct update by ID - use the EXACT URL from the existing webhook
             update_url = f"https://api.helius.xyz/v0/webhooks/{webhook_id}?api-key={self.helius_key}"
-            # Don't include webhookURL in PUT - Helius rejects URL changes
             payload = {
+                "webhookURL": existing_webhook_url,  # Use existing URL to avoid format issues
                 "accountAddresses": account_addresses,
                 "transactionTypes": ["SWAP"],
                 "webhookType": "enhanced",
