@@ -24,9 +24,32 @@ class WalletCollector:
         """Creates or updates a Helius webhook to monitor whale wallets."""
         if not self.helius_key: return None
         
+        # Check for explicit webhook ID first (most reliable)
+        webhook_id = os.getenv('HELIUS_WEBHOOK_ID', '').strip()
+        
+        if webhook_id:
+            # Direct update by ID (preferred method)
+            update_url = f"https://api.helius.xyz/v0/webhooks/{webhook_id}?api-key={self.helius_key}"
+            payload = {
+                "webhookURL": webhook_url,
+                "transactionTypes": ["SWAP"],
+                "accountAddresses": account_addresses,
+                "webhookType": "enhanced", 
+            }
+            try:
+                r = requests.put(update_url, json=payload)
+                result = r.json()
+                if 'error' in result:
+                    self.logger.error(f"Helius update failed: {result}")
+                    return None
+                return result
+            except Exception as e:
+                self.logger.error(f"Error updating Helius Webhook: {e}")
+                return None
+        
+        # Fallback: Try to find existing webhook by URL
         endpoint = f"https://api.helius.xyz/v0/webhooks?api-key={self.helius_key}"
         
-        # 1. Fetch existing webhooks to see if we have one
         try:
             resp = requests.get(endpoint)
             webhooks = resp.json()
@@ -37,8 +60,11 @@ class WalletCollector:
 
             existing_id = None
             for w in webhooks:
-                if w.get('webhookURL') == webhook_url:
+                # Match by URL or partial URL match
+                stored_url = w.get('webhookURL', '')
+                if stored_url == webhook_url or webhook_url in stored_url or stored_url in webhook_url:
                     existing_id = w.get('webhookID')
+                    self.logger.info(f"Found existing webhook: {existing_id}")
                     break
             
             payload = {
@@ -54,7 +80,7 @@ class WalletCollector:
                 r = requests.put(update_url, json=payload)
                 return r.json()
             else:
-                # Create
+                # Create new
                 r = requests.post(endpoint, json=payload)
                 return r.json()
         except Exception as e:
