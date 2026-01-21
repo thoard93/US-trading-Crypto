@@ -6,8 +6,8 @@ import asyncio
 import datetime
 
 from collectors.crypto_collector import CryptoCollector
-from collectors.stock_collector import StockCollector
-from analysis.technical_engine import TechnicalAnalysis
+# from collectors.stock_collector import StockCollector  # Disabled: alpaca not used
+# from analysis.technical_engine import TechnicalAnalysis  # Disabled: pandas_ta incompatible with Python 3.11
 from trading_executive import TradingExecutive
 from collectors.dex_scout import DexScout
 from analysis.safety_checker import SafetyChecker

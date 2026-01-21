@@ -18,11 +18,15 @@ class TradingExecutive:
         self.crypto = CryptoCollector(api_key=self.api_key, api_secret=self.secret_key)
         self.exchange = self.crypto.exchange
         
-        # Initialize StockCollector with specific keys
-        from collectors.stock_collector import StockCollector
+        # Initialize StockCollector with specific keys (optional - may fail if alpaca not installed)
         try:
+            from collectors.stock_collector import StockCollector
             self.stock_collector = StockCollector(api_key=self.alpaca_key, secret_key=self.alpaca_secret, base_url=self.alpaca_url)
             self.stock_api = getattr(self.stock_collector, 'api', None)
+        except ImportError:
+            print(f"⚠️ StockCollector disabled - alpaca_trade_api not installed")
+            self.stock_collector = None
+            self.stock_api = None
         except Exception as e:
             print(f"⚠️ StockCollector failed to initialize for user {self.user_id}: {e}")
             self.stock_collector = None
