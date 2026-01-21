@@ -4,7 +4,7 @@ import asyncio
 from discord.ext import commands
 from dotenv import load_dotenv
 from collectors.crypto_collector import CryptoCollector
-from analysis.technical_engine import TechnicalAnalysis
+# from analysis.technical_engine import TechnicalAnalysis  # Disabled: pandas_ta not compatible with Python 3.11
 from analysis.safety_checker import SafetyChecker
 from alerts import AlertSystem
 
@@ -20,7 +20,7 @@ else:
 
 # Initialize components
 crypto = CryptoCollector()
-analyzer = TechnicalAnalysis()
+# analyzer = TechnicalAnalysis()  # Disabled: pandas_ta not compatible with Python 3.11
 safety = SafetyChecker()
 
 # Initialize bot with standard intents
@@ -97,26 +97,30 @@ async def analyze(ctx, symbol: str):
         symbol = f"{symbol}/USDT"
 
     await ctx.send(f"🔍 Analyzing **{symbol}**... please wait.")
+    # TechnicalAnalysis disabled due to pandas_ta incompatibility with Python 3.11
+    await ctx.send(f"⚠️ The `!analyze` command is temporarily disabled on the VPS. Use DEX tracking instead!")
+    return
     
-    data = crypto.fetch_ohlcv(symbol, timeframe='1h', limit=100)
-    if data is None:
-        await ctx.send(f"❌ Error: Could not find data for `{symbol}`. Make sure it's a valid pair on Binance.")
-        return
-
-    result = analyzer.analyze_trend(data)
-    
-    color = discord.Color.blue()
-    if result['signal'] == "BUY": color = discord.Color.green()
-    elif result['signal'] == "SELL": color = discord.Color.red()
-
-    embed = discord.Embed(title=f"📊 Market Analysis: {symbol}", color=color)
-    embed.add_field(name="Current Price", value=f"${result['price']:.8f}", inline=True)
-    embed.add_field(name="RSI (14)", value=result['rsi'], inline=True)
-    embed.add_field(name="Signal", value=f"**{result['signal']}**", inline=False)
-    embed.add_field(name="Reasoning", value=result['reason'], inline=False)
-    embed.set_footer(text="Analysis based on 1h timeframe")
-    
-    await ctx.send(embed=embed)
+    # Original code commented out:
+    # data = crypto.fetch_ohlcv(symbol, timeframe='1h', limit=100)
+    # if data is None:
+    #     await ctx.send(f"❌ Error: Could not find data for `{symbol}`. Make sure it's a valid pair on Binance.")
+    #     return
+    #
+    # result = analyzer.analyze_trend(data)
+    # 
+    # color = discord.Color.blue()
+    # if result['signal'] == "BUY": color = discord.Color.green()
+    # elif result['signal'] == "SELL": color = discord.Color.red()
+    #
+    # embed = discord.Embed(title=f"📊 Market Analysis: {symbol}", color=color)
+    # embed.add_field(name="Current Price", value=f"${result['price']:.8f}", inline=True)
+    # embed.add_field(name="RSI (14)", value=result['rsi'], inline=True)
+    # embed.add_field(name="Signal", value=f"**{result['signal']}**", inline=False)
+    # embed.add_field(name="Reasoning", value=result['reason'], inline=False)
+    # embed.set_footer(text="Analysis based on 1h timeframe")
+    # 
+    # await ctx.send(embed=embed)
 
 @bot.command()
 async def help(ctx):
