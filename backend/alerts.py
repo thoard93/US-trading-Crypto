@@ -45,7 +45,7 @@ class AlertSystem(commands.Cog):
         # Initialize collectors as None to safely defer loading
         self.crypto = None 
         self.stocks = None
-        self.analyzer = TechnicalAnalysis()
+        self.analyzer = None  # TechnicalAnalysis() disabled - pandas_ta incompatible with Python 3.11
         self.trader = None # Critical fix: Defer TradingExecutive which hangs
         self.dex_scout = DexScout()
         self.safety = SafetyChecker()
