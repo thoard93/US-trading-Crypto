@@ -128,20 +128,25 @@ class DexTrader:
     def get_sol_balance(self):
         """Get SOL balance of wallet."""
         if not self.wallet_address:
+            print(f"⚠️ DEBUG: get_sol_balance called with no wallet_address!")
             return 0
         
         try:
+            print(f"🔍 DEBUG: Checking balance for wallet {self.wallet_address[:8]}... via RPC {self.rpc_url[:40]}...")
             response = requests.post(self.rpc_url, json={
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "getBalance",
                 "params": [self.wallet_address]
-            })
+            }, timeout=10)
             result = response.json()
+            print(f"🔍 DEBUG: RPC response: {result}")
             lamports = result.get('result', {}).get('value', 0)
-            return lamports / 1e9  # Convert to SOL
+            sol = lamports / 1e9
+            print(f"🔍 DEBUG: Balance = {sol:.6f} SOL")
+            return sol
         except Exception as e:
-            print(f"Error getting balance: {e}")
+            print(f"❌ Error getting balance: {e}")
             return 0
     
     def get_token_balance(self, token_mint):
