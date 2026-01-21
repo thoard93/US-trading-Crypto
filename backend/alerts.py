@@ -2625,13 +2625,14 @@ class AlertSystem(commands.Cog):
         """Perform all blocking DB and API key loading here."""
         # 0. Initialize Primary Singletons
         from collectors.crypto_collector import CryptoCollector
-        from collectors.stock_collector import StockCollector
+        # from collectors.stock_collector import StockCollector  # Disabled: alpaca not used
         
         # Safe to initialize here in the thread
         if not self.crypto:
             self.crypto = CryptoCollector()
-        if not self.stocks:
-            self.stocks = StockCollector()
+        # StockCollector disabled - alpaca_trade_api not installed
+        # if not self.stocks:
+        #     self.stocks = StockCollector()
         if not self.trader:
             self.trader = TradingExecutive(user_id=1)
             print("✅ Default TradingExecutive initialized in background.")
