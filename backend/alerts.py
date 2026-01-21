@@ -2253,20 +2253,8 @@ class AlertSystem(commands.Cog):
             
             print(f"Ultimate Bot: Executing {amount_sol} SOL buy for {symbol} ({whale_count} whales)")
 
-            
-            # 🛡️ EMERGENCY SAFETY: Check balance before trading
-            # Each failed trade costs ~0.075 SOL (tips + fees). Pause if too low.
-            min_balance = 0.15  # Minimum SOL to continue trading
-            for trader in self.dex_traders:
-                try:
-                    bal = trader.get_sol_balance()
-                    if bal < min_balance:
-                        print(f"🛑 SAFETY PAUSE: SOL balance ({bal:.4f}) too low. Skipping all trades until refunded.")
-                        if channel_memes:
-                            await channel_memes.send(f"🛑 **TRADING PAUSED**: Balance ({bal:.4f} SOL) below safety threshold ({min_balance} SOL). Refund wallet to resume.")
-                        return
-                except Exception as e:
-                    print(f"⚠️ Balance check failed: {e}")
+
+            # NOTE: Emergency safety blocker removed - VPS is now primary server
             
             # 5. Execute for ALL traders (multi-user support)
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
