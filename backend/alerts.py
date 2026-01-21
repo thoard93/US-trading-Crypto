@@ -1850,7 +1850,7 @@ class AlertSystem(commands.Cog):
             print(f"❌ Swarm Monitor Error: {e}")
             traceback.print_exc()
 
-    @tasks.loop(seconds=60)
+    @tasks.loop(seconds=30) # MOON PROTECTION: Check every 30s
     async def orphan_guard(self):
         """
         🛡️ ORPHAN GUARD: Safety net for stuck positions and failed sells.
@@ -1995,18 +1995,25 @@ class AlertSystem(commands.Cog):
                     should_exit = False
                     exit_reason = ""
                     
-                    # 2. Check for Trailing Trigger (Trigger at +20%)
-                    if highest_pnl >= 20.0:
-                        # If price drops 10% from the peak
-                        stop_level = highest_pnl - 10.0
+                    # 2. AGGRESSIVE TRAILING STOP (Tiered dropback)
+                    # Protect gains by selling if price drops significantly from peak
+                    if highest_pnl >= 50.0:
+                        # If we hit +50%, protect: sell if drops 15% from peak
+                        stop_level = highest_pnl - 15.0
+                        if pnl < stop_level:
+                            should_exit = True
+                            exit_reason = f"📉 Trailing Stop: {pnl:.1f}% (Peak was +{highest_pnl:.1f}%)"
+                    elif highest_pnl >= 20.0:
+                        # If we hit +20%, protect: sell if drops 8% from peak
+                        stop_level = highest_pnl - 8.0
                         if pnl < stop_level:
                             should_exit = True
                             exit_reason = f"📉 Trailing Stop: {pnl:.1f}% (Peak was +{highest_pnl:.1f}%)"
                     
-                    # 🛡️ GLOBAL HARD TAKE PROFIT (Fallback for parabolic moves)
-                    if not should_exit and pnl >= 100:
+                    # 🛡️ HARD TAKE PROFIT (Secure the bag early)
+                    if not should_exit and pnl >= 50:
                         should_exit = True
-                        exit_reason = f"🌋 100% Moon Exit: +{pnl:.1f}% (Ultimate Bag Secured!)"
+                        exit_reason = f"🌋 50% Moon Exit: +{pnl:.1f}% (Bag Secured!)"
 
                     # ⏰ Time-based exits (Degen mode: don't marry the coin)
                     if not should_exit:
