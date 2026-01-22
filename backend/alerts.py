@@ -2260,11 +2260,11 @@ class AlertSystem(commands.Cog):
             if not all_pass:
                 return
                 
-            # 5. ULTIMATE BOT: CONVICTION SIZING (Amortized for Tips)
-            # 10+ Whales = 0.15 SOL, 5+ Whales = 0.10 SOL, Default (3 Whales) = 0.08 SOL
-            amount_sol = 0.08 
-            if whale_count >= 10: amount_sol = 0.15
-            elif whale_count >= 5: amount_sol = 0.10
+            # 5. ULTIMATE BOT: CONVICTION SIZING (Alpha Hunter v2 - Capital Preservation)
+            # 10+ Whales = 0.08 SOL, 5+ Whales = 0.06 SOL, Default (3 Whales) = 0.04 SOL
+            amount_sol = 0.04 
+            if whale_count >= 10: amount_sol = 0.08
+            elif whale_count >= 5: amount_sol = 0.06
             
             print(f"Ultimate Bot: Executing {amount_sol} SOL buy for {symbol} ({whale_count} whales)")
 

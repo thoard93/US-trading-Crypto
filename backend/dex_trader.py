@@ -122,7 +122,7 @@ class DexTrader:
         
         # Trading config
         self.slippage_bps = 3000  # 30% default for volatile markets (was 15%)
-        self.max_trade_sol = 0.08  # Increased from 0.05 to amortize tips (Alpha Hunter)
+        self.max_trade_sol = 0.04  # Alpha Hunter v2: Conservative (was 0.08)
         
         # Active positions
         self.positions = {}
@@ -279,25 +279,27 @@ class DexTrader:
             if use_jito:
                 jito_tip_lamports = self.get_jito_tip_amount_lamports()
                 
-                # BEAST MODE 4.1: Amortized Tipping
-                # 0.02 SOL floor for ultra-volatile pump.fun
-                # 0.01 SOL floor for regular DEX swarms (save costs)
-                min_tip = 20000000 if is_pump else 10000000
+                # BEAST MODE 4.2: Capital Preservation (Alpha Hunter v2)
+                # Lower floor: 0.005 SOL to save capital on reverts
+                min_tip = 5000000  # 0.005 SOL
                 if jito_tip_lamports < min_tip:
                     jito_tip_lamports = min_tip
-                    print(f"🔥 BEAST MODE FLOOR: Setting Jito Tip to {min_tip/1e9:.3f} SOL ({'pump.fun' if is_pump else 'DEX'})")
+                    print(f"🛡️ PRESERVATION FLOOR: Setting Jito Tip to 0.005 SOL")
 
-                # Escalation: 2.5x on attempt 1, 4.0x on attempt 2+ (MAX FORCE)
+                # Escalation Cap: 1.5x on attempt 1, 2.0x on attempt 2+ (CAP AT 0.015 SOL)
                 if attempt == 1:
-                    jito_tip_lamports = int(jito_tip_lamports * 2.5)
-                    print(f"🔥 ESCALATING JITO TIP (x2.5): {jito_tip_lamports / 1e9:.6f} SOL")
+                    jito_tip_lamports = int(jito_tip_lamports * 1.5)
                 elif attempt >= 2:
-                    jito_tip_lamports = int(jito_tip_lamports * 4.0)
-                    print(f"🔥 ESCALATING JITO TIP (x4.0): {jito_tip_lamports / 1e9:.6f} SOL")
-                elif priority:
-                    # PRIORITY EXIT: 2x the normal tip to ensure we land first
                     jito_tip_lamports = int(jito_tip_lamports * 2.0)
-                    print(f"⚡ PRIORITY TIP ENABLED: {jito_tip_lamports / 1e9:.6f} SOL")
+                elif priority:
+                    # PRIORITY EXIT: Still use 2.0x for moons
+                    jito_tip_lamports = int(jito_tip_lamports * 2.0)
+                
+                # HARD CAP: Never exceed 0.015 SOL tip on small trades
+                if jito_tip_lamports > 15000000:
+                    jito_tip_lamports = 15000000
+                
+                print(f"🛡️ JITO TIP: {jito_tip_lamports / 1e9:.6f} SOL (Attempt {attempt}, Priority: {priority})")
             
             # 1. Get quote with freshness tracking
             quote = self.get_jupiter_quote(input_mint, output_mint, amount_lamports, override_slippage, is_pump=is_pump)
