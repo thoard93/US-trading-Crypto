@@ -28,6 +28,7 @@ class SmartCopyTrader:
         self._processed_signatures = set() # O(1) duplicate checking
         self._scan_index = 0
         self._last_429_time = 0
+        self._cumulative_exits = defaultdict(set)  # mint -> {wallets who sold}
 
     def load_data(self):
         """Heavy lifting: Load wallets and swarms from DB."""
@@ -636,8 +637,7 @@ class SmartCopyTrader:
         detected_mint_exits = []
         
         # 1. Identify which whales from which swarms are selling in this batch
-        batch_sellers = defaultdict(set) # mint -> {wallets}
-        
+        # AND add them to CUMULATIVE tracking (persists across batches)
         for tx in transactions:
             wallet = tx.get('feePayer')
             if not wallet or wallet not in self.qualified_wallets:
@@ -651,42 +651,35 @@ class SmartCopyTrader:
                         # Is this whale part of the original swarm?
                         swarm_participants = self.active_swarms.get(sold_mint, set())
                         if wallet in swarm_participants:
-                            batch_sellers[sold_mint].add(wallet)
+                            # Add to CUMULATIVE tracker (survives across batches!)
+                            self._cumulative_exits[sold_mint].add(wallet)
+                            self.logger.info(f"📉 WHALE EXIT TRACKED: {wallet[:8]}... sold {sold_mint[:8]}... ({len(self._cumulative_exits[sold_mint])} total exits)")
         
-        # 2. EVALUATE CONSENSUS
-        for mint in batch_sellers:
-            # For a truly robust consensus, we should ideally check the FULL history of the swarm's sells.
-            # However, since this method is called by the webhook for EVERY transaction,
-            # we can rely on the swarm_monitor or a more thorough check.
-            
-            # IMPROVEMENT: Use check_swarm_exit (which scans history) to confirm consensus
-            # if we see even one seller in the current batch. This ensures we don't dump
-            # on the first whale but DO dump as soon as the threshold is hit in history.
-            
-            # Since check_swarm_exit is ASYNC, we can't call it directly here (sync method).
-            # So we'll return the mint if the BATCH alone hits the threshold, 
-            # OR we can assume most webhooks contain 1-2 txs, making batch-only consensus rare.
-            
-            # STRATEGY: Return all potential sell candidates, and let AlertSystem 
-            # decide if it needs to verify history before dumping.
-            # For now, let's implement the threshold check based on BATCH + memory of recent sells.
-            
+        # 2. EVALUATE CONSENSUS using CUMULATIVE exits (not just this batch)
+        for mint in list(self._cumulative_exits.keys()):
+            if mint not in held_tokens:
+                continue
+                
             participants = self.active_swarms.get(mint, set())
             swarm_size = len(participants)
-            seller_count = len(batch_sellers[mint])
+            cumulative_seller_count = len(self._cumulative_exits[mint])
             
             # Calculate threshold (Ultimate Bot: "Diamond Hands" Consensus)
+            # For 1-2 whale swarms, exit on FIRST sell (we're following alphas)
             threshold = 1
             if swarm_size >= 5:
-                threshold = max(3, swarm_size // 2) # Stronger consensus for large groups
-            elif swarm_size >= 2:
-                threshold = 2 # Require BOTH whales to sell if only 2 bought
+                threshold = max(2, swarm_size // 2)  # 50% for large swarms
+            elif swarm_size >= 3:
+                threshold = 2  # 2/3+ for medium swarms
+            # For swarms of 1-2, threshold stays at 1 (follow the alpha immediately)
                 
-            if seller_count >= threshold:
-                self.logger.warning(f"📉 CONSENSUS SELL MET: {seller_count}/{swarm_size} whales sold {mint[:8]}...")
+            if cumulative_seller_count >= threshold:
+                self.logger.warning(f"📉 CONSENSUS SELL MET: {cumulative_seller_count}/{swarm_size} whales sold {mint[:8]}... (CUMULATIVE)")
                 detected_mint_exits.append(mint)
+                # Clean up the tracker for this mint
+                del self._cumulative_exits[mint]
             else:
-                self.logger.info(f"⏭️ Fragile Sell Ignored: {seller_count}/{swarm_size} whales sold {mint[:8]}... (Wait for consensus)")
+                self.logger.info(f"⏳ Whale exit {cumulative_seller_count}/{threshold} for {mint[:8]}... (waiting for more exits)")
                             
         return detected_mint_exits
 
