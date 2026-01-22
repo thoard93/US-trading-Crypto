@@ -1858,7 +1858,7 @@ class AlertSystem(commands.Cog):
             print(f"❌ Swarm Monitor Error: {e}")
             traceback.print_exc()
 
-    @tasks.loop(seconds=30) # MOON PROTECTION: Check every 30s
+    @tasks.loop(seconds=10) # FLASH PROTECTION: Speed increased to 10s for Ultimate Bot
     async def orphan_guard(self):
         """
         🛡️ ORPHAN GUARD: Safety net for stuck positions and failed sells.
@@ -2021,6 +2021,7 @@ class AlertSystem(commands.Cog):
                     # 🛡️ HARD TAKE PROFIT (Secure the bag early)
                     if not should_exit and pnl >= 50:
                         should_exit = True
+                        use_priority = True # Moonbag captured, use maximum priority to land
                         exit_reason = f"🌋 50% Moon Exit: +{pnl:.1f}% (Bag Secured!)"
 
                     # ⏰ Time-based exits (Degen mode: don't marry the coin)
@@ -2037,6 +2038,12 @@ class AlertSystem(commands.Cog):
                         elif age_mins >= 60:
                             should_exit = True
                             exit_reason = f"🛡️ 60min Force Exit: {pnl:+.1f}%"
+                    
+                    # 🚀 CRASH PROTECTION: Use priority for flash crashes
+                    if not should_exit and pnl <= -30.0:
+                        should_exit = True
+                        use_priority = True
+                        exit_reason = f"🚨 Crash Detected ({pnl:.1f}%)"
                     
                     # Check if whales are still in (Orphan detection)
                     if not should_exit and age_mins >= 30:
@@ -2066,7 +2073,9 @@ class AlertSystem(commands.Cog):
                             else:
                                 hold_time_str = f"{int(age_sec // 60)}m {int(age_sec % 60)}s"
 
-                        result = await self.run_sync(trader.sell_token, token_addr)
+                        # Determine if we should use Priority Jito Tip (2x)
+                        priority_val = locals().get('use_priority', False)
+                        result = await self.run_sync(trader.sell_token, token_addr, priority=priority_val)
                         
                         if result.get('success'):
                             sig = result.get('signature', 'Unknown')
