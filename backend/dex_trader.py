@@ -926,14 +926,30 @@ class DexTrader:
 
         
         if result.get('success'):
-            # Fetch normalized balance for P/L calculations
-            bal_info = self.get_token_balance(token_mint)
-            ui_amount = bal_info.get('ui_amount', 0)
+            # PHASE 46: Balance Detection Buffer (Handle RPC/Indexer Lag)
+            # Wait a moment for the transaction to reflect in the account index
+            time.sleep(1.0)
+            
+            ui_amount = 0
+            for balance_attempt in range(3):
+                bal_info = self.get_token_balance(token_mint)
+                ui_amount = bal_info.get('ui_amount', 0)
+                
+                if ui_amount > 0:
+                    print(f"✅ Balance Detected: {ui_amount} tokens (Attempt {balance_attempt+1})")
+                    break
+                
+                if balance_attempt < 2:
+                    print(f"⏳ Waiting for balance index... (Retry {balance_attempt+1}/3)")
+                    time.sleep(2.0)
+
+            if ui_amount == 0:
+                print(f"⚠️ WARNING: Signature confirmed but balance not yet indexed for {token_mint[:8]}")
             
             # Track position
             self.positions[token_mint] = {
                 "entry_sol": sol_amount,
-                "tokens_received": ui_amount, # NORMALIZED (e.g. 100.5)
+                "tokens_received": ui_amount, # Capture actual fill for P/L integrity
                 "tx": result.get('signature')
             }
             # Add ui_amount to result for AlertSystem to pick up

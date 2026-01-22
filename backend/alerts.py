@@ -2313,11 +2313,23 @@ class AlertSystem(commands.Cog):
                     if mint not in trader.positions:
                         trader.positions[mint] = {}
                     
+                    # Calculate EFFECTIVE entry price (SOL spent / tokens received)
+                    tokens_received = result.get('tokens_received', 0)
+                    sol_price = float(pair.get('priceUsd', 0)) / float(pair.get('priceNative', 1)) if pair.get('priceNative') else 240.0 # Standard SOL price fallback
+                    
+                    effective_entry = float(pair.get('priceUsd', 0)) # Default
+                    if tokens_received > 0:
+                        # Effective Price = (SOL * SOL_Price) / Tokens
+                        effective_entry = (amount_sol * sol_price) / tokens_received
+                        print(f"🎯 Effective Entry Price calculated: ${effective_entry:.8f} (Matches Fill)")
+                    else:
+                        print(f"⚠️ Using signal price as fallback (Balance not indexed yet)")
+
                     trader.positions[mint].update({
-                        'entry_price_usd': float(pair.get('priceUsd', 0)),
+                        'entry_price_usd': effective_entry,
                         'entry_time': datetime.datetime.now().timestamp(),
                         'amount_sol': amount_sol,
-                        'tokens_received': result.get('tokens_received', 0), # NORMALIZED
+                        'tokens_received': tokens_received, # Capture actual fill for P/L integrity
                         'symbol': symbol,
                         'highest_pnl': 0.0 # Initialize Moon Engine
                     })
