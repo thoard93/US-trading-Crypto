@@ -2380,13 +2380,14 @@ class AlertSystem(commands.Cog):
                     continue
                 
                 # SAFETY CHECK 3: Verify we actually have tokens to sell - NON BLOCKING
-                actual_balance = await self.run_sync(trader.get_token_balance, mint)
+                balance_info = await self.run_sync(trader.get_token_balance, mint)
+                actual_balance = balance_info.get('ui_amount', 0) if isinstance(balance_info, dict) else 0
                 if actual_balance <= 0:
                     print(f"⚠️ Exit skipped (User {user_label}): {symbol} balance is 0 (already sold or dust)")
                     del trader.positions[mint]  # Clean up ghost position
                     continue
                     
-                print(f"📉 SELLING (User {user_label}): {symbol} (Balance: {actual_balance})")
+                print(f"📉 SELLING (User {user_label}): {symbol} (Balance: {actual_balance:.6f})")
                 
 
                 
