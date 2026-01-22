@@ -2602,6 +2602,11 @@ class AlertSystem(commands.Cog):
             await self.setup_helius_webhook()
             await self._startup_sync()
             
+            # 🛡️ ORPHAN GUARD: Start the profit-taking/trailing stop loop
+            if not self.orphan_guard.is_running():
+                self.orphan_guard.start()
+                print("🛡️ Orphan Guard started (30s profit-taking loop)!")
+            
             self.ready = True
             print(f"✅ AlertSystem: Background initialization COMPLETE. System is READY.")
         except Exception as e:
