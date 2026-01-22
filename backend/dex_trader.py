@@ -122,7 +122,7 @@ class DexTrader:
         
         # Trading config
         self.slippage_bps = 3000  # 30% default for volatile markets (was 15%)
-        self.max_trade_sol = 0.05  # Max 0.05 SOL per trade (~$6)
+        self.max_trade_sol = 0.08  # Increased from 0.05 to amortize tips (Alpha Hunter)
         
         # Active positions
         self.positions = {}
@@ -279,12 +279,13 @@ class DexTrader:
             if use_jito:
                 jito_tip_lamports = self.get_jito_tip_amount_lamports()
                 
-                # BEAST MODE 4.0: Apply 0.02 SOL floor for ALL memecoins (not just pump.fun)
-                # Higher tip = faster landing = more successful trades
-                min_tip = 20000000  # 0.02 SOL
+                # BEAST MODE 4.1: Amortized Tipping
+                # 0.02 SOL floor for ultra-volatile pump.fun
+                # 0.01 SOL floor for regular DEX swarms (save costs)
+                min_tip = 20000000 if is_pump else 10000000
                 if jito_tip_lamports < min_tip:
                     jito_tip_lamports = min_tip
-                    print(f"🔥 BEAST MODE FLOOR: Setting Jito Tip to 0.02 SOL (all memecoins)")
+                    print(f"🔥 BEAST MODE FLOOR: Setting Jito Tip to {min_tip/1e9:.3f} SOL ({'pump.fun' if is_pump else 'DEX'})")
 
                 # Escalation: 2.5x on attempt 1, 4.0x on attempt 2+ (MAX FORCE)
                 if attempt == 1:

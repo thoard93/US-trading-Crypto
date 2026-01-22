@@ -70,7 +70,7 @@ class AlertSystem(commands.Cog):
         # Trading Configuration (Settings)
         self.dex_auto_trade = False
         self.dex_min_safety_score = 50
-        self.dex_min_liquidity = 40000  # $40k min - balanced quality/opportunity
+        self.dex_min_liquidity = 50000  # $50k min - increased for Alpha Hunter strategy
 
         self.dex_max_positions = 15
         
@@ -664,6 +664,19 @@ class AlertSystem(commands.Cog):
                                                 should_sell = True
                                                 reason = f"📉 Trailing Stop (Locked +{locked_gain:.1f}% from +{pnl:.1f}% peak)"
                                         
+                                        # --- STOP LOSS & FAST FAIL (Alpha Hunter) ---
+                                        if not should_sell:
+                                            if pnl <= -25.0:
+                                                should_sell = True
+                                                reason = f"🛑 Stop Loss ({pnl:.1f}%)"
+                                            elif pnl <= -15.0:
+                                                entry_time = pos.get('entry_time', 0)
+                                                if entry_time:
+                                                    minutes_held = (datetime.datetime.now().timestamp() - entry_time) / 60
+                                                    if minutes_held >= 5.0:
+                                                        should_sell = True
+                                                        reason = f"⚡ Fast-Fail Exit: {pnl:.1f}% after {minutes_held:.1f}m"
+                                        
                                         # --- TIME-BASED EXIT (NEW) ---
                                         entry_time = pos.get('entry_time', 0)
                                         if entry_time and not should_sell:
@@ -672,14 +685,9 @@ class AlertSystem(commands.Cog):
                                                 if pnl > 0:
                                                     should_sell = True
                                                     reason = f"⏰ Time Exit: +{pnl:.1f}% after {hours_held:.1f}h (take profit)"
-                                                elif pnl <= -15.0:
+                                                elif pnl <= -10.0:
                                                     should_sell = True
                                                     reason = f"⏰ Time Exit: {pnl:.1f}% after {hours_held:.1f}h (cut loser)"
-                                        
-                                        # Hard Stop Loss
-                                        elif pnl <= -25.0: # SL: -25% (Room to breathe)
-                                            should_sell = True
-                                            reason = f"🛑 Stop Loss ({pnl:.1f}%)"
                                         
                                         # --- SWARM DUMP EXIT (Smart Copy) ---
                                         # DISABLED: Now using webhook-based instant exits (detect_whale_sells)
@@ -1777,7 +1785,7 @@ class AlertSystem(commands.Cog):
             held_tokens = set()
             for trader in self.dex_traders:
                 held_tokens.update(trader.positions.keys())
-            signals = self.copy_trader.analyze_swarms(min_buyers=2, window_minutes=15, held_tokens=held_tokens)
+            signals = self.copy_trader.analyze_swarms(min_buyers=3, window_minutes=15, held_tokens=held_tokens)
             
             channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
             
