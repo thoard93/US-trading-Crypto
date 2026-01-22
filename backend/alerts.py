@@ -2199,29 +2199,22 @@ class AlertSystem(commands.Cog):
             risks = safety_result.get('risks', [])
             print(f"🛡️ Safety Check: {symbol} scored {safety_score}/100")
 
-            # ULTIMATE BOT: TIERED LIQUIDITY (Alpha Hunter)
-            # 10+ Whales = $25k, 5+ Whales = $40k, 3+ Whales = $50k
             
-            liq_threshold = 50000 # Default (3 whales)
-            if whale_count >= 10: liq_threshold = 25000 # Ultra-early / High Conviction
-            elif whale_count >= 5: liq_threshold = 40000 # Aggressive
-            elif whale_count >= 3: liq_threshold = 50000 # Standard Alpha Hunter
-            
-            print(f"📊 Swarm Token: {symbol} | Liq: ${liquidity:,.0f} | Required: ${liq_threshold:,.0f} ({whale_count} whales)")
-            
+            # --- ALPHA HUNTER: SPECIAL CASE HANDLING ---
             liq_pass = liquidity >= liq_threshold
-            safety_pass = safety_score >= 50  
+            safety_pass = safety_score >= 50
+            all_pass = liq_pass and safety_pass
             
-            price_change_24h = float(pair.get('priceChange', {}).get('h24', 0) or 0)
-            change_emoji = "📈" if price_change_24h >= 0 else "📉"
-            change_color = "+" if price_change_24h >= 0 else ""
-            
-            volatility_pass = True  # We trust whale judgment
-            
-            all_pass = liq_pass and safety_pass and volatility_pass
+            # Special bypass for brand new launches (0 liquidity on DexScreener but high whale count)
+            is_new_launch = False
+            if not liq_pass and liquidity == 0 and whale_count >= 3:
+                 print(f"🌊 Brand New Launch Detected: {symbol} (Aping in!)")
+                 all_pass = True
+                 is_new_launch = True
             
             embed_color = discord.Color.green() if all_pass else discord.Color.red()
             decision = "Ultimate Buy Activated" if all_pass else "Skipped"
+            if is_new_launch: decision = "Ultimate Buy Activated (Fresh Launch)"
             
             embed = discord.Embed(
                 title=f"Ultimate Bot: {symbol}",
@@ -2232,17 +2225,14 @@ class AlertSystem(commands.Cog):
             embed.add_field(name="🛡️ Safety", value=f"{safety_score}/100", inline=True)
             embed.add_field(name="💵 Price", value=f"${price:.8f}" if price < 0.01 else f"${price:.4f}", inline=True)
             
-            if not liq_pass:
-                # SPECIAL CASE: Low liq but 3+ whales usually means a brand-new pump.fun launch
-                if liquidity == 0 and whale_count >= 3:
-                     print(f"🌊 Brand New Launch Detected: {symbol} (Aping in!)")
-                     all_pass = True 
-                else:
-                     print(f"🚫 Skipped {symbol}: Liquidity ${liquidity:,.0f} < ${liq_threshold:,.0f}")
-                     all_pass = False
-                embed.add_field(name="❌ Blocked", value=f"Liq too low for {whale_count} whales", inline=False)
-            elif not safety_pass:
-                embed.add_field(name="❌ Blocked", value=f"Safety score fail", inline=False)
+            if not all_pass:
+                if not liq_pass:
+                    print(f"🚫 Skipped {symbol}: Liquidity ${liquidity:,.0f} < ${liq_threshold:,.0f}")
+                    embed.add_field(name="❌ Blocked", value=f"Liquidity too low for {whale_count} whales", inline=False)
+                elif not safety_pass:
+                    embed.add_field(name="❌ Blocked", value=f"Safety score fail ({safety_score})", inline=False)
+            elif is_new_launch:
+                embed.add_field(name="🌊 Strategy", value="Brand New Launch (High Conviction)", inline=False)
 
             embed.add_field(name="🔗 DEX", value=f"[View on DexScreener]({dex_url})", inline=False)
             
