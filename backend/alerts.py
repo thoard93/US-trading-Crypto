@@ -2198,7 +2198,15 @@ class AlertSystem(commands.Cog):
             safety_score = safety_result.get('safety_score', 0)
             risks = safety_result.get('risks', [])
             print(f"🛡️ Safety Check: {symbol} scored {safety_score}/100")
-
+            # ULTIMATE BOT: TIERED LIQUIDITY (Alpha Hunter)
+            # 10+ Whales = $20k, 5+ Whales = $30k, 3+ Whales = $40k
+            
+            liq_threshold = 40000 # Default (3 whales)
+            if whale_count >= 10: liq_threshold = 20000 # Ultra-early / High Conviction
+            elif whale_count >= 5: liq_threshold = 30000 # Aggressive
+            elif whale_count >= 3: liq_threshold = 40000 # Standard Alpha Hunter
+            
+            print(f"📊 Swarm Token: {symbol} | Liq: ${liquidity:,.0f} | Required: ${liq_threshold:,.0f} ({whale_count} whales)")
             
             # --- ALPHA HUNTER: SPECIAL CASE HANDLING ---
             liq_pass = liquidity >= liq_threshold
