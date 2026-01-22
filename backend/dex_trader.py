@@ -279,10 +279,12 @@ class DexTrader:
             if use_jito:
                 jito_tip_lamports = self.get_jito_tip_amount_lamports()
                 
-                # MEME FLOOR: Start at 0.01 SOL for pump.fun or volatile retries
-                if is_pump and jito_tip_lamports < 10000000:
-                    jito_tip_lamports = 10000000
-                    print(f"🔥 BEAST MODE FLOOR: Setting Jito Tip to 0.01 SOL")
+                # BEAST MODE 4.0: Apply 0.02 SOL floor for ALL memecoins (not just pump.fun)
+                # Higher tip = faster landing = more successful trades
+                min_tip = 20000000  # 0.02 SOL
+                if jito_tip_lamports < min_tip:
+                    jito_tip_lamports = min_tip
+                    print(f"🔥 BEAST MODE FLOOR: Setting Jito Tip to 0.02 SOL (all memecoins)")
 
                 # Escalation: 2.5x on attempt 1, 4.0x on attempt 2+ (MAX FORCE)
                 if attempt == 1:
