@@ -73,12 +73,10 @@ class DexTrader:
         
         # Use dedicated trading RPC if available (reduces Helius usage!)
         if trading_rpc:
-            # AGGRESSIVE SANITIZATION: Remove ANY non-printable/invisible characters
-            import re
-            # Keep only valid URL characters
-            trading_rpc = re.sub(r'[^\x20-\x7E]', '', trading_rpc).strip()
-            print(f"🚀 Using TRADING_RPC_URL (sanitized): {trading_rpc[:50]}...")
-            self.rpc_url = trading_rpc
+            # BYPASS .ENV ISSUES: Hardcode the QuikNode URL directly
+            # The .env file has invisible encoding issues that can't be sanitized
+            self.rpc_url = "https://powerful-warmhearted-wish.solana-mainnet.quiknode.pro/4627a4da7f076c17804afd75d9966b0afe78fa23/"
+            print(f"🚀 Using HARDCODED QuikNode RPC: {self.rpc_url[:50]}...")
         elif helius_key and (not env_rpc or is_slow_rpc):
             print("🚀 Using Helius RPC for transactions")
             if is_slow_rpc:
