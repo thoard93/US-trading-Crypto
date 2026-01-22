@@ -1690,17 +1690,17 @@ class AlertSystem(commands.Cog):
                     pnl_pct = ((current_price - entry_price) / entry_price) * 100
                     
                     # Only sell if in profit
-                        if pnl_pct > 0:
-                            result = trader.sell_token(token_address)
-                            if result.get('success'):
-                                sold_count += 1
-                                total_pnl += pnl_pct
-                                sold_tokens.append(f"✅ {info['symbol']}: +{pnl_pct:.1f}%")
-                                
-                                # Remove from DB (Audit Fix)
-                                self._cleanup_db_position(trader.wallet_address, token_address)
-                            else:
-                                sold_tokens.append(f"❌ {info['symbol']}: Failed - {result.get('error', 'Unknown')[:30]}")
+                    if pnl_pct > 0:
+                        result = trader.sell_token(token_address)
+                        if result.get('success'):
+                            sold_count += 1
+                            total_pnl += pnl_pct
+                            sold_tokens.append(f"✅ {info['symbol']}: +{pnl_pct:.1f}%")
+                            
+                            # Remove from DB (Audit Fix)
+                            self._cleanup_db_position(trader.wallet_address, token_address)
+                        else:
+                            sold_tokens.append(f"❌ {info['symbol']}: Failed - {result.get('error', 'Unknown')[:30]}")
                     
                     await asyncio.sleep(0.5)  # Rate limit
                     
