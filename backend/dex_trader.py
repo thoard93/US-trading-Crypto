@@ -73,7 +73,11 @@ class DexTrader:
         
         # Use dedicated trading RPC if available (reduces Helius usage!)
         if trading_rpc:
-            print("🚀 Using dedicated TRADING_RPC_URL for transactions (saves Helius credits)")
+            # AGGRESSIVE SANITIZATION: Remove ANY non-printable/invisible characters
+            import re
+            # Keep only valid URL characters
+            trading_rpc = re.sub(r'[^\x20-\x7E]', '', trading_rpc).strip()
+            print(f"🚀 Using TRADING_RPC_URL (sanitized): {trading_rpc[:50]}...")
             self.rpc_url = trading_rpc
         elif helius_key and (not env_rpc or is_slow_rpc):
             print("🚀 Using Helius RPC for transactions")
