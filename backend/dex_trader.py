@@ -279,16 +279,16 @@ class DexTrader:
             if use_jito:
                 jito_tip_lamports = self.get_jito_tip_amount_lamports()
                 
-                # BEAST MODE 4.2: Capital Preservation (Alpha Hunter v2)
-                # Lower floor: 0.005 SOL to save capital on reverts
-                min_tip = 5000000  # 0.005 SOL
+                # BEAST MODE 4.3: Landing Optimization (Alpha Hunter v2.1)
+                # Balanced floor: 0.008 SOL (Sweet spot for landing vs cost)
+                min_tip = 8000000  # 0.008 SOL
                 if jito_tip_lamports < min_tip:
                     jito_tip_lamports = min_tip
-                    print(f"🛡️ PRESERVATION FLOOR: Setting Jito Tip to 0.005 SOL")
+                    print(f"🛡️ LANDING V2.1: Setting Jito Tip to 0.008 SOL")
 
-                # Escalation Cap: 1.5x on attempt 1, 2.0x on attempt 2+ (CAP AT 0.015 SOL)
+                # Escalation Cap: 2.0x on attempt 1, 2.0x on attempt 2+ (CAP AT 0.015 SOL)
                 if attempt == 1:
-                    jito_tip_lamports = int(jito_tip_lamports * 1.5)
+                    jito_tip_lamports = int(jito_tip_lamports * 2.0)
                 elif attempt >= 2:
                     jito_tip_lamports = int(jito_tip_lamports * 2.0)
                 elif priority:
@@ -564,11 +564,11 @@ class DexTrader:
                 print(f"📤 sentTransaction: {tx_signature}. Waiting for confirmation...")
 
             
-            # Wait for confirmation (up to 60 seconds)
+            # Wait for confirmation (up to 90 seconds for congestion)
             confirmed = False
             print(f"⏳ Monitoring confirmation status for TX: {tx_signature}")
-            for i in range(30): # 30 * 2s = 60s
-                if i % 3 == 0: print(f"⏳ Confirmation check {i+1}/30...")
+            for i in range(45): # 45 * 2s = 90s
+                if i % 3 == 0: print(f"⏳ Confirmation check {i+1}/45...")
                 time.sleep(2)
 
                 # Check status across multiple RPCs for redundancy
@@ -613,7 +613,7 @@ class DexTrader:
                 except Exception as e:
                     print(f"⚠️ Error checking status: {e}")
             
-            print(f"⚠️ Jupiter TX not confirmed after 60s: {tx_signature}")
+            print(f"⚠️ Jupiter TX not confirmed after 90s: {tx_signature}")
             return {"error": "Transaction detection timeout", "signature": tx_signature}
             
         except Exception as e:
@@ -629,13 +629,13 @@ class DexTrader:
                 if data and len(data) > 0:
                     # Use 99th percentile for MAXIMUM priority (last attempt for pump.fun)
                     tip_sol = data[0].get('landed_tips_99th_percentile', 0.005)
-                    # ULTRA MODE: Minimum 0.005 SOL (~$1) for pump.fun priority
+                    # LANDING V2.1: Minimum 0.008 SOL (~$1.20) to ensure placement
                     # Max 0.02 SOL to cap costs
-                    tip_sol = max(0.005, min(0.02, tip_sol))
+                    tip_sol = max(0.008, min(0.02, tip_sol))
                     return int(tip_sol * 1e9)
         except Exception as e:
             print(f"⚠️ Failed to fetch Jito tip floor: {e}")
-        return 5000000  # Default fallback: 0.005 SOL (5M lamports) - ULTRA MODE
+        return 8000000  # Default fallback: 0.008 SOL (8M lamports) - LANDING V2.1
     
     def execute_jito_bundle(self, token_mint, sol_amount):
         """
