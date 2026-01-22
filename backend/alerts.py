@@ -374,6 +374,25 @@ class AlertSystem(commands.Cog):
                                     'entry_time': db_pos.timestamp.timestamp() if db_pos else datetime.datetime.now().timestamp()
                                 }
                                 
+                                # --- PERSIST NEWLY ADOPTED TOKENS (Audit Discovery) ---
+                                if not db_pos:
+                                    try:
+                                        db_save = SessionLocal()
+                                        new_pos = models.DexPosition(
+                                            token_address=mint,
+                                            wallet_address=trader.wallet_address,
+                                            symbol=symbol,
+                                            entry_price_usd=entry_price,
+                                            amount=float(amount)
+                                        )
+                                        db_save.add(new_pos)
+                                        db_save.commit()
+                                        print(f"💾 Persisted adopted token {symbol} to DB")
+                                    except Exception as db_err:
+                                        print(f"⚠️ Sync DB error: {db_err}")
+                                    finally:
+                                        db_save.close()
+                                
                                 # --- SWARM HEALING (NEW) ---
                                 # Check if we have swarm participants for this token.
                                 # If not, try to 'heal' by searching whale history.
@@ -408,19 +427,24 @@ class AlertSystem(commands.Cog):
                 for mint in to_remove:
                     print(f"🧹 Detecting manual sell for {trader.positions[mint].get('symbol', 'Unknown')}. Clearing from memory/DB.")
                     del trader.positions[mint]
-                    # Clean DB
-                    try:
-                        db = SessionLocal()
-                        db.query(models.DexPosition).filter(
-                            models.DexPosition.wallet_address == trader.wallet_address,
-                            models.DexPosition.token_address == mint
-                        ).delete()
-                        db.commit()
-                        db.close()
-                    except: pass
+                    # Clean DB (Audit Fix)
+                    self._cleanup_db_position(trader.wallet_address, mint)
 
             except Exception as e:
                 print(f"❌ Error syncing user {user_label}: {e}")
+
+    def _cleanup_db_position(self, wallet_address, token_address):
+        """Standardized database cleanup for DEX positions."""
+        try:
+            db_save = SessionLocal()
+            db_save.query(models.DexPosition).filter(
+                models.DexPosition.wallet_address == wallet_address,
+                models.DexPosition.token_address == token_address
+            ).delete()
+            db_save.commit()
+            db_save.close()
+        except Exception as e:
+            print(f"⚠️ DB cleanup error for {token_address[:8]}: {e}")
 
     @tasks.loop(minutes=3)  # POSITION TRADER MODE: Was 15s, now 3 min (stop churning)
     async def dex_monitor(self):
@@ -740,19 +764,9 @@ class AlertSystem(commands.Cog):
                                             # SET COOLDOWN: Prevent re-buying for 5 minutes
                                             self.dex_exit_cooldowns[token_address] = datetime.datetime.now().timestamp()
                                             
-                                            # DELETE FROM DATABASE
-                                            try:
-                                                db = SessionLocal()
-                                                db.query(models.DexPosition).filter(
-                                                    models.DexPosition.wallet_address == trader.wallet_address,
-                                                    models.DexPosition.token_address == token_address
-                                                ).delete()
-                                                db.commit()
-                                                print(f"🗑️ Removed DEX position {info['symbol']} from DB")
-                                            except Exception as db_err:
-                                                print(f"⚠️ DB delete error: {db_err}")
-                                            finally:
-                                                db.close()
+                                            # DELETE FROM DATABASE (Audit Fix)
+                                            self._cleanup_db_position(trader.wallet_address, token_address)
+                                            print(f"🗑️ Removed DEX position {info['symbol']} from DB")
                                         else:
                                             error_msg = res.get('error', '')
                                             print(f"⚠️ Sell failed for {info['symbol']}: {error_msg}")
@@ -763,17 +777,7 @@ class AlertSystem(commands.Cog):
                                                     del trader.positions[token_address]
                                                     print(f"👻 Cleared ghost position {info['symbol']} from memory")
                                                 # Also remove from DB
-                                                try:
-                                                    db = SessionLocal()
-                                                    db.query(models.DexPosition).filter(
-                                                        models.DexPosition.wallet_address == trader.wallet_address,
-                                                        models.DexPosition.token_address == token_address
-                                                    ).delete()
-                                                    db.commit()
-                                                except Exception:
-                                                    pass
-                                                finally:
-                                                    db.close()
+                                                self._cleanup_db_position(trader.wallet_address, token_address)
 
                 except Exception as ex:
                     print(f"⚠️ Error checking DEX token {item.get('address')}: {ex}")
@@ -1686,24 +1690,17 @@ class AlertSystem(commands.Cog):
                     pnl_pct = ((current_price - entry_price) / entry_price) * 100
                     
                     # Only sell if in profit
-                    if pnl_pct > 0:
-                        result = trader.sell_token(token_address)
-                        if result.get('success'):
-                            sold_count += 1
-                            total_pnl += pnl_pct
-                            sold_tokens.append(f"✅ {info['symbol']}: +{pnl_pct:.1f}%")
-                            
-                            # Remove from DB
-                            try:
-                                db = SessionLocal()
-                                db.query(models.DexPosition).filter(
-                                    models.DexPosition.token_address == token_address
-                                ).delete()
-                                db.commit()
-                                db.close()
-                            except: pass
-                        else:
-                            sold_tokens.append(f"❌ {info['symbol']}: Failed - {result.get('error', 'Unknown')[:30]}")
+                        if pnl_pct > 0:
+                            result = trader.sell_token(token_address)
+                            if result.get('success'):
+                                sold_count += 1
+                                total_pnl += pnl_pct
+                                sold_tokens.append(f"✅ {info['symbol']}: +{pnl_pct:.1f}%")
+                                
+                                # Remove from DB (Audit Fix)
+                                self._cleanup_db_position(trader.wallet_address, token_address)
+                            else:
+                                sold_tokens.append(f"❌ {info['symbol']}: Failed - {result.get('error', 'Unknown')[:30]}")
                     
                     await asyncio.sleep(0.5)  # Rate limit
                     
@@ -1894,6 +1891,8 @@ class AlertSystem(commands.Cog):
                     retry_items_to_remove.append(item)
                     if token_addr in trader.positions:
                         del trader.positions[token_addr]
+                    # Cleanup DB (Audit Fix)
+                    self._cleanup_db_position(trader.wallet_address, token_addr)
                     continue
 
                 print(f"🔄 Retry Queue: Selling {token_addr[:16]}... (attempt {attempts + 1}, slippage {slippage // 100}%)")
@@ -1903,6 +1902,8 @@ class AlertSystem(commands.Cog):
                 if result.get('success'):
                     print(f"✅ Retry SUCCESS: {token_addr[:16]}...")
                     retry_items_to_remove.append(item)
+                    # Cleanup DB (Audit Fix)
+                    self._cleanup_db_position(trader.wallet_address, token_addr)
                     if channel_memes:
                         await channel_memes.send(f"🔄 **Retry Exit Succeeded**: Sold stuck position via orphan guard")
                 else:
@@ -2105,6 +2106,11 @@ class AlertSystem(commands.Cog):
                             # Clear position and set cooldown
                             if token_addr in trader.positions:
                                 del trader.positions[token_addr]
+                            
+                            # --- DB CLEANUP (Audit Fix) ---
+                            self._cleanup_db_position(trader.wallet_address, token_addr)
+                            print(f"🗑️ Removed {symbol} from DB (Orphan Exit)")
+
                             self.dex_exit_cooldowns[token_addr] = now
                             # Diversity Engine: Clean up active swarm so participants can re-signal later
                             if token_addr in self.copy_trader.active_swarms:
@@ -2225,9 +2231,13 @@ class AlertSystem(commands.Cog):
             # Special bypass for brand new launches (0 liquidity on DexScreener but high whale count)
             is_new_launch = False
             if not liq_pass and liquidity == 0 and whale_count >= 3:
-                 print(f"🌊 Brand New Launch Detected: {symbol} (Aping in!)")
-                 all_pass = True
-                 is_new_launch = True
+                 print(f"🌊 Brand New Launch Detected: {symbol}")
+                 if safety_pass: # AUDIT FIX: Still require safety score >= 50
+                      print(f"✅ Safety Check Passed for Fresh Launch (Aping in!)")
+                      all_pass = True
+                      is_new_launch = True
+                 else:
+                      print(f"🚫 Safety Check FAILED for Fresh Launch ({safety_score})")
             
             embed_color = discord.Color.green() if all_pass else discord.Color.red()
             decision = "Ultimate Buy Activated" if all_pass else "Skipped"
@@ -2333,6 +2343,24 @@ class AlertSystem(commands.Cog):
                         'symbol': symbol,
                         'highest_pnl': 0.0 # Initialize Moon Engine
                     })
+
+                    # --- DB PERSISTENCE (Audit Fix) ---
+                    try:
+                        db_buy = SessionLocal()
+                        new_pos = models.DexPosition(
+                            token_address=mint,
+                            wallet_address=trader.wallet_address,
+                            symbol=symbol,
+                            entry_price_usd=effective_entry,
+                            amount=float(tokens_received)
+                        )
+                        db_buy.add(new_pos)
+                        db_buy.commit()
+                        print(f"💾 Persisted {symbol} trade to DB (User {user_label})")
+                    except Exception as db_err:
+                        print(f"⚠️ Swarm Buy DB error: {db_err}")
+                    finally:
+                        db_buy.close()
                 else:
                     # Buy failed - log to Discord and add to cooldown
                     error_msg = result.get('error', 'Unknown error')
@@ -2465,6 +2493,9 @@ class AlertSystem(commands.Cog):
                     # Remove from positions
                     if mint in trader.positions:
                         del trader.positions[mint]
+                    
+                    # Cleanup DB (Audit Fix)
+                    self._cleanup_db_position(trader.wallet_address, mint)
                     
                     if channel_memes:
                         embed = discord.Embed(
