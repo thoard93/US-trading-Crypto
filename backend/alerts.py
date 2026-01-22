@@ -2199,13 +2199,13 @@ class AlertSystem(commands.Cog):
             risks = safety_result.get('risks', [])
             print(f"🛡️ Safety Check: {symbol} scored {safety_score}/100")
 
-            # ULTIMATE BOT: TIERED LIQUIDITY
-            # 10+ Whales = $10k, 5+ Whales = $20k, 3+ Whales = $25k
+            # ULTIMATE BOT: TIERED LIQUIDITY (Alpha Hunter)
+            # 10+ Whales = $25k, 5+ Whales = $40k, 3+ Whales = $50k
             
-            liq_threshold = 25000 # Default (2 whales) - Sensitivity Boost per User
-            if whale_count >= 10: liq_threshold = 10000 # Ultra-early
-            elif whale_count >= 5: liq_threshold = 15000 # Aggressive
-            elif whale_count >= 3: liq_threshold = 20000 # Standard
+            liq_threshold = 50000 # Default (3 whales)
+            if whale_count >= 10: liq_threshold = 25000 # Ultra-early / High Conviction
+            elif whale_count >= 5: liq_threshold = 40000 # Aggressive
+            elif whale_count >= 3: liq_threshold = 50000 # Standard Alpha Hunter
             
             print(f"📊 Swarm Token: {symbol} | Liq: ${liquidity:,.0f} | Required: ${liq_threshold:,.0f} ({whale_count} whales)")
             
@@ -2253,11 +2253,11 @@ class AlertSystem(commands.Cog):
             if not all_pass:
                 return
                 
-            # 5. ULTIMATE BOT: CONVICTION SIZING (REDUCED FOR SLIPPAGE)
-            # 10+ Whales = 0.10 SOL, 5+ Whales = 0.05 SOL, Default = 0.02 SOL
-            amount_sol = 0.02
-            if whale_count >= 10: amount_sol = 0.10
-            elif whale_count >= 5: amount_sol = 0.05
+            # 5. ULTIMATE BOT: CONVICTION SIZING (Amortized for Tips)
+            # 10+ Whales = 0.15 SOL, 5+ Whales = 0.10 SOL, Default (3 Whales) = 0.08 SOL
+            amount_sol = 0.08 
+            if whale_count >= 10: amount_sol = 0.15
+            elif whale_count >= 5: amount_sol = 0.10
             
             print(f"Ultimate Bot: Executing {amount_sol} SOL buy for {symbol} ({whale_count} whales)")
 
