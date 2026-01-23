@@ -930,7 +930,8 @@ class DexTrader:
             time.sleep(1.0)
             
             ui_amount = 0
-            for balance_attempt in range(3):
+            # INCREASED: 10 attempts (30s max) for high-congestion launches
+            for balance_attempt in range(10):
                 bal_info = self.get_token_balance(token_mint)
                 ui_amount = bal_info.get('ui_amount', 0)
                 
@@ -938,9 +939,9 @@ class DexTrader:
                     print(f"✅ Balance Detected: {ui_amount} tokens (Attempt {balance_attempt+1})")
                     break
                 
-                if balance_attempt < 2:
-                    print(f"⏳ Waiting for balance index... (Retry {balance_attempt+1}/3)")
-                    time.sleep(2.0)
+                if balance_attempt < 9:
+                    print(f"⏳ Waiting for balance index... (Retry {balance_attempt+1}/10)")
+                    time.sleep(3.0)
 
             if ui_amount == 0:
                 print(f"⚠️ WARNING: Signature confirmed but balance not yet indexed for {token_mint[:8]}")

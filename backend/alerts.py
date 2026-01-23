@@ -1979,6 +1979,39 @@ class AlertSystem(commands.Cog):
                     else:
                         pnl = 0
                     
+                    # 🛡️ PNL INTEGRITY: Healing Mechanism
+                    # If we see a massive gain (+500%) within the first 5 mins, it's likely a ghost gain
+                    # caused by an unindexed balance (pre-pump snapshot vs post-pump price).
+                    if pnl >= 500.0 and age_mins < 5.0:
+                        print(f"🧐 Healing: Suspicious P/L detected for {symbol} ({pnl:.1f}%). Re-checking balance...")
+                        try:
+                            # Re-fetch actual balance and post-buy price
+                            actual_bal = await self.run_sync(trader.get_token_balance, token_addr)
+                            ui_amount = actual_bal.get('ui_amount', 0)
+                            
+                            # Update tokens_received in memory position
+                            pos['tokens_received'] = ui_amount
+                            
+                            # If we now have tokens, we can calculate a REAL integrated entry price
+                            if ui_amount > 0:
+                                sol_amt = pos.get('amount_sol', 0.04)
+                                # Fetch a fresh SOL price
+                                pair = await self.dex_scout.get_pair_data("solana", token_addr)
+                                if pair:
+                                    s_price = float(pair.get('priceUsd', 0)) / float(pair.get('priceNative', 1)) if pair.get('priceNative') else 240.0
+                                    new_entry = (sol_amt * s_price) / ui_amount
+                                    pos['entry_price_usd'] = new_entry
+                                    print(f"✅ Healed {symbol}: New Entry ${new_entry:.8f} (Actual Balance)")
+                                    # Re-calculate P/L with new entry
+                                    pnl = ((current_price - new_entry) / new_entry) * 100
+                            else:
+                                # Still no balance? Force entry price to current price to stop the ghost gain
+                                pos['entry_price_usd'] = current_price
+                                print(f"✅ Healed {symbol}: Setting entry to current price ${current_price:.8f} (Still no balance)")
+                                pnl = 0.0
+                        except Exception as e:
+                            print(f"⚠️ Healing failed for {symbol}: {e}")
+                    
                     # 🛡️ ULTIMATE BOT: TRAILING STOP LOSS
                     # 1. Update ATH PNL
                     highest_pnl = pos.get('highest_pnl', 0)
@@ -2360,10 +2393,16 @@ class AlertSystem(commands.Cog):
                             effective_entry = (amount_sol * sol_price) / tokens_received
                             print(f"🎯 Effective Entry Price calculated: ${effective_entry:.8f} (Matches Fill)")
                         else:
-                            # 🛡️ PNL INTEGRITY FIX: If balance isn't indexed, the "pair" data we have 
-                            # is from AFTER the buy (fetched at line 2188). 
-                            # Using this as the entry price prevents the "ghost +1000% gains" 
-                            # caused by comparing pre-buy snapshots to post-buy prices.
+                            # 🛡️ PNL INTEGRITY FIX: If balance isn't indexed, we need a FRESH snapshot
+                            # to avoid using the pre-buy price from the start of this function.
+                            try:
+                                fresh_pair = await self.dex_scout.get_pair_data("solana", mint)
+                                if fresh_pair:
+                                    effective_entry = float(fresh_pair.get('priceUsd', 0))
+                                    print(f"✅ Fetched fresh post-buy snapshot for entry: ${effective_entry:.8f}")
+                            except Exception as e:
+                                print(f"⚠️ Failed to fetch fresh snapshot, fallback to initial: {e}")
+                            
                             print(f"⚠️ Balance not yet indexed. Using post-buy snapshot as entry: ${effective_entry:.8f}")
 
                         trader.positions[mint].update({
