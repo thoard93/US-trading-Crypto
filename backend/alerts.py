@@ -1979,36 +1979,61 @@ class AlertSystem(commands.Cog):
                     else:
                         pnl = 0
                     
-                    # 🛡️ PNL INTEGRITY: Healing Mechanism
-                    # If we see a massive gain (+500%) within the first 5 mins, it's likely a ghost gain
-                    # caused by an unindexed balance (pre-pump snapshot vs post-pump price).
-                    if pnl >= 500.0 and age_mins < 5.0:
-                        print(f"🧐 Healing: Suspicious P/L detected for {symbol} ({pnl:.1f}%). Re-checking balance...")
+                    # 🛡️ PNL INTEGRITY: Robust Healing Mechanism
+                    # If we see a suspicious P/L (>50%) or a crash (<-20%) within the first 5 mins,
+                    # it's likely a ghost reading (laggy balance indexer).
+                    is_suspicious = (pnl >= 50.0 or pnl <= -20.0) and age_mins < 5.0
+                    
+                    if is_suspicious:
+                        print(f"🧐 Sanity Check: Investigating {symbol} P/L ({pnl:.1f}% at {age_mins:.1f}m)...")
                         try:
                             # Re-fetch actual balance and post-buy price
                             actual_bal = await self.run_sync(trader.get_token_balance, token_addr)
                             ui_amount = actual_bal.get('ui_amount', 0)
                             
-                            # Update tokens_received in memory position
-                            pos['tokens_received'] = ui_amount
-                            
-                            # If we now have tokens, we can calculate a REAL integrated entry price
                             if ui_amount > 0:
+                                # We have a real balance! Calculate integrated entry price
                                 sol_amt = pos.get('amount_sol', 0.04)
-                                # Fetch a fresh SOL price
-                                pair = await self.dex_scout.get_pair_data("solana", token_addr)
-                                if pair:
-                                    s_price = float(pair.get('priceUsd', 0)) / float(pair.get('priceNative', 1)) if pair.get('priceNative') else 240.0
+                                # Fetch a fresh SOL price for calculation
+                                fresh_pair = await self.dex_scout.get_pair_data("solana", token_addr)
+                                if fresh_pair:
+                                    s_price = float(fresh_pair.get('priceUsd', 0)) / float(fresh_pair.get('priceNative', 1)) if fresh_pair.get('priceNative') else 240.0
                                     new_entry = (sol_amt * s_price) / ui_amount
+                                    
+                                    # Update MEMORY
                                     pos['entry_price_usd'] = new_entry
-                                    print(f"✅ Healed {symbol}: New Entry ${new_entry:.8f} (Actual Balance)")
+                                    pos['tokens_received'] = ui_amount
+                                    entry_price = new_entry # Update local variable for logic below
+                                    tokens = ui_amount # Update local variable
+                                    
+                                    # Update DB (Audit Fix: Persistence)
+                                    try:
+                                        from database import SessionLocal
+                                        import models
+                                        db_heal = SessionLocal()
+                                        db_pos = db_heal.query(models.DexPosition).filter(
+                                            models.DexPosition.token_address == token_addr,
+                                            models.DexPosition.wallet_address == trader.wallet_address
+                                        ).first()
+                                        if db_pos:
+                                            db_pos.entry_price_usd = new_entry
+                                            db_pos.amount = float(ui_amount)
+                                            db_heal.commit()
+                                            print(f"💾 Healed & Persisted {symbol}: New Entry ${new_entry:.8f}")
+                                        db_heal.close()
+                                    except Exception as db_e:
+                                        print(f"⚠️ DB Healing failed: {db_e}")
+                                        
                                     # Re-calculate P/L with new entry
                                     pnl = ((current_price - new_entry) / new_entry) * 100
+                                    print(f"✅ Re-calculated {symbol} P/L: {pnl:.1f}%")
                             else:
-                                # Still no balance? Force entry price to current price to stop the ghost gain
+                                # Still no balance? If we are > 1 min, this is WEIRD. 
+                                # Force entry price to current price to freeze P/L at 0 until balanced detected.
                                 pos['entry_price_usd'] = current_price
-                                print(f"✅ Healed {symbol}: Setting entry to current price ${current_price:.8f} (Still no balance)")
+                                entry_price = current_price
                                 pnl = 0.0
+                                print(f"✅ Still no balance for {symbol}. Freezing P/L at 0.0%")
                         except Exception as e:
                             print(f"⚠️ Healing failed for {symbol}: {e}")
                     
@@ -2038,9 +2063,10 @@ class AlertSystem(commands.Cog):
                     should_exit = False
                     exit_reason = ""
                     
-                    # 🚀 GRACE PERIOD: Skip ALL aggressive exits for first 60 seconds
-                    # This prevents fake P/L from unindexed balances triggering premature exits
-                    if age_mins < 1.0:
+                    # 🚀 GRACE PERIOD: Skip ALL aggressive exits for first 120 seconds
+                    # This prevents fake P/L from unindexed balances or massive launch volatility triggering premature exits.
+                    # Degen mode requires letting the coin breathe for at least 2 minutes.
+                    if age_mins < 2.0:
                         # Only allow explicit force-exits during grace period (none currently)
                         pass
                     else:
@@ -2064,6 +2090,12 @@ class AlertSystem(commands.Cog):
                             should_exit = True
                             use_priority = True # Moonbag captured, use maximum priority to land
                             exit_reason = f"🌋 50% Moon Exit: +{pnl:.1f}% (Bag Secured!)"
+                        
+                        # 🚀 CRASH PROTECTION: Use priority for flash crashes
+                        if not should_exit and pnl <= -30.0:
+                            should_exit = True
+                            use_priority = True
+                            exit_reason = f"🚨 Crash Detected ({pnl:.1f}%)"
 
                     # ⏰ Time-based exits (Degen mode: don't marry the coin)
                     if not should_exit:
@@ -2079,13 +2111,6 @@ class AlertSystem(commands.Cog):
                         elif age_mins >= 60:
                             should_exit = True
                             exit_reason = f"🛡️ 60min Force Exit: {pnl:+.1f}%"
-                    
-                    # 🚀 CRASH PROTECTION: Use priority for flash crashes
-                    # GRACE PERIOD: Skip crash detection for first 60 seconds to let volatile entries settle
-                    if not should_exit and pnl <= -30.0 and age_mins >= 1.0:
-                        should_exit = True
-                        use_priority = True
-                        exit_reason = f"🚨 Crash Detected ({pnl:.1f}%)"
                     
                     # Check if whales are still in (Orphan detection)
                     if not should_exit and age_mins >= 30:
