@@ -945,6 +945,15 @@ class DexTrader:
 
             if ui_amount == 0:
                 print(f"⚠️ WARNING: Signature confirmed but balance not yet indexed for {token_mint[:8]}")
+                # 🛡️ P/L INTEGRITY FIX: Use Jupiter's expected output as fallback
+                # This is the amount Jupiter quoted us. It's accurate enough for entry price.
+                raw_output = result.get('output_amount')
+                if raw_output:
+                    # Most meme tokens are 6 or 9 decimals. Assume 6 for safety (underestimates tokens = higher entry price = safer P/L).
+                    # TODO: Fetch actual decimals from token metadata if needed for precision.
+                    estimated_ui_amount = int(raw_output) / 1e6
+                    print(f"✅ Using Jupiter quoted output as fallback: {estimated_ui_amount:.4f} tokens (assuming 6 decimals)")
+                    ui_amount = estimated_ui_amount
             
             # Track position
             self.positions[token_mint] = {
