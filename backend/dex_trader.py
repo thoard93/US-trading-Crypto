@@ -180,6 +180,28 @@ class DexTrader:
             print(f"Error getting token balance: {e}")
             return {"amount": 0, "ui_amount": 0}
     
+    def get_token_decimals(self, token_mint):
+        """Fetch token decimals from Solana RPC mint info. Returns 9 as default if fetch fails."""
+        try:
+            response = requests.post(self.rpc_url, json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getAccountInfo",
+                "params": [
+                    token_mint,
+                    {"encoding": "jsonParsed"}
+                ]
+            }, timeout=5)
+            result = response.json()
+            data = result.get('result', {}).get('value', {}).get('data', {})
+            if isinstance(data, dict) and data.get('parsed'):
+                decimals = data['parsed']['info'].get('decimals', 9)
+                print(f"🔢 Token decimals for {token_mint[:8]}: {decimals}")
+                return decimals
+        except Exception as e:
+            print(f"⚠️ Failed to fetch decimals for {token_mint[:8]}: {e}")
+        return 9  # Default to 9 (SPL standard) - this underestimates tokens = higher entry = safer P/L
+    
     def get_jupiter_quote(self, input_mint, output_mint, amount_lamports, override_slippage=None, is_pump=False):
         """Get a quote from Jupiter Aggregator with retries and reliable fallbacks.
         Returns tuple: (quote_dict, timestamp) for freshness tracking.
@@ -949,10 +971,10 @@ class DexTrader:
                 # This is the amount Jupiter quoted us. It's accurate enough for entry price.
                 raw_output = result.get('output_amount')
                 if raw_output:
-                    # Most meme tokens are 6 or 9 decimals. Assume 6 for safety (underestimates tokens = higher entry price = safer P/L).
-                    # TODO: Fetch actual decimals from token metadata if needed for precision.
-                    estimated_ui_amount = int(raw_output) / 1e6
-                    print(f"✅ Using Jupiter quoted output as fallback: {estimated_ui_amount:.4f} tokens (assuming 6 decimals)")
+                    # Fetch ACTUAL decimals from chain to avoid 1000x error
+                    decimals = self.get_token_decimals(token_mint)
+                    estimated_ui_amount = int(raw_output) / (10 ** decimals)
+                    print(f"✅ Using Jupiter quoted output as fallback: {estimated_ui_amount:.4f} tokens ({decimals} decimals)")
                     ui_amount = estimated_ui_amount
             
             # Track position
