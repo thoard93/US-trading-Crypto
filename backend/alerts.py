@@ -1856,7 +1856,24 @@ class AlertSystem(commands.Cog):
             print(f"❌ Swarm Monitor Error: {e}")
             traceback.print_exc()
 
-    @tasks.loop(seconds=10) # FLASH PROTECTION: Speed increased to 10s for Ultimate Bot
+    async def _get_sol_price(self, price_map=None):
+        """Fetch a reliable SOL/USDC price from price_map or DexScreener."""
+        # 1. Try price_map (Passed from orphan_guard)
+        if price_map:
+            sol_price = price_map.get('so11111111111111111111111111111111111111112')
+            if sol_price: return float(sol_price)
+            
+        # 2. Try fetching a fresh SOL/USDC native pair
+        try:
+            # SOL/USDC on Raydium
+            pair = await self.dex_scout.get_pair_data("solana", "58oQChkaFJvdyVzdEoeCAtP6HmbYyAt6HMoFnyasitnx")
+            if pair:
+                return float(pair.get('priceUsd', 240.0))
+        except:
+            pass
+        return 240.0 # Emergency Fallback
+
+    @tasks.loop(seconds=30)
     async def orphan_guard(self):
         """
         🛡️ ORPHAN GUARD: Safety net for stuck positions and failed sells.
@@ -1985,24 +2002,27 @@ class AlertSystem(commands.Cog):
                     is_suspicious = (pnl >= 50.0 or pnl <= -20.0) and age_mins < 5.0
                     
                     if is_suspicious:
-                        print(f"🧐 Sanity Check: Investigating {symbol} P/L ({pnl:.1f}% at {age_mins:.1f}m)...")
-                        try:
-                            # Re-fetch actual balance and post-buy price
-                            actual_bal = await self.run_sync(trader.get_token_balance, token_addr)
-                            ui_amount = actual_bal.get('ui_amount', 0)
-                            
-                            if ui_amount > 0:
-                                # We have a real balance! Calculate integrated entry price
-                                sol_amt = pos.get('amount_sol', 0.04)
-                                # Fetch a fresh SOL price for calculation
-                                fresh_pair = await self.dex_scout.get_pair_data("solana", token_addr)
-                                if fresh_pair:
-                                    s_price = float(fresh_pair.get('priceUsd', 0)) / float(fresh_pair.get('priceNative', 1)) if fresh_pair.get('priceNative') else 240.0
+                        # 🛡️ Anti-Spam: Don't heal twice in 60s
+                        last_heal = pos.get('last_heal_time', 0)
+                        if now - last_heal > 60:
+                            print(f"🧐 Sanity Check: Investigating {symbol} P/L ({pnl:.1f}% at {age_mins:.1f}m)...")
+                            try:
+                                # Re-fetch actual balance and post-buy price
+                                actual_bal = await self.run_sync(trader.get_token_balance, token_addr)
+                                ui_amount = actual_bal.get('ui_amount', 0)
+                                
+                                if ui_amount > 0:
+                                    # We have a real balance! Calculate integrated entry price
+                                    sol_amt = pos.get('amount_sol', 0.04)
+                                    # FETCH RELIABLE SOL PRICE
+                                    s_price = await self._get_sol_price(price_map)
+                                    
                                     new_entry = (sol_amt * s_price) / ui_amount
                                     
                                     # Update MEMORY
                                     pos['entry_price_usd'] = new_entry
                                     pos['tokens_received'] = ui_amount
+                                    pos['last_heal_time'] = now
                                     entry_price = new_entry # Update local variable for logic below
                                     tokens = ui_amount # Update local variable
                                     
@@ -2019,7 +2039,7 @@ class AlertSystem(commands.Cog):
                                             db_pos.entry_price_usd = new_entry
                                             db_pos.amount = float(ui_amount)
                                             db_heal.commit()
-                                            print(f"💾 Healed & Persisted {symbol}: New Entry ${new_entry:.8f}")
+                                            print(f"💾 Healed & Persisted {symbol}: New Entry ${new_entry:.8f} (SOL @ ${s_price:.1f})")
                                         db_heal.close()
                                     except Exception as db_e:
                                         print(f"⚠️ DB Healing failed: {db_e}")
@@ -2027,15 +2047,16 @@ class AlertSystem(commands.Cog):
                                     # Re-calculate P/L with new entry
                                     pnl = ((current_price - new_entry) / new_entry) * 100
                                     print(f"✅ Re-calculated {symbol} P/L: {pnl:.1f}%")
-                            else:
-                                # Still no balance? If we are > 1 min, this is WEIRD. 
-                                # Force entry price to current price to freeze P/L at 0 until balanced detected.
-                                pos['entry_price_usd'] = current_price
-                                entry_price = current_price
-                                pnl = 0.0
-                                print(f"✅ Still no balance for {symbol}. Freezing P/L at 0.0%")
-                        except Exception as e:
-                            print(f"⚠️ Healing failed for {symbol}: {e}")
+                                else:
+                                    # Still no balance? If we are > 1 min, this is WEIRD. 
+                                    # Force entry price to current price to freeze P/L at 0 until balanced detected.
+                                    pos['entry_price_usd'] = current_price
+                                    entry_price = current_price
+                                    pnl = 0.0
+                                    pos['last_heal_time'] = now
+                                    print(f"✅ Still no balance for {symbol}. Freezing P/L at 0.0%")
+                            except Exception as e:
+                                print(f"⚠️ Healing failed for {symbol}: {e}")
                     
                     # 🛡️ ULTIMATE BOT: TRAILING STOP LOSS
                     # 1. Update ATH PNL
@@ -2409,14 +2430,14 @@ class AlertSystem(commands.Cog):
                         # ULTIMATE BOT: Use actual tokens received, fallback to expected output from swap result
                         tokens_received = result.get('tokens_received', 0)
                         
-                        # Standard SOL price fallback
-                        sol_price = float(pair.get('priceUsd', 0)) / float(pair.get('priceNative', 1)) if pair.get('priceNative') else 240.0 
+                        # FETCH RELIABLE SOL PRICE
+                        sol_price = await self._get_sol_price()
                         
                         effective_entry = float(pair.get('priceUsd', 0)) # Snapshot Fallback (Post-buy price)
                         if tokens_received > 0:
                             # Accurate Effective Entry = (Total SOL Spent * SOL Value) / Tokens Received
                             effective_entry = (amount_sol * sol_price) / tokens_received
-                            print(f"🎯 Effective Entry Price calculated: ${effective_entry:.8f} (Matches Fill)")
+                            print(f"🎯 Effective Entry Price calculated: ${effective_entry:.8f} (SOL @ ${sol_price:.1f})")
                         else:
                             # 🛡️ PNL INTEGRITY FIX: If balance isn't indexed, we need a FRESH snapshot
                             # to avoid using the pre-buy price from the start of this function.
