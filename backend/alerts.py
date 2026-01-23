@@ -2066,13 +2066,21 @@ class AlertSystem(commands.Cog):
                         # Calculate USD P/L for alert
                         usd_pnl = 0
                         tokens = pos.get('tokens_received', 0)
+                        
+                        # Stable SOL price for calculation
+                        current_sol_price = 240.0 # Emergency Fallback
+                        try:
+                            if token_addr in price_map and 'sol' in price_map: # If we have SOL price in map
+                                current_sol_price = price_map.get('so11111111111111111111111111111111111111112', 240.0)
+                        except: pass
+
                         if tokens > 0 and entry_price > 0 and current_price > 0:
                             usd_pnl = tokens * (current_price - entry_price)
                         elif entry_price > 0 and current_price > 0:
-                            # Fallback if tokens missing
-                            sol_amt = pos.get('amount_sol', 0.08)
+                            # Fallback if tokens missing: Use SOL spent and P/L %
+                            sol_amt = pos.get('amount_sol', 0.04)
                             pnl_val = (current_price / entry_price - 1)
-                            usd_pnl = pnl_val * (sol_amt * 240)
+                            usd_pnl = pnl_val * (sol_amt * current_sol_price)
                         
                         hold_time_str = "Unknown"
                         if entry_time:
@@ -2340,16 +2348,23 @@ class AlertSystem(commands.Cog):
                             trader.positions[mint] = {}
                         
                         # Calculate EFFECTIVE entry price (SOL spent / tokens received)
+                        # ULTIMATE BOT: Use actual tokens received, fallback to expected output from swap result
                         tokens_received = result.get('tokens_received', 0)
-                        sol_price = float(pair.get('priceUsd', 0)) / float(pair.get('priceNative', 1)) if pair.get('priceNative') else 240.0 # Standard SOL price fallback
                         
-                        effective_entry = float(pair.get('priceUsd', 0)) # Default
+                        # Standard SOL price fallback
+                        sol_price = float(pair.get('priceUsd', 0)) / float(pair.get('priceNative', 1)) if pair.get('priceNative') else 240.0 
+                        
+                        effective_entry = float(pair.get('priceUsd', 0)) # Snapshot Fallback (Post-buy price)
                         if tokens_received > 0:
-                            # Effective Price = (SOL * SOL_Price) / Tokens
+                            # Accurate Effective Entry = (Total SOL Spent * SOL Value) / Tokens Received
                             effective_entry = (amount_sol * sol_price) / tokens_received
                             print(f"🎯 Effective Entry Price calculated: ${effective_entry:.8f} (Matches Fill)")
                         else:
-                            print(f"⚠️ Using signal price as fallback (Balance not indexed yet)")
+                            # 🛡️ PNL INTEGRITY FIX: If balance isn't indexed, the "pair" data we have 
+                            # is from AFTER the buy (fetched at line 2188). 
+                            # Using this as the entry price prevents the "ghost +1000% gains" 
+                            # caused by comparing pre-buy snapshots to post-buy prices.
+                            print(f"⚠️ Balance not yet indexed. Using post-buy snapshot as entry: ${effective_entry:.8f}")
 
                         trader.positions[mint].update({
                             'entry_price_usd': effective_entry,
