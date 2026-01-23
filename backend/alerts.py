@@ -2042,7 +2042,8 @@ class AlertSystem(commands.Cog):
                             exit_reason = f"🛡️ 60min Force Exit: {pnl:+.1f}%"
                     
                     # 🚀 CRASH PROTECTION: Use priority for flash crashes
-                    if not should_exit and pnl <= -30.0:
+                    # GRACE PERIOD: Skip crash detection for first 60 seconds to let volatile entries settle
+                    if not should_exit and pnl <= -30.0 and age_mins >= 1.0:
                         should_exit = True
                         use_priority = True
                         exit_reason = f"🚨 Crash Detected ({pnl:.1f}%)"
