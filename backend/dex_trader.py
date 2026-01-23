@@ -422,10 +422,9 @@ class DexTrader:
             signed_tx_bytes = bytes(signed_tx)
             signed_tx_base64 = base64.b64encode(signed_tx_bytes).decode('utf-8')
             
-            # Beast Mode 3.5: SKIP SIMULATION FOR ALL BUYS
-            # Buys are too time-sensitive. Sells still simulate for safety.
-            is_buy = (input_mint.lower() == "so11111111111111111111111111111111111111112")
-            should_simulate = (attempt == 0 and not is_buy)
+            # EMERGENCY FIX: Enable simulation for the first attempt to catch slippage/rugs for free
+            # This saves the Jito tip and transaction fee on failed or 0-liquidity tokens.
+            should_simulate = (attempt == 0)
             
             if should_simulate:
                 # Simulate transaction before sending (costs nothing, catches ~80% of slippage failures)
@@ -442,9 +441,9 @@ class DexTrader:
                     
                     if sim_err:
                         err_str = str(sim_err)
-                        # Check for slippage error (6014 / 0x177e)
+                        # Check for slippage error (6014 / 0x177e) or rug-specific errors
                         if '6014' in err_str or '0x177e' in err_str:
-                            print(f"🛑 PRE-FLIGHT ABORT: Slippage would fail (saved TX fee!)")
+                            print(f"🛑 PRE-FLIGHT ABORT: Slippage/Liquidity would fail (saved TX fee!)")
                             return {"error": "Pre-flight simulation: Slippage exceeded", "simulated": True}
                         else:
                             print(f"🛑 PRE-FLIGHT ABORT: Simulation failed: {sim_err}")

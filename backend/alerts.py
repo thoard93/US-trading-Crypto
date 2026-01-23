@@ -51,6 +51,7 @@ class AlertSystem(commands.Cog):
         self.safety = SafetyChecker()
         self.copy_trader = SmartCopyTrader()
         self.processed_swarms = set() # Track processed swarm signals (mint + window_id)
+        self.active_swarm_locks = set() # EMERGENCY: Prevent parallel buy loops for same token
         
         # Initialize Polymarket (Paper Mode by default)
         self.polymarket_collector = None
@@ -2165,11 +2166,17 @@ class AlertSystem(commands.Cog):
                 # Cooldown expired, remove from blacklist
                 del self._dump_blacklist[mint]
         
+        if mint in self.active_swarm_locks:
+            return
+        
         if mint in self._failed_tokens:
             last_fail = self._failed_tokens[mint]
-            if now - last_fail < 300:  # 5 minute cooldown
+            if now - last_fail < 600:  # 10 minute cooldown for balance protection
                 print(f"⏳ Skipping {mint[:16]}... (on cooldown after failed trade)")
                 return
+        
+        self.active_swarm_locks.add(mint)
+        try:
         
         # ALL TOKENS ALLOWED (Alpha Unlock)
         
@@ -2228,9 +2235,11 @@ class AlertSystem(commands.Cog):
             safety_pass = safety_score >= 50
             all_pass = liq_pass and safety_pass
             
-            # Special bypass for brand new launches (0 liquidity on DexScreener but high whale count)
+            # Special bypass for brand new launches (High whale count)
             is_new_launch = False
-            if not liq_pass and liquidity == 0 and whale_count >= 3:
+            # EMERGENCY FIX: Add a $500 floor even for high conviction.
+            # Avoids trying to buy before routable pools exist.
+            if not liq_pass and liquidity >= 500 and whale_count >= 3:
                  print(f"🌊 Brand New Launch Detected: {symbol}")
                  if safety_pass: # AUDIT FIX: Still require safety score >= 50
                       print(f"✅ Safety Check Passed for Fresh Launch (Aping in!)")
@@ -2379,6 +2388,9 @@ class AlertSystem(commands.Cog):
 
         except Exception as e:
             print(f"❌ Execute Swarm Error: {e}")
+        finally:
+            if mint in self.active_swarm_locks:
+                self.active_swarm_locks.remove(mint)
 
     async def trigger_instant_exit(self, mint):
         """
