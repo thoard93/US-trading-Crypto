@@ -2005,26 +2005,32 @@ class AlertSystem(commands.Cog):
                     should_exit = False
                     exit_reason = ""
                     
-                    # 2. AGGRESSIVE TRAILING STOP (Tiered dropback)
-                    # Protect gains by selling if price drops significantly from peak
-                    if highest_pnl >= 50.0:
-                        # If we hit +50%, protect: sell if drops 15% from peak
-                        stop_level = highest_pnl - 15.0
-                        if pnl < stop_level:
+                    # 🚀 GRACE PERIOD: Skip ALL aggressive exits for first 60 seconds
+                    # This prevents fake P/L from unindexed balances triggering premature exits
+                    if age_mins < 1.0:
+                        # Only allow explicit force-exits during grace period (none currently)
+                        pass
+                    else:
+                        # 2. AGGRESSIVE TRAILING STOP (Tiered dropback)
+                        # Protect gains by selling if price drops significantly from peak
+                        if highest_pnl >= 50.0:
+                            # If we hit +50%, protect: sell if drops 15% from peak
+                            stop_level = highest_pnl - 15.0
+                            if pnl < stop_level:
+                                should_exit = True
+                                exit_reason = f"📉 Trailing Stop: {pnl:.1f}% (Peak was +{highest_pnl:.1f}%)"
+                        elif highest_pnl >= 20.0:
+                            # If we hit +20%, protect: sell if drops 8% from peak
+                            stop_level = highest_pnl - 8.0
+                            if pnl < stop_level:
+                                should_exit = True
+                                exit_reason = f"📉 Trailing Stop: {pnl:.1f}% (Peak was +{highest_pnl:.1f}%)"
+                        
+                        # 🛡️ HARD TAKE PROFIT (Secure the bag early)
+                        if not should_exit and pnl >= 50:
                             should_exit = True
-                            exit_reason = f"📉 Trailing Stop: {pnl:.1f}% (Peak was +{highest_pnl:.1f}%)"
-                    elif highest_pnl >= 20.0:
-                        # If we hit +20%, protect: sell if drops 8% from peak
-                        stop_level = highest_pnl - 8.0
-                        if pnl < stop_level:
-                            should_exit = True
-                            exit_reason = f"📉 Trailing Stop: {pnl:.1f}% (Peak was +{highest_pnl:.1f}%)"
-                    
-                    # 🛡️ HARD TAKE PROFIT (Secure the bag early)
-                    if not should_exit and pnl >= 50:
-                        should_exit = True
-                        use_priority = True # Moonbag captured, use maximum priority to land
-                        exit_reason = f"🌋 50% Moon Exit: +{pnl:.1f}% (Bag Secured!)"
+                            use_priority = True # Moonbag captured, use maximum priority to land
+                            exit_reason = f"🌋 50% Moon Exit: +{pnl:.1f}% (Bag Secured!)"
 
                     # ⏰ Time-based exits (Degen mode: don't marry the coin)
                     if not should_exit:
