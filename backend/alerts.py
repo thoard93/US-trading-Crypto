@@ -2178,216 +2178,216 @@ class AlertSystem(commands.Cog):
         self.active_swarm_locks.add(mint)
         try:
         
-        # ALL TOKENS ALLOWED (Alpha Unlock)
-        
-        # 1. Get Token Info (Symbol, Liquidity)
-        try:
-            print(f"🔍 Swarm Trade: Fetching pair data for {mint[:16]}...")
+            # ALL TOKENS ALLOWED (Alpha Unlock)
+            
+            # 1. Get Token Info (Symbol, Liquidity)
+            try:
+                print(f"🔍 Swarm Trade: Fetching pair data for {mint[:16]}...")
+                    
+                pair = await self.dex_scout.get_pair_data("solana", mint)
+                channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
                 
-            pair = await self.dex_scout.get_pair_data("solana", mint)
-            channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
-            
-            if not pair:
-                # print(f"🚫 Swarm Ignored: No pair data found for {mint[:16]}...")
-                # SILENCED DISCORD NOISE to prevent rate limits
-                # if channel_memes:
-                #     await channel_memes.send(f"🚫 **Swarm Token:** `{mint[:20]}...` - No DEX data found")
-                return
-            
-            print(f"✅ Found DexScreener data for {mint[:16]}!")
-            
-            symbol = pair.get('baseToken', {}).get('symbol', 'UNKNOWN')
-            liquidity = float(pair.get('liquidity', {}).get('usd', 0))
-            price = float(pair.get('priceUsd', 0))
-            dex_url = f"https://dexscreener.com/solana/{mint}"
-            
-            # 2. Safety Check (do this first for the embed)
-            # 1. ULTIMATE BOT: CONFIDENCE SCORE
-            whale_count = len(self.copy_trader.active_swarms.get(mint, set()))
-            whales = self.copy_trader.active_swarms.get(mint, set())
-            total_confidence = 0
-            for addr in whales:
-                score = self.copy_trader.qualified_wallets.get(addr, {}).get('score', 10.0)
-                total_confidence += score
-            
-            print(f"Ultimate Bot: Analyzed swarm for {symbol}. Confidence: {total_confidence:.1f} ({whale_count} whales)")
-            
-            if total_confidence < self.whale_confidence_threshold:
-                print(f"🚫 Skipped {symbol}: Confidence {total_confidence:.1f} < {self.whale_confidence_threshold}")
-                return
-
-            safety_result = await self.safety.check_solana_token(mint)
-            safety_score = safety_result.get('safety_score', 0)
-            risks = safety_result.get('risks', [])
-            print(f"🛡️ Safety Check: {symbol} scored {safety_score}/100")
-            # ULTIMATE BOT: TIERED LIQUIDITY (Alpha Hunter)
-            # 10+ Whales = $20k, 5+ Whales = $30k, 3+ Whales = $40k
-            
-            liq_threshold = 40000 # Default (3 whales)
-            if whale_count >= 10: liq_threshold = 20000 # Ultra-early / High Conviction
-            elif whale_count >= 5: liq_threshold = 30000 # Aggressive
-            elif whale_count >= 3: liq_threshold = 40000 # Standard Alpha Hunter
-            
-            print(f"📊 Swarm Token: {symbol} | Liq: ${liquidity:,.0f} | Required: ${liq_threshold:,.0f} ({whale_count} whales)")
-            
-            # --- ALPHA HUNTER: SPECIAL CASE HANDLING ---
-            liq_pass = liquidity >= liq_threshold
-            safety_pass = safety_score >= 50
-            all_pass = liq_pass and safety_pass
-            
-            # Special bypass for brand new launches (High whale count)
-            is_new_launch = False
-            # EMERGENCY FIX: Add a $500 floor even for high conviction.
-            # Avoids trying to buy before routable pools exist.
-            if not liq_pass and liquidity >= 500 and whale_count >= 3:
-                 print(f"🌊 Brand New Launch Detected: {symbol}")
-                 if safety_pass: # AUDIT FIX: Still require safety score >= 50
-                      print(f"✅ Safety Check Passed for Fresh Launch (Aping in!)")
-                      all_pass = True
-                      is_new_launch = True
-                 else:
-                      print(f"🚫 Safety Check FAILED for Fresh Launch ({safety_score})")
-            
-            embed_color = discord.Color.green() if all_pass else discord.Color.red()
-            decision = "Ultimate Buy Activated" if all_pass else "Skipped"
-            if is_new_launch: decision = "Ultimate Buy Activated (Fresh Launch)"
-            
-            embed = discord.Embed(
-                title=f"Ultimate Bot: {symbol}",
-                description=f"**Decision:** {decision} ({whale_count} Whales)",
-                color=embed_color
-            )
-            embed.add_field(name="💰 Liquidity", value=f"${liquidity:,.0f} (Req: ${liq_threshold:,.0f})", inline=True)
-            embed.add_field(name="🛡️ Safety", value=f"{safety_score}/100", inline=True)
-            embed.add_field(name="💵 Price", value=f"${price:.8f}" if price < 0.01 else f"${price:.4f}", inline=True)
-            
-            if not all_pass:
-                if not liq_pass:
-                    print(f"🚫 Skipped {symbol}: Liquidity ${liquidity:,.0f} < ${liq_threshold:,.0f}")
-                    embed.add_field(name="❌ Blocked", value=f"Liquidity too low for {whale_count} whales", inline=False)
-                elif not safety_pass:
-                    embed.add_field(name="❌ Blocked", value=f"Safety score fail ({safety_score})", inline=False)
-            elif is_new_launch:
-                embed.add_field(name="🌊 Strategy", value="Brand New Launch (High Conviction)", inline=False)
-
-            embed.add_field(name="🔗 DEX", value=f"[View on DexScreener]({dex_url})", inline=False)
-            
-            channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
-            if channel_memes:
-                await channel_memes.send(embed=embed)
-            
-            if not all_pass:
-                return
+                if not pair:
+                    # print(f"🚫 Swarm Ignored: No pair data found for {mint[:16]}...")
+                    # SILENCED DISCORD NOISE to prevent rate limits
+                    # if channel_memes:
+                    #     await channel_memes.send(f"🚫 **Swarm Token:** `{mint[:20]}...` - No DEX data found")
+                    return
                 
-            # 5. ULTIMATE BOT: CONVICTION SIZING (Alpha Hunter v2 - Capital Preservation)
-            # 10+ Whales = 0.08 SOL, 5+ Whales = 0.06 SOL, Default (3 Whales) = 0.04 SOL
-            amount_sol = 0.04 
-            if whale_count >= 10: amount_sol = 0.08
-            elif whale_count >= 5: amount_sol = 0.06
-            
-            print(f"Ultimate Bot: Executing {amount_sol} SOL buy for {symbol} ({whale_count} whales)")
+                print(f"✅ Found DexScreener data for {mint[:16]}!")
+                
+                symbol = pair.get('baseToken', {}).get('symbol', 'UNKNOWN')
+                liquidity = float(pair.get('liquidity', {}).get('usd', 0))
+                price = float(pair.get('priceUsd', 0))
+                dex_url = f"https://dexscreener.com/solana/{mint}"
+                
+                # 2. Safety Check (do this first for the embed)
+                # 1. ULTIMATE BOT: CONFIDENCE SCORE
+                whale_count = len(self.copy_trader.active_swarms.get(mint, set()))
+                whales = self.copy_trader.active_swarms.get(mint, set())
+                total_confidence = 0
+                for addr in whales:
+                    score = self.copy_trader.qualified_wallets.get(addr, {}).get('score', 10.0)
+                    total_confidence += score
+                
+                print(f"Ultimate Bot: Analyzed swarm for {symbol}. Confidence: {total_confidence:.1f} ({whale_count} whales)")
+                
+                if total_confidence < self.whale_confidence_threshold:
+                    print(f"🚫 Skipped {symbol}: Confidence {total_confidence:.1f} < {self.whale_confidence_threshold}")
+                    return
+
+                safety_result = await self.safety.check_solana_token(mint)
+                safety_score = safety_result.get('safety_score', 0)
+                risks = safety_result.get('risks', [])
+                print(f"🛡️ Safety Check: {symbol} scored {safety_score}/100")
+                # ULTIMATE BOT: TIERED LIQUIDITY (Alpha Hunter)
+                # 10+ Whales = $20k, 5+ Whales = $30k, 3+ Whales = $40k
+                
+                liq_threshold = 40000 # Default (3 whales)
+                if whale_count >= 10: liq_threshold = 20000 # Ultra-early / High Conviction
+                elif whale_count >= 5: liq_threshold = 30000 # Aggressive
+                elif whale_count >= 3: liq_threshold = 40000 # Standard Alpha Hunter
+                
+                print(f"📊 Swarm Token: {symbol} | Liq: ${liquidity:,.0f} | Required: ${liq_threshold:,.0f} ({whale_count} whales)")
+                
+                # --- ALPHA HUNTER: SPECIAL CASE HANDLING ---
+                liq_pass = liquidity >= liq_threshold
+                safety_pass = safety_score >= 50
+                all_pass = liq_pass and safety_pass
+                
+                # Special bypass for brand new launches (High whale count)
+                is_new_launch = False
+                # EMERGENCY FIX: Add a $500 floor even for high conviction.
+                # Avoids trying to buy before routable pools exist.
+                if not liq_pass and liquidity >= 500 and whale_count >= 3:
+                     print(f"🌊 Brand New Launch Detected: {symbol}")
+                     if safety_pass: # AUDIT FIX: Still require safety score >= 50
+                          print(f"✅ Safety Check Passed for Fresh Launch (Aping in!)")
+                          all_pass = True
+                          is_new_launch = True
+                     else:
+                          print(f"🚫 Safety Check FAILED for Fresh Launch ({safety_score})")
+                
+                embed_color = discord.Color.green() if all_pass else discord.Color.red()
+                decision = "Ultimate Buy Activated" if all_pass else "Skipped"
+                if is_new_launch: decision = "Ultimate Buy Activated (Fresh Launch)"
+                
+                embed = discord.Embed(
+                    title=f"Ultimate Bot: {symbol}",
+                    description=f"**Decision:** {decision} ({whale_count} Whales)",
+                    color=embed_color
+                )
+                embed.add_field(name="💰 Liquidity", value=f"${liquidity:,.0f} (Req: ${liq_threshold:,.0f})", inline=True)
+                embed.add_field(name="🛡️ Safety", value=f"{safety_score}/100", inline=True)
+                embed.add_field(name="💵 Price", value=f"${price:.8f}" if price < 0.01 else f"${price:.4f}", inline=True)
+                
+                if not all_pass:
+                    if not liq_pass:
+                        print(f"🚫 Skipped {symbol}: Liquidity ${liquidity:,.0f} < ${liq_threshold:,.0f}")
+                        embed.add_field(name="❌ Blocked", value=f"Liquidity too low for {whale_count} whales", inline=False)
+                    elif not safety_pass:
+                        embed.add_field(name="❌ Blocked", value=f"Safety score fail ({safety_score})", inline=False)
+                elif is_new_launch:
+                    embed.add_field(name="🌊 Strategy", value="Brand New Launch (High Conviction)", inline=False)
+
+                embed.add_field(name="🔗 DEX", value=f"[View on DexScreener]({dex_url})", inline=False)
+                
+                channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
+                if channel_memes:
+                    await channel_memes.send(embed=embed)
+                
+                if not all_pass:
+                    return
+                    
+                # 5. ULTIMATE BOT: CONVICTION SIZING (Alpha Hunter v2 - Capital Preservation)
+                # 10+ Whales = 0.08 SOL, 5+ Whales = 0.06 SOL, Default (3 Whales) = 0.04 SOL
+                amount_sol = 0.04 
+                if whale_count >= 10: amount_sol = 0.08
+                elif whale_count >= 5: amount_sol = 0.06
+                
+                print(f"Ultimate Bot: Executing {amount_sol} SOL buy for {symbol} ({whale_count} whales)")
 
 
-            # NOTE: Emergency safety blocker removed - VPS is now primary server
-            
-            # 5. Execute for ALL traders (multi-user support)
-            channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
-            
-            for trader in self.dex_traders:
-                user_label = getattr(trader, 'user_id', 'Main')
+                # NOTE: Emergency safety blocker removed - VPS is now primary server
                 
-                # Skip if this trader already holds (memory cache)
-                if mint in trader.positions:
-                    print(f"⏭️ SKIP: User {user_label} already holds {symbol} (cache)")
-                    continue
+                # 5. Execute for ALL traders (multi-user support)
+                channel_memes = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
                 
-                # LIVE CHECK: Query actual wallet to avoid buying after deploy
-                try:
-                    holdings = trader.get_all_tokens()  # Returns {mint: amount} dict
-                    if mint in holdings and holdings[mint] > 0:
-                        print(f"⏭️ SKIP: User {user_label} already holds {symbol} (on-chain)")
+                for trader in self.dex_traders:
+                    user_label = getattr(trader, 'user_id', 'Main')
+                    
+                    # Skip if this trader already holds (memory cache)
+                    if mint in trader.positions:
+                        print(f"⏭️ SKIP: User {user_label} already holds {symbol} (cache)")
                         continue
-                except Exception as e:
-                    print(f"⚠️ Live balance check failed: {e}")
-                    # Continue anyway - memory cache check is primary
-                
-                print(f"🚀 BUYING SWARM (User {user_label}): {symbol} - {amount_sol} SOL")
-                # Run sync trading in executor to avoid blocking Discord heartbeat during 30s confirmation wait
-                loop = asyncio.get_running_loop()
-                result = await loop.run_in_executor(None, trader.buy_token, mint, amount_sol)
-                
-                if result.get('success'):
-                    sig = result.get('signature', 'Unknown')
-                    # Log to Discord
-                    if channel_memes:
-                        embed = discord.Embed(
-                            title=f"🐋 SWARM BUY: {symbol}",
-                            description=f"Following Smart Money!\n**User:** {user_label}\n**Amount:** {amount_sol} SOL\n**Safety:** {safety_score}/100",
-                            color=discord.Color.purple()
-                        )
-                        embed.add_field(name="TX", value=f"`{sig[:32]}...`", inline=False)
-                        await channel_memes.send(embed=embed)
-                         
-                    # Track Position - MERGE with dex_trader results to keep tokens_received
-                    if mint not in trader.positions:
-                        trader.positions[mint] = {}
                     
-                    # Calculate EFFECTIVE entry price (SOL spent / tokens received)
-                    tokens_received = result.get('tokens_received', 0)
-                    sol_price = float(pair.get('priceUsd', 0)) / float(pair.get('priceNative', 1)) if pair.get('priceNative') else 240.0 # Standard SOL price fallback
-                    
-                    effective_entry = float(pair.get('priceUsd', 0)) # Default
-                    if tokens_received > 0:
-                        # Effective Price = (SOL * SOL_Price) / Tokens
-                        effective_entry = (amount_sol * sol_price) / tokens_received
-                        print(f"🎯 Effective Entry Price calculated: ${effective_entry:.8f} (Matches Fill)")
-                    else:
-                        print(f"⚠️ Using signal price as fallback (Balance not indexed yet)")
-
-                    trader.positions[mint].update({
-                        'entry_price_usd': effective_entry,
-                        'entry_time': datetime.datetime.now().timestamp(),
-                        'amount_sol': amount_sol,
-                        'tokens_received': tokens_received, # Capture actual fill for P/L integrity
-                        'symbol': symbol,
-                        'highest_pnl': 0.0 # Initialize Moon Engine
-                    })
-
-                    # --- DB PERSISTENCE (Audit Fix) ---
+                    # LIVE CHECK: Query actual wallet to avoid buying after deploy
                     try:
-                        db_buy = SessionLocal()
-                        new_pos = models.DexPosition(
-                            token_address=mint,
-                            wallet_address=trader.wallet_address,
-                            symbol=symbol,
-                            entry_price_usd=effective_entry,
-                            amount=float(tokens_received)
-                        )
-                        db_buy.add(new_pos)
-                        db_buy.commit()
-                        print(f"💾 Persisted {symbol} trade to DB (User {user_label})")
-                    except Exception as db_err:
-                        print(f"⚠️ Swarm Buy DB error: {db_err}")
-                    finally:
-                        db_buy.close()
-                else:
-                    # Buy failed - log to Discord and add to cooldown
-                    error_msg = result.get('error', 'Unknown error')
-                    print(f"❌ Swarm Buy FAILED for {symbol} (User {user_label}): {error_msg}")
+                        holdings = trader.get_all_tokens()  # Returns {mint: amount} dict
+                        if mint in holdings and holdings[mint] > 0:
+                            print(f"⏭️ SKIP: User {user_label} already holds {symbol} (on-chain)")
+                            continue
+                    except Exception as e:
+                        print(f"⚠️ Live balance check failed: {e}")
+                        # Continue anyway - memory cache check is primary
                     
-                    # Add to cooldown to prevent infinite retries
-                    self._failed_tokens[mint] = datetime.datetime.now().timestamp()
-                    self.save_failed_tokens()
+                    print(f"🚀 BUYING SWARM (User {user_label}): {symbol} - {amount_sol} SOL")
+                    # Run sync trading in executor to avoid blocking Discord heartbeat during 30s confirmation wait
+                    loop = asyncio.get_running_loop()
+                    result = await loop.run_in_executor(None, trader.buy_token, mint, amount_sol)
                     
-                    if channel_memes:
-                        if "timeout" in error_msg.lower():
-                            await channel_memes.send(f"⏳ **Buy Timeout (User {user_label}):** `{symbol}` - TX may have landed. Monitoring wallet for sync... 💎")
+                    if result.get('success'):
+                        sig = result.get('signature', 'Unknown')
+                        # Log to Discord
+                        if channel_memes:
+                            embed = discord.Embed(
+                                title=f"🐋 SWARM BUY: {symbol}",
+                                description=f"Following Smart Money!\n**User:** {user_label}\n**Amount:** {amount_sol} SOL\n**Safety:** {safety_score}/100",
+                                color=discord.Color.purple()
+                            )
+                            embed.add_field(name="TX", value=f"`{sig[:32]}...`", inline=False)
+                            await channel_memes.send(embed=embed)
+                             
+                        # Track Position - MERGE with dex_trader results to keep tokens_received
+                        if mint not in trader.positions:
+                            trader.positions[mint] = {}
+                        
+                        # Calculate EFFECTIVE entry price (SOL spent / tokens received)
+                        tokens_received = result.get('tokens_received', 0)
+                        sol_price = float(pair.get('priceUsd', 0)) / float(pair.get('priceNative', 1)) if pair.get('priceNative') else 240.0 # Standard SOL price fallback
+                        
+                        effective_entry = float(pair.get('priceUsd', 0)) # Default
+                        if tokens_received > 0:
+                            # Effective Price = (SOL * SOL_Price) / Tokens
+                            effective_entry = (amount_sol * sol_price) / tokens_received
+                            print(f"🎯 Effective Entry Price calculated: ${effective_entry:.8f} (Matches Fill)")
                         else:
-                            await channel_memes.send(f"❌ **Swarm Buy Failed (User {user_label}):** `{symbol}` - {error_msg[:50]}... (5min cooldown)")
+                            print(f"⚠️ Using signal price as fallback (Balance not indexed yet)")
+
+                        trader.positions[mint].update({
+                            'entry_price_usd': effective_entry,
+                            'entry_time': datetime.datetime.now().timestamp(),
+                            'amount_sol': amount_sol,
+                            'tokens_received': tokens_received, # Capture actual fill for P/L integrity
+                            'symbol': symbol,
+                            'highest_pnl': 0.0 # Initialize Moon Engine
+                        })
+
+                        # --- DB PERSISTENCE (Audit Fix) ---
+                        try:
+                            db_buy = SessionLocal()
+                            new_pos = models.DexPosition(
+                                token_address=mint,
+                                wallet_address=trader.wallet_address,
+                                symbol=symbol,
+                                entry_price_usd=effective_entry,
+                                amount=float(tokens_received)
+                            )
+                            db_buy.add(new_pos)
+                            db_buy.commit()
+                            print(f"💾 Persisted {symbol} trade to DB (User {user_label})")
+                        except Exception as db_err:
+                            print(f"⚠️ Swarm Buy DB error: {db_err}")
+                        finally:
+                            db_buy.close()
+                    else:
+                        # Buy failed - log to Discord and add to cooldown
+                        error_msg = result.get('error', 'Unknown error')
+                        print(f"❌ Swarm Buy FAILED for {symbol} (User {user_label}): {error_msg}")
+                        
+                        # Add to cooldown to prevent infinite retries
+                        self._failed_tokens[mint] = datetime.datetime.now().timestamp()
+                        self.save_failed_tokens()
+                        
+                        if channel_memes:
+                            if "timeout" in error_msg.lower():
+                                await channel_memes.send(f"⏳ **Buy Timeout (User {user_label}):** `{symbol}` - TX may have landed. Monitoring wallet for sync... 💎")
+                            else:
+                                await channel_memes.send(f"❌ **Swarm Buy Failed (User {user_label}):** `{symbol}` - {error_msg[:50]}... (5min cooldown)")
 
 
-        except Exception as e:
-            print(f"❌ Execute Swarm Error: {e}")
+            except Exception as e:
+                print(f"❌ Execute Swarm Error (Internal): {e}")
         finally:
             if mint in self.active_swarm_locks:
                 self.active_swarm_locks.remove(mint)
