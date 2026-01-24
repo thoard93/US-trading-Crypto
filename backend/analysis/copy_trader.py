@@ -551,13 +551,41 @@ class SmartCopyTrader:
                 if mint in self.active_swarms:
                     continue
                 
-                # ALL TOKENS NOW ALLOWED (Ultimate Bot: Alpha Unlock)
-                # Pump.fun tokens will be routed via Jupiter/Jito with aggressive slippage.
+                # 🎯 SMART WHALE FILTERING (Sustainable Growth V2)
+                # Only count whales who are:
+                # 1. Active for at least 48 hours (not bot-spam)
+                # 2. Have positive score (historical wins > losses)
+                qualified_buyers = set()
+                for wallet in buyers:
+                    whale_data = self.qualified_wallets.get(wallet, {})
                     
-                self.logger.info(f"🚀 SWARM DETECTED: {len(buyers)} whales bought {mint}")
+                    # Check persistence (48hr minimum)
+                    discovered_at = whale_data.get('discovered_at')
+                    if discovered_at:
+                        try:
+                            disc_time = datetime.fromisoformat(discovered_at)
+                            age_hours = (now - disc_time).total_seconds() / 3600
+                            if age_hours < 48:
+                                continue  # Too new, skip
+                        except:
+                            pass  # Can't parse, allow through
+                    
+                    # Check positive PNL (score > 0)
+                    score = whale_data.get('score', 10.0)
+                    if score <= 0:
+                        continue  # Negative PNL history, skip
+                    
+                    qualified_buyers.add(wallet)
+                
+                # Re-check threshold after filtering
+                if len(qualified_buyers) < min_buyers:
+                    self.logger.info(f"⏭️ Filtered Swarm: {mint[:8]}... ({len(buyers)} raw, {len(qualified_buyers)} qualified)")
+                    continue
+                    
+                self.logger.info(f"🚀 SWARM DETECTED: {len(qualified_buyers)} QUALIFIED whales bought {mint}")
                 signals.append(mint)
-                self.active_swarms[mint] = buyers
-                for whale in buyers:
+                self.active_swarms[mint] = qualified_buyers
+                for whale in qualified_buyers:
                     self._save_swarm_participant(mint, whale)
                     
         return signals

@@ -76,7 +76,7 @@ class AlertSystem(commands.Cog):
         self.dev_shadow_enabled = True
         self.dynamic_sizing_enabled = True
         
-        self.dex_min_liquidity = 100000  # $100k min - increased for Safe Harbor
+        self.dex_min_liquidity = 250000  # $250k min - Blue Chip Focus (Sustainable Growth V2)
         self.dex_max_positions = 5        # Capped at 5 for capital preservation
         self.dev_shadow_enabled = True
         self.dynamic_sizing_enabled = True
@@ -2105,6 +2105,23 @@ class AlertSystem(commands.Cog):
                                 should_exit = True
                                 exit_reason = f"📉 Trailing Stop: {pnl:.1f}% (Peak was +{highest_pnl:.1f}%)"
                         
+                        # 🎒 PARTIAL PROFIT TAKING: Sell 50% at +25% to secure entry
+                        if not should_exit and pnl >= 25.0 and not pos.get('partial_sold', False):
+                            # Execute partial sell (50%)
+                            print(f"🎒 FREE BAG: Selling 50% of {symbol} at +{pnl:.1f}% to secure entry!")
+                            partial_result = await self.run_sync(trader.sell_token, token_addr, percentage=50)
+                            if partial_result.get('success'):
+                                pos['partial_sold'] = True
+                                pos['amount_sol'] = pos.get('amount_sol', 0.04) * 0.5  # Halve tracked amount
+                                if channel_memes:
+                                    embed = discord.Embed(
+                                        title=f"🎒 FREE BAG: {symbol}",
+                                        description=f"Secured 50% profit at **+{pnl:.1f}%**!\nRemaining 50% rides FREE. 🚀",
+                                        color=discord.Color.gold()
+                                    )
+                                    await channel_memes.send(embed=embed)
+                            # Don't set should_exit - let the rest run
+                        
                         # 🛡️ HARD TAKE PROFIT (Secure the bag early)
                         if not should_exit and pnl >= 50:
                             should_exit = True
@@ -2142,6 +2159,15 @@ class AlertSystem(commands.Cog):
                     if should_exit:
                         print(f"🛡️ Orphan Guard: {exit_reason} - {symbol} (User {user_label})")
                         
+                        # 🔥 DYNAMIC SLIPPAGE (Sustainable Growth V2)
+                        # Detect dump condition: P/L is negative and we want out
+                        # Use aggressive slippage to ensure exit lands
+                        dump_slippage = None
+                        if pnl <= -10.0:
+                            dump_slippage = 5000  # 50% slippage for dumps
+                            use_priority = True   # Priority tip too
+                            print(f"🔥 DUMP DETECTED: Using 50% slippage + priority for {symbol}")
+                        
                         # Calculate USD P/L for alert
                         usd_pnl = 0
                         tokens = pos.get('tokens_received', 0)
@@ -2175,7 +2201,7 @@ class AlertSystem(commands.Cog):
                         # Capture SOL balance BEFORE sell for accurate P/L
                         sol_before = await self.run_sync(trader.get_sol_balance)
                         
-                        result = await self.run_sync(trader.sell_token, token_addr, priority=priority_val)
+                        result = await self.run_sync(trader.sell_token, token_addr, priority=priority_val, override_slippage=dump_slippage)
                         
                         if result.get('success'):
                             # 🎯 ACCURATE P/L: Compare SOL received vs SOL spent
