@@ -133,6 +133,7 @@ class AlertSystem(commands.Cog):
 
         # Load failed tokens blacklist
         self._failed_tokens = {}
+        self._dump_blacklist = {}  # {mint: timestamp} - prevents re-entry after whale dump
         self.load_failed_tokens()
 
         self.load_failed_tokens()
@@ -2083,6 +2084,7 @@ class AlertSystem(commands.Cog):
                     
                     should_exit = False
                     exit_reason = ""
+                    use_priority = False  # Initialize for later use
                     
                     # 🚀 GRACE PERIOD: Skip ALL aggressive exits for first 120 seconds
                     # This prevents fake P/L from unindexed balances or massive launch volatility triggering premature exits.
@@ -2196,8 +2198,8 @@ class AlertSystem(commands.Cog):
                             else:
                                 hold_time_str = f"{int(age_sec // 60)}m {int(age_sec % 60)}s"
 
-                        # Determine if we should use Priority Jito Tip (2x)
-                        priority_val = locals().get('use_priority', False)
+                        # Use priority tip for moon/crash exits
+                        priority_val = use_priority
                         
                         # Capture SOL balance BEFORE sell for accurate P/L
                         sol_before = await self.run_sync(trader.get_sol_balance)
