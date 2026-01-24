@@ -1818,12 +1818,25 @@ class AlertSystem(commands.Cog):
                 if already_holding:
                     continue
                 
-                # ALERT MODE: Always send Discord alert for swarms
+                # PRE-CHECK: Calculate confidence BEFORE alerting (Sustainable Growth V2)
+                # This prevents the "silent fail" where we alert but don't trade
+                whales = self.copy_trader.active_swarms.get(mint, set())
+                whale_count = len(whales)
+                total_confidence = sum(
+                    self.copy_trader.qualified_wallets.get(addr, {}).get('score', 10.0)
+                    for addr in whales
+                )
+                
+                if total_confidence < self.whale_confidence_threshold:
+                    print(f"⏭️ Pre-Check Skip: {mint[:16]}... Confidence {total_confidence:.1f} < {self.whale_confidence_threshold}")
+                    continue
+                
+                # ALERT MODE: Only send alert AFTER confidence check passes
                 if channel_memes:
                     await channel_memes.send(
                         f"🚀🚀🚀 **DEGEN SWARM DETECTED!** 🚀🚀🚀\n"
                         f"Token: `{mint[:16]}...`\n"
-                        f"3+ Whales are APING IN! To the moon? 🌕\n"
+                        f"**{whale_count}** Qualified Whales (Score: {total_confidence:.0f}) APING IN! 🌕\n"
                         f"Check DEXScreener: https://dexscreener.com/solana/{mint}"
                     )
                 
