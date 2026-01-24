@@ -301,27 +301,26 @@ class DexTrader:
             if use_jito:
                 jito_tip_lamports = self.get_jito_tip_amount_lamports()
                 
-                # BEAST MODE 4.3: Landing Optimization (Alpha Hunter v2.1)
-                # Balanced floor: 0.008 SOL (Sweet spot for landing vs cost)
-                min_tip = 8000000  # 0.008 SOL
+                # SAFE HARBOR V1: Landing Optimization (Cost Preservation)
+                # Lowered floor: 0.001 SOL (~$0.24) to stop the bleed
+                min_tip = 1000000  # 0.001 SOL
                 if jito_tip_lamports < min_tip:
                     jito_tip_lamports = min_tip
-                    print(f"🛡️ LANDING V2.1: Setting Jito Tip to 0.008 SOL")
+                    print(f"🛡️ SAFE HARBOR: Setting Jito Tip to 0.001 SOL")
 
-                # Escalation Cap: 2.0x on attempt 1, 2.0x on attempt 2+ (CAP AT 0.015 SOL)
-                if attempt == 1:
-                    jito_tip_lamports = int(jito_tip_lamports * 2.0)
-                elif attempt >= 2:
+                # Remove escalation for attempt 1 to save costs
+                # Only escalate for attempt 2+ or priority exits
+                if attempt >= 2:
                     jito_tip_lamports = int(jito_tip_lamports * 2.0)
                 elif priority:
                     # PRIORITY EXIT: Still use 2.0x for moons
                     jito_tip_lamports = int(jito_tip_lamports * 2.0)
                 
-                # HARD CAP: Never exceed 0.015 SOL tip on small trades
-                if jito_tip_lamports > 15000000:
-                    jito_tip_lamports = 15000000
+                # SAFE HARBOR CAP: Never exceed 0.005 SOL tip on standard trades
+                if jito_tip_lamports > 5000000:
+                    jito_tip_lamports = 5000000
                 
-                print(f"🛡️ JITO TIP: {jito_tip_lamports / 1e9:.6f} SOL (Attempt {attempt}, Priority: {priority})")
+                print(f"🛡️ JITO TIP (SAFE): {jito_tip_lamports / 1e9:.6f} SOL (Attempt {attempt}, Priority: {priority})")
             
             # 1. Get quote with freshness tracking
             quote = self.get_jupiter_quote(input_mint, output_mint, amount_lamports, override_slippage, is_pump=is_pump)
@@ -650,13 +649,14 @@ class DexTrader:
                 if data and len(data) > 0:
                     # Use 99th percentile for MAXIMUM priority (last attempt for pump.fun)
                     tip_sol = data[0].get('landed_tips_99th_percentile', 0.005)
-                    # LANDING V2.1: Minimum 0.008 SOL (~$1.20) to ensure placement
-                    # Max 0.02 SOL to cap costs
-                    tip_sol = max(0.008, min(0.02, tip_sol))
+                    # SAFE HARBOR V1: Lower minimum for cost preservation
+                    # Minimum 0.001 SOL (~$0.24) to stop the bleed
+                    # Max 0.008 SOL to cap standard costs
+                    tip_sol = max(0.001, min(0.008, tip_sol))
                     return int(tip_sol * 1e9)
         except Exception as e:
             print(f"⚠️ Failed to fetch Jito tip floor: {e}")
-        return 8000000  # Default fallback: 0.008 SOL (8M lamports) - LANDING V2.1
+        return 1000000  # Default fallback: 0.001 SOL (1M lamports) - SAFE HARBOR
     
     def execute_jito_bundle(self, token_mint, sol_amount):
         """

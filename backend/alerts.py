@@ -69,16 +69,15 @@ class AlertSystem(commands.Cog):
         self.alpaca_traders = []
         
         # Trading Configuration (Settings)
-        self.dex_auto_trade = False
-        self.dex_min_safety_score = 50
-        self.dex_min_liquidity = 50000  # $50k min - increased for Alpha Hunter strategy
-
-        self.dex_max_positions = 15
-        
-        # Ultimate Bot Configuration
-        self.whale_confidence_threshold = 25 # Sum of whale scores
+        # Ultimate Bot Configuration (SAFE HARBOR V1)
+        self.whale_confidence_threshold = 45 # Increased from 25 for lower frequency/higher conviction
         self.trailing_stop_pnl_trigger = 20.0 # Activates at 20% profit
         self.trailing_stop_distance = 10.0 # Trails 10% behind ATH
+        self.dev_shadow_enabled = True
+        self.dynamic_sizing_enabled = True
+        
+        self.dex_min_liquidity = 100000  # $100k min - increased for Safe Harbor
+        self.dex_max_positions = 5        # Capped at 5 for capital preservation
         self.dev_shadow_enabled = True
         self.dynamic_sizing_enabled = True
 
@@ -2290,7 +2289,14 @@ class AlertSystem(commands.Cog):
         
         self.active_swarm_locks.add(mint)
         try:
-        
+            # 🛡️ SAFE HARBOR BALANCE GUARD: Preserving SOL for VPS/RPC fees
+            if self.dex_traders:
+                main_trader = self.dex_traders[0]
+                sol_bal = await self.run_sync(main_trader.get_sol_balance)
+                if sol_bal < 0.15:
+                    print(f"🛑 SAFE HARBOR GUARD: Skipping buy. Balance ({sol_bal:.4f} SOL) < 0.15 SOL floor.")
+                    return
+
             # ALL TOKENS ALLOWED (Alpha Unlock)
             
             # 1. Get Token Info (Symbol, Liquidity)
