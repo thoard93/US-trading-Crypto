@@ -69,6 +69,9 @@ class AlertSystem(commands.Cog):
         self.alpaca_traders = []
         
         # Trading Configuration (Settings)
+        self.dex_auto_trade = False
+        self.dex_min_safety_score = 50
+        
         # Ultimate Bot Configuration (SAFE HARBOR V1)
         self.whale_confidence_threshold = 45 # Increased from 25 for lower frequency/higher conviction
         self.trailing_stop_pnl_trigger = 20.0 # Activates at 20% profit
@@ -78,8 +81,6 @@ class AlertSystem(commands.Cog):
         
         self.dex_min_liquidity = 250000  # $250k min - Blue Chip Focus (Sustainable Growth V2)
         self.dex_max_positions = 5        # Capped at 5 for capital preservation
-        self.dev_shadow_enabled = True
-        self.dynamic_sizing_enabled = True
 
         
         self.stock_auto_trade = False
