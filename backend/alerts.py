@@ -2381,33 +2381,17 @@ class AlertSystem(commands.Cog):
                 safety_score = safety_result.get('safety_score', 0)
                 risks = safety_result.get('risks', [])
                 print(f"🛡️ Safety Check: {symbol} scored {safety_score}/100")
-                # ULTIMATE BOT: TIERED LIQUIDITY (Alpha Hunter)
-                # 10+ Whales = $20k, 5+ Whales = $30k, 3+ Whales = $40k
-                
-                liq_threshold = 40000 # Default (3 whales)
-                if whale_count >= 10: liq_threshold = 20000 # Ultra-early / High Conviction
-                elif whale_count >= 5: liq_threshold = 30000 # Aggressive
-                elif whale_count >= 3: liq_threshold = 40000 # Standard Alpha Hunter
+                # SUSTAINABLE GROWTH V2: Use config-based liquidity (Blue Chip Focus)
+                # No more tiered alpha hunting - we want established tokens only
+                liq_threshold = self.dex_min_liquidity  # $250k from config
                 
                 print(f"📊 Swarm Token: {symbol} | Liq: ${liquidity:,.0f} | Required: ${liq_threshold:,.0f} ({whale_count} whales)")
                 
-                # --- ALPHA HUNTER: SPECIAL CASE HANDLING ---
+                # --- BLUE CHIP FILTER ---
                 liq_pass = liquidity >= liq_threshold
-                safety_pass = safety_score >= 50
+                safety_pass = safety_score >= self.dex_min_safety_score
                 all_pass = liq_pass and safety_pass
-                
-                # Special bypass for brand new launches (High whale count)
-                is_new_launch = False
-                # EMERGENCY FIX: Add a $500 floor even for high conviction.
-                # Avoids trying to buy before routable pools exist.
-                if not liq_pass and liquidity >= 500 and whale_count >= 3:
-                     print(f"🌊 Brand New Launch Detected: {symbol}")
-                     if safety_pass: # AUDIT FIX: Still require safety score >= 50
-                          print(f"✅ Safety Check Passed for Fresh Launch (Aping in!)")
-                          all_pass = True
-                          is_new_launch = True
-                     else:
-                          print(f"🚫 Safety Check FAILED for Fresh Launch ({safety_score})")
+                is_new_launch = False  # Disabled - no more fresh launch bypass
                 
                 embed_color = discord.Color.green() if all_pass else discord.Color.red()
                 decision = "Ultimate Buy Activated" if all_pass else "Skipped"
