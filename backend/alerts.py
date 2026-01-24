@@ -2113,7 +2113,8 @@ class AlertSystem(commands.Cog):
                             exit_reason = f"🌋 50% Moon Exit: +{pnl:.1f}% (Bag Secured!)"
                         
                         # 🚀 CRASH PROTECTION: Use priority for flash crashes
-                        if not should_exit and pnl <= -30.0:
+                        # Extended to 5min grace to prevent fake P/L from triggering false crash exits
+                        if not should_exit and pnl <= -30.0 and age_mins >= 5.0:
                             should_exit = True
                             use_priority = True
                             exit_reason = f"🚨 Crash Detected ({pnl:.1f}%)"
@@ -2171,13 +2172,31 @@ class AlertSystem(commands.Cog):
 
                         # Determine if we should use Priority Jito Tip (2x)
                         priority_val = locals().get('use_priority', False)
+                        
+                        # Capture SOL balance BEFORE sell for accurate P/L
+                        sol_before = await self.run_sync(trader.get_sol_balance)
+                        
                         result = await self.run_sync(trader.sell_token, token_addr, priority=priority_val)
                         
                         if result.get('success'):
+                            # 🎯 ACCURATE P/L: Compare SOL received vs SOL spent
+                            sol_after = await self.run_sync(trader.get_sol_balance)
+                            sol_received = sol_after - sol_before
+                            sol_spent = pos.get('amount_sol', 0.04)
+                            
+                            # Calculate REAL P/L based on SOL change
+                            if sol_spent > 0:
+                                real_pnl = ((sol_received - sol_spent) / sol_spent) * 100
+                                real_usd_pnl = (sol_received - sol_spent) * (await self._get_sol_price())
+                                print(f"🎯 REAL P/L: Spent {sol_spent:.4f} SOL, Got {sol_received:.4f} SOL = {real_pnl:+.1f}%")
+                            else:
+                                real_pnl = pnl # Fallback to DexScreener-based
+                                real_usd_pnl = usd_pnl
+                            
                             sig = result.get('signature', 'Unknown')
-                            pnl_emoji = "🟢" if pnl >= 0 else "🔴"
-                            pnl_sign = "+" if pnl >= 0 else ""
-                            usd_sign = "+" if usd_pnl >= 0 else "-"
+                            pnl_emoji = "🟢" if real_pnl >= 0 else "🔴"
+                            pnl_sign = "+" if real_pnl >= 0 else ""
+                            usd_sign = "+" if real_usd_pnl >= 0 else "-"
 
                             if channel_memes:
                                 embed = discord.Embed(
@@ -2185,8 +2204,8 @@ class AlertSystem(commands.Cog):
                                     description=f"Automated Safety Exit\n**Reason:** {exit_reason}",
                                     color=discord.Color.blue()
                                 )
-                                embed.add_field(name="P/L %", value=f"{pnl_emoji} {pnl_sign}{pnl:.1f}%", inline=True)
-                                embed.add_field(name="P/L USD", value=f"`{usd_sign}${abs(usd_pnl):.2f}`", inline=True)
+                                embed.add_field(name="P/L %", value=f"{pnl_emoji} {pnl_sign}{real_pnl:.1f}%", inline=True)
+                                embed.add_field(name="P/L USD", value=f"`{usd_sign}${abs(real_usd_pnl):.2f}`", inline=True)
                                 embed.add_field(name="Hold Time", value=f"`{hold_time_str}`", inline=True)
                                 embed.add_field(name="TX", value=f"[`{sig[:32]}...`](https://solscan.io/tx/{sig})", inline=False)
                                 await channel_memes.send(embed=embed)
