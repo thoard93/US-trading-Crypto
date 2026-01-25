@@ -135,8 +135,10 @@ class AlertSystem(commands.Cog):
         self._failed_tokens = {}
         self._dump_blacklist = {}  # {mint: timestamp} - prevents re-entry after whale dump
         self.load_failed_tokens()
-
-        self.load_failed_tokens()
+        
+        # SUSTAINABLE GROWTH V3: AI Meta-Loop Init
+        self.load_dynamic_config()
+        self.signal_log_path = os.path.join(os.path.dirname(__file__), 'data', 'trading_signals.jsonl')
         
         # Note: Loops and Webhook setup moved to cog_load for speed
 
@@ -144,6 +146,73 @@ class AlertSystem(commands.Cog):
         """Helper to run a synchronous blocking function in a background thread."""
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
+
+    def load_dynamic_config(self):
+        """Loads trading thresholds from config.json (Sustainable Growth V3)."""
+        config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+                
+            # Direct attribute mapping
+            self.dex_min_liquidity = config.get('dex_min_liquidity', 250000)
+            self.dex_max_positions = config.get('dex_max_positions', 5)
+            self.whale_confidence_threshold = config.get('whale_confidence_threshold', 45)
+            self.dex_min_safety_score = config.get('dex_min_safety_score', 50)
+            self.trailing_stop_pnl_trigger = config.get('trailing_stop_pnl_trigger', 20.0)
+            self.trailing_stop_distance = config.get('trailing_stop_distance', 10.0)
+            self.partial_tp_pnl = config.get('partial_tp_pnl', 25.0)
+            self.partial_tp_amount = config.get('partial_tp_amount', 0.5)
+            self.dynamic_slippage_pnl = config.get('dynamic_slippage_pnl', -10.0)
+            self.dynamic_slippage_bps = config.get('dynamic_slippage_bps', 5000)
+            self.whale_persistence_hours = config.get('whale_persistence_hours', 48)
+            
+            # Update SmartCopyTrader persistence filter if changed
+            if hasattr(self, 'copy_trader'):
+                self.copy_trader.whale_persistence_hours = self.whale_persistence_hours
+                
+            print(f"⚙️ Config Loaded: Liq=${self.dex_min_liquidity:,} | Conf={self.whale_confidence_threshold}")
+        except Exception as e:
+            print(f"⚠️ Failed to load dynamic config: {e}")
+
+    def log_signal(self, mint, symbol, metadata, decision, reason=""):
+        """Logs every signal with full context for AI analysis (Sustainable Growth V3)."""
+        try:
+            log_entry = {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "mint": mint,
+                "symbol": symbol,
+                "whales_raw": metadata.get('whales_raw', 0),
+                "whales_qualified": metadata.get('whales_qualified', 0),
+                "confidence_score": metadata.get('confidence_score', 0),
+                "liquidity_usd": metadata.get('liquidity', 0),
+                "safety_score": metadata.get('safety_score', 0),
+                "decision": decision,
+                "reason": reason
+            }
+            with open(self.signal_log_path, 'a') as f:
+                f.write(json.dumps(log_entry) + "\n")
+        except Exception as e:
+            print(f"⚠️ Signal Logger Error: {e}")
+
+    def log_trade(self, mint, symbol, entry_price, exit_price, pnl_pct, usd_pnl, reason):
+        """Logs trade outcomes for AI audit (Sustainable Growth V3)."""
+        try:
+            log_entry = {
+                "timestamp": datetime.datetime.now().isoformat(),
+                "type": "TRADE_CLOSED",
+                "mint": mint,
+                "symbol": symbol,
+                "entry_price": entry_price,
+                "exit_price": exit_price,
+                "pnl_pct": pnl_pct,
+                "usd_pnl": usd_pnl,
+                "reason": reason
+            }
+            with open(self.signal_log_path, 'a') as f:
+                f.write(json.dumps(log_entry) + "\n")
+        except Exception as e:
+            print(f"⚠️ Trade Logger Error: {e}")
 
     async def _startup_sync(self):
         """Wait for bot to be ready and sync existing positions."""
@@ -1769,6 +1838,9 @@ class AlertSystem(commands.Cog):
         
         # Set heartbeat FIRST so we know loop is alive
         self.last_swarm_scan = datetime.datetime.now()
+        
+        # SUSTAINABLE GROWTH V3: Hot-reload config every tick
+        self.load_dynamic_config()
             
         try:
             # DIAGNOSTIC: Show cache size every cycle
@@ -1829,6 +1901,11 @@ class AlertSystem(commands.Cog):
                 
                 if total_confidence < self.whale_confidence_threshold:
                     print(f"⏭️ Pre-Check Skip: {mint[:16]}... Confidence {total_confidence:.1f} < {self.whale_confidence_threshold}")
+                    self.log_signal(mint, "UNKNOWN", {
+                        "whales_raw": whale_count,
+                        "whales_qualified": whale_count, # raw used for pre-check
+                        "confidence_score": total_confidence
+                    }, "SKIP_CONFIDENCE", f"Confidence {total_confidence:.1f} < {self.whale_confidence_threshold}")
                     continue
                 
                 # ALERT MODE: Only send alert AFTER confidence check passes
@@ -2220,6 +2297,10 @@ class AlertSystem(commands.Cog):
                         result = await self.run_sync(trader.sell_token, token_addr, priority=priority_val, override_slippage=dump_slippage)
                         
                         if result.get('success'):
+                            # SUSTAINABLE GROWTH V3: Log the outcome
+                            self.log_trade(token_addr, symbol, entry_price, current_price, pnl, usd_pnl, exit_reason)
+                        
+                        if result.get('success'):
                             # 🎯 ACCURATE P/L: Compare SOL received vs SOL spent
                             sol_after = await self.run_sync(trader.get_sol_balance)
                             sol_received = sol_after - sol_before
@@ -2375,6 +2456,12 @@ class AlertSystem(commands.Cog):
                 
                 if total_confidence < self.whale_confidence_threshold:
                     print(f"🚫 Skipped {symbol}: Confidence {total_confidence:.1f} < {self.whale_confidence_threshold}")
+                    self.log_signal(mint, symbol, {
+                        "whales_raw": whale_count,
+                        "whales_qualified": whale_count,
+                        "confidence_score": total_confidence,
+                        "liquidity": liquidity
+                    }, "SKIP_CONFIDENCE", f"Confidence {total_confidence:.1f} < {self.whale_confidence_threshold}")
                     return
 
                 safety_result = await self.safety.check_solana_token(mint)
@@ -2391,6 +2478,18 @@ class AlertSystem(commands.Cog):
                 liq_pass = liquidity >= liq_threshold
                 safety_pass = safety_score >= self.dex_min_safety_score
                 all_pass = liq_pass and safety_pass
+                
+                # SUSTAINABLE GROWTH V3: Log every technical filter hit/miss
+                if not all_pass:
+                    reason = "Low Liquidity" if not liq_pass else "Low Safety"
+                    self.log_signal(mint, symbol, {
+                        "whales_raw": whale_count,
+                        "whales_qualified": whale_count,
+                        "confidence_score": total_confidence,
+                        "liquidity": liquidity,
+                        "safety_score": safety_score
+                    }, "SKIP_FILTER", f"{reason} (${liquidity:,.0f} vs ${liq_threshold:,.0f} | Safety {safety_score})")
+                
                 is_new_launch = False  # Disabled - no more fresh launch bypass
                 
                 embed_color = discord.Color.green() if all_pass else discord.Color.red()
@@ -2432,6 +2531,14 @@ class AlertSystem(commands.Cog):
                 
                 print(f"Ultimate Bot: Executing {amount_sol} SOL buy for {symbol} ({whale_count} whales)")
 
+                # SUSTAINABLE GROWTH V3: Log the winning signal
+                self.log_signal(mint, symbol, {
+                    "whales_raw": whale_count,
+                    "whales_qualified": whale_count,
+                    "confidence_score": total_confidence,
+                    "liquidity": liquidity,
+                    "safety_score": safety_score
+                }, "BUY", f"Signal analysis passed. Conviction: {amount_sol} SOL")
 
                 # NOTE: Emergency safety blocker removed - VPS is now primary server
                 

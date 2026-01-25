@@ -1,0 +1,13 @@
+{
+    "dex_min_liquidity": 250000,
+    "dex_max_positions": 5,
+    "whale_confidence_threshold": 45,
+    "dex_min_safety_score": 50,
+    "trailing_stop_pnl_trigger": 20.0,
+    "trailing_stop_distance": 10.0,
+    "partial_tp_pnl": 25.0,
+    "partial_tp_amount": 0.5,
+    "dynamic_slippage_pnl": -10.0,
+    "dynamic_slippage_bps": 5000,
+    "whale_persistence_hours": 48
+}

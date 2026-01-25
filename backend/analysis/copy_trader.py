@@ -29,6 +29,7 @@ class SmartCopyTrader:
         self._scan_index = 0
         self._last_429_time = 0
         self._cumulative_exits = defaultdict(set)  # mint -> {wallets who sold}
+        self.whale_persistence_hours = 48  # Default, updated by AlertSystem config
 
     def load_data(self):
         """Heavy lifting: Load wallets and swarms from DB."""
@@ -559,13 +560,13 @@ class SmartCopyTrader:
                 for wallet in buyers:
                     whale_data = self.qualified_wallets.get(wallet, {})
                     
-                    # Check persistence (48hr minimum)
+                    # Check persistence (Dynamic minimum)
                     discovered_at = whale_data.get('discovered_at')
                     if discovered_at:
                         try:
                             disc_time = datetime.fromisoformat(discovered_at)
                             age_hours = (now - disc_time).total_seconds() / 3600
-                            if age_hours < 48:
+                            if age_hours < self.whale_persistence_hours:
                                 continue  # Too new, skip
                         except:
                             pass  # Can't parse, allow through
