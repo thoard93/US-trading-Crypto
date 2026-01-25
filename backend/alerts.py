@@ -4,6 +4,7 @@ import os
 from discord.ext import tasks, commands
 import asyncio
 import datetime
+import logging
 
 from collectors.crypto_collector import CryptoCollector
 # from collectors.stock_collector import StockCollector  # Disabled: alpaca not used
@@ -41,6 +42,7 @@ except ImportError:
 class AlertSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.logger = logging.getLogger(__name__)
         from collectors.crypto_collector import CryptoCollector
         # Initialize collectors as None to safely defer loading
         self.crypto = None 
