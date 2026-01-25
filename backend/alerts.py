@@ -39,10 +39,12 @@ try:
 except ImportError:
     decrypt_key = lambda x: x # Fallback if no encryption
 
+# --- LOGGING SETUP ---
+logger = logging.getLogger(__name__)
+
 class AlertSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.logger = logging.getLogger(__name__)
         from collectors.crypto_collector import CryptoCollector
         # Initialize collectors as None to safely defer loading
         self.crypto = None 
@@ -2991,9 +2993,9 @@ class AlertSystem(commands.Cog):
                         except: continue
                 
                 new_count = total - aged_count
-                self.logger.info(f"📊 WHALE DATABASE HEALTH: {total} total | ✅ {aged_count} Aged (Active) | ⏳ {new_count} New (Warming up)")
+                logger.info(f"📊 WHALE DATABASE HEALTH: {total} total | ✅ {aged_count} Aged (Active) | ⏳ {new_count} New (Warming up)")
             except Exception as pulse_err:
-                self.logger.error(f"⚠️ Health Pulse Error: {pulse_err}")
+                logger.error(f"⚠️ Health Pulse Error: {pulse_err}")
             
         # 2. Load Solana Keys
         if DEX_TRADING_ENABLED:

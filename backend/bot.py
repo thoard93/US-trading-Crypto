@@ -40,7 +40,7 @@ async def on_ready():
     # Load the AlertSystem cog
     if not bot.get_cog('AlertSystem'):
         # Instantiate FIRST, then add. 
-        # Since AlertsSystem now has a non-blocking cog_load, this is safe.
+        # Since AlertSystem now has a non-blocking cog_load, this is safe.
         await bot.add_cog(AlertSystem(bot))
         print("✅ Alert system registered.")
         # Diagnostic: List all loaded cogs to verify registration
