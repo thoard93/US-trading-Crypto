@@ -2970,6 +2970,26 @@ class AlertSystem(commands.Cog):
         if self.copy_trader:
             self.copy_trader.load_data()
             
+            # --- STARTUP HEALTH PULSE (V3.1) ---
+            try:
+                total = len(self.copy_trader.qualified_wallets)
+                from datetime import datetime, timedelta
+                now = datetime.utcnow()
+                cutoff = now - timedelta(hours=self.whale_persistence_hours)
+                
+                aged_count = 0
+                for addr, data in self.copy_trader.qualified_wallets.items():
+                    disc_at = data.get('discovered_at')
+                    if disc_at:
+                        dt = datetime.fromisoformat(disc_at)
+                        if dt <= cutoff:
+                            aged_count += 1
+                
+                new_count = total - aged_count
+                print(f"📊 WHALE DATABASE HEALTH: {total} total | ✅ {aged_count} Aged (Active) | ⏳ {new_count} New (Warming up)")
+            except Exception as pulse_err:
+                print(f"⚠️ Health Pulse Error: {pulse_err}")
+            
         # 2. Load Solana Keys
         if DEX_TRADING_ENABLED:
             try:
