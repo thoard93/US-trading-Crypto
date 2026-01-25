@@ -2981,14 +2981,17 @@ class AlertSystem(commands.Cog):
                 for addr, data in self.copy_trader.qualified_wallets.items():
                     disc_at = data.get('discovered_at')
                     if disc_at:
-                        dt = datetime.fromisoformat(disc_at)
-                        if dt <= cutoff:
-                            aged_count += 1
+                        # Handle potential varied string formats
+                        try:
+                            dt = datetime.fromisoformat(disc_at.replace('Z', '+00:00'))
+                            if dt <= cutoff:
+                                aged_count += 1
+                        except: continue
                 
                 new_count = total - aged_count
-                print(f"📊 WHALE DATABASE HEALTH: {total} total | ✅ {aged_count} Aged (Active) | ⏳ {new_count} New (Warming up)")
+                self.logger.info(f"📊 WHALE DATABASE HEALTH: {total} total | ✅ {aged_count} Aged (Active) | ⏳ {new_count} New (Warming up)")
             except Exception as pulse_err:
-                print(f"⚠️ Health Pulse Error: {pulse_err}")
+                self.logger.error(f"⚠️ Health Pulse Error: {pulse_err}")
             
         # 2. Load Solana Keys
         if DEX_TRADING_ENABLED:
