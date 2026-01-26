@@ -203,8 +203,25 @@ class TrendHunter:
         return result
     
     def _filter_keywords(self, keywords):
-        """Filter out blacklisted and low-quality keywords."""
+        """Filter and PRIORITIZE keywords based on proven Pump.fun patterns."""
         filtered = []
+        
+        # 🔥 HOT META JANUARY 2026: AI/Agent keywords get priority boost
+        ai_boost_terms = {
+            'ai', 'agent', 'bot', 'gpt', 'llm', 'neural', 'brain', 'auto',
+            'robo', 'cyber', 'algo', 'smart', 'machine', 'deep', 'cognitive',
+            'npc', 'sentient', 'conscious', 'synthetic', 'agentic', 'terminal'
+        }
+        
+        # Absurdist/crude humor (FARTCOIN tier) - also gets boost
+        absurd_boost_terms = {
+            'fart', 'poop', 'burp', 'hiccup', 'sneeze', 'yawn', 'chonk',
+            'thicc', 'giga', 'mega', 'ultra', 'turbo', 'maxi', 'lord',
+            'king', 'god', 'chad', 'degen', 'ape', 'moon', 'wagmi'
+        }
+        
+        priority_keywords = []
+        normal_keywords = []
         
         for keyword in keywords:
             kw_lower = keyword.lower()
@@ -221,15 +238,28 @@ class TrendHunter:
             if not keyword.replace(' ', '').isalpha():
                 continue
             
-            filtered.append(keyword)
+            # 🎯 PRIORITY CHECK: AI/Agent or Absurdist terms go first
+            is_priority = any(term in kw_lower for term in ai_boost_terms) or \
+                          any(term in kw_lower for term in absurd_boost_terms)
+            
+            if is_priority:
+                priority_keywords.append(keyword.upper())
+            else:
+                normal_keywords.append(keyword.upper())
+        
+        # Combine: priority first, then normal
+        combined = priority_keywords + normal_keywords
         
         # Remove duplicates while preserving order
         seen = set()
         unique = []
-        for kw in filtered:
-            if kw.upper() not in seen:
-                seen.add(kw.upper())
-                unique.append(kw.upper())
+        for kw in combined:
+            if kw not in seen:
+                seen.add(kw)
+                unique.append(kw)
+        
+        if priority_keywords:
+            self.logger.info(f"🔥 Priority keywords (AI/Absurdist meta): {priority_keywords[:5]}")
         
         return unique
     

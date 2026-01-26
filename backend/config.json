@@ -9,5 +9,6 @@
     "partial_tp_amount": 0.5,
     "dynamic_slippage_pnl": -10.0,
     "dynamic_slippage_bps": 5000,
-    "whale_persistence_hours": 12
+    "whale_persistence_hours": 12,
+    "whale_mode_enabled": false
 }

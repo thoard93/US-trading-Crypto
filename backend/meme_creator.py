@@ -39,17 +39,23 @@ class MemeCreator:
             return None
             
         prompt = f"""
-        Analyze the viral potential of the keyword: "{keyword}"
-        Generate a meme coin profile for pump.fun.
+        You are a viral meme coin naming expert. Analyze the keyword: "{keyword}"
+        Generate a meme coin profile optimized for Pump.fun graduation.
         
-        Requirements:
-        1. Name: Catchy, viral, max 20 chars.
-        2. Ticker: 3-5 chars, uppercase.
-        3. Simple Description: 1 sentence, funny/edgy.
-        4. Logo Prompt: A detailed artistic prompt for an AI image generator. 
-           Focus on 'nano-banana-pro' style: sharp 2K quality, centered character, minimalist but high impact.
+        PROVEN VIRAL NAMING PATTERNS (use one):
+        1. ABSURDIST HUMOR: Crude/bodily humor (FARTCOIN hit $2.4B, BURP, SNEEZE)
+        2. AI/AGENT THEMED: AI culture references (GOAT hit $1.4B, BOTBRAIN, NPCTOKEN)
+        3. ANIMAL + MODIFIER: [Animal] + [Accessory/Trait] (Dogwifhat, CATWIFSOCKS, FROGWIFGUN)
+        4. PHONETIC MISSPELLINGS: Clever distortions (Dogwifhat, Jeo Boden)
+        5. VIBE TOKENS: Mood-based (CHILLGUY hit $543M, LAZYKING, COZYMAXI)
         
-        Return ONLY a JSON object:
+        STRICT REQUIREMENTS:
+        - Name: Max 15 chars, instantly memorable, TikTok-friendly
+        - Ticker: EXACTLY 3-5 characters, uppercase only. NO EXCEPTIONS.
+        - Description: 1 punchy sentence, funny/edgy/absurd
+        - Logo Prompt: Must specify "meme coin mascot" + high contrast neon colors + centered character + slightly cursed/absurd aesthetic
+        
+        Return ONLY valid JSON:
         {{
             "name": "...",
             "ticker": "...",
@@ -72,8 +78,23 @@ class MemeCreator:
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "{" in content:
                 content = content[content.find("{"):content.rfind("}")+1]
-                
-            return json.loads(content)
+            
+            pack = json.loads(content)
+            
+            # 🎯 TICKER VALIDATION: Enforce 3-5 chars (critical for Pump.fun success)
+            ticker = pack.get('ticker', 'MEME').upper().replace('$', '')
+            if len(ticker) < 3:
+                ticker = ticker + 'X' * (3 - len(ticker))  # Pad short tickers
+            elif len(ticker) > 5:
+                ticker = ticker[:5]  # Truncate long tickers
+            pack['ticker'] = ticker
+            
+            # 🎯 NAME VALIDATION: Max 15 chars
+            name = pack.get('name', 'MemeCoin')
+            if len(name) > 15:
+                pack['name'] = name[:15]
+            
+            return pack
         except Exception as e:
             self.logger.error(f"Error generating meme pack: {e}")
             return None
@@ -126,6 +147,9 @@ class MemeCreator:
             response = requests.post(url, headers=headers, json=payload, timeout=15)
             result = response.json()
             
+            # 🔍 DEBUG: Log full response
+            self.logger.info(f"🎨 Kie AI Create Response: {result}")
+            
             if result.get('code') != 200:
                 self.logger.error(f"Kie AI Task Creation Failed: {result}")
                 return None
@@ -142,20 +166,43 @@ class MemeCreator:
                     poll_resp = requests.get(poll_url, headers=headers, timeout=10)
                     poll_result = poll_resp.json()
                     
+                    # 🔍 DEBUG: Log every 6th poll (every 30s)
+                    if attempt % 6 == 0:
+                        self.logger.info(f"🔄 Kie AI Poll {attempt+1}/60: {poll_result}")
+                    
                     if poll_result.get('code') == 200:
                         data = poll_result.get('data', {})
-                        state = data.get('state')
+                        state = data.get('state', '').lower()
                         
-                        if state == 'success':
+                        # ✅ SUCCESS STATES: Both 'success' and 'completed' are valid
+                        if state in ['success', 'completed']:
                             res_json_str = data.get('resultJson', '{}')
                             res_json = json.loads(res_json_str) if isinstance(res_json_str, str) else res_json_str
-                            image_url = res_json.get('resultUrls', [None])[0]
-                            self.logger.info(f"✅ Kie AI Logo Generated: {image_url}")
-                            return image_url
-                        elif state == 'fail':
-                            self.logger.error(f"❌ Kie AI Task Failed: {data.get('failMsg')}")
+                            
+                            # Try multiple possible URL locations
+                            image_url = None
+                            if 'resultUrls' in res_json and res_json['resultUrls']:
+                                image_url = res_json['resultUrls'][0]
+                            elif 'url' in res_json:
+                                image_url = res_json['url']
+                            elif 'imageUrl' in res_json:
+                                image_url = res_json['imageUrl']
+                            elif 'output' in data:
+                                image_url = data['output']
+                            
+                            if image_url:
+                                self.logger.info(f"✅ Kie AI Logo Generated: {image_url}")
+                                return image_url
+                            else:
+                                self.logger.warning(f"⚠️ Kie AI Success but no URL found in: {data}")
+                                
+                        elif state in ['fail', 'failed', 'error']:
+                            self.logger.error(f"❌ Kie AI Task Failed: {data.get('failMsg', data)}")
                             return None
-                except Exception:
+                        # 'pending', 'processing', 'running' - continue polling
+                        
+                except Exception as poll_err:
+                    self.logger.warning(f"⚠️ Kie AI Poll Error (attempt {attempt+1}): {poll_err}")
                     continue
                     
             self.logger.warning("⏳ Kie AI Timeout (5 min). Trying fallback...")
@@ -163,6 +210,8 @@ class MemeCreator:
             
         except Exception as e:
             self.logger.error(f"Kie AI Error: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def _try_replicate(self, prompt, api_key):

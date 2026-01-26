@@ -192,12 +192,15 @@ class AlertSystem(commands.Cog):
             self.dynamic_slippage_pnl = config.get('dynamic_slippage_pnl', -10.0)
             self.dynamic_slippage_bps = config.get('dynamic_slippage_bps', 5000)
             self.whale_persistence_hours = config.get('whale_persistence_hours', 48)
+            self.whale_mode_enabled = config.get('whale_mode_enabled', True)  # 🐋 Master toggle for whale activity
             
             # Update SmartCopyTrader persistence filter if changed
             if hasattr(self, 'copy_trader'):
                 self.copy_trader.whale_persistence_hours = self.whale_persistence_hours
-                
-            print(f"⚙️ Config Loaded: Liq=${self.dex_min_liquidity:,} | Conf={self.whale_confidence_threshold}")
+            
+            # Only print config if whale mode is enabled (reduce log spam)
+            if self.whale_mode_enabled:
+                print(f"⚙️ Config Loaded: Liq=${self.dex_min_liquidity:,} | Conf={self.whale_confidence_threshold}")
         except Exception as e:
             print(f"⚠️ Failed to load dynamic config: {e}")
 
@@ -312,6 +315,11 @@ class AlertSystem(commands.Cog):
 
     async def setup_helius_webhook(self):
         """Registers the bot's URL with Helius to receive whale activity."""
+        # 🐋 WHALE MODE TOGGLE: Skip if whale mode is disabled
+        if not getattr(self, 'whale_mode_enabled', True):
+            print("🐋 Whale Mode DISABLED - Skipping Helius webhook setup")
+            return
+        
         import os
         webhook_url = os.getenv("HELIUS_WEBHOOK_URL")
         if not webhook_url:
@@ -1074,6 +1082,10 @@ class AlertSystem(commands.Cog):
         if not self.bot.is_ready():
             return
         
+        # 🐋 WHALE MODE TOGGLE: Skip if whale mode is disabled
+        if not getattr(self, 'whale_mode_enabled', True):
+            return
+        
         # Prevent concurrent hunts
         if hasattr(self, '_hunt_lock') and self._hunt_lock:
             return
@@ -1593,6 +1605,7 @@ class AlertSystem(commands.Cog):
             "• `!balance` - Check wallet balance\n"
             "• `!sellall` - Emergency liquidation\n"
             "• `!rugcheck <addr>` - Audit a token safety\n"
+            "• `!whales on/off` - Enable/Disable whale hunting\n"
             "• `!autolaunch status` - Show launch queue & stats\n"
             "• `!autolaunch on/off` - Enable/Disable auto-factory"
         )
@@ -1847,6 +1860,55 @@ class AlertSystem(commands.Cog):
         self.auto_launcher.launch_queue = []
         await ctx.send(f"🧹 Cleared {count} items from the launch queue.")
 
+    @commands.group(invoke_without_command=True)
+    async def whales(self, ctx):
+        """Manage whale hunting and swarm detection. Use !whales on/off/status."""
+        if ctx.invoked_subcommand is None:
+            await self.whales_status(ctx)
+
+    @whales.command(name="status")
+    async def whales_status(self, ctx):
+        """Show whale mode status."""
+        enabled = getattr(self, 'whale_mode_enabled', True)
+        whale_count = len(self.copy_trader.qualified_wallets) if self.copy_trader else 0
+        
+        status = "🟢 **ENABLED**" if enabled else "🔴 **DISABLED**"
+        await ctx.send(
+            f"🐋 **Whale Mode**: {status}\n"
+            f"📊 **Tracked Whales**: {whale_count}\n"
+            f"💡 Use `!whales on` or `!whales off` to toggle."
+        )
+
+    @whales.command(name="on")
+    async def whales_on(self, ctx):
+        """Enable whale hunting, swarm detection, and Helius webhooks."""
+        self.whale_mode_enabled = True
+        # Save to config.json for persistence
+        self._save_whale_mode(True)
+        await ctx.send("🐋 **Whale Mode ENABLED!** Hunting and swarm detection resumed.")
+        # Re-setup Helius webhook
+        await self.setup_helius_webhook()
+
+    @whales.command(name="off")
+    async def whales_off(self, ctx):
+        """Disable whale hunting, swarm detection, and Helius webhooks."""
+        self.whale_mode_enabled = False
+        # Save to config.json for persistence
+        self._save_whale_mode(False)
+        await ctx.send("🐋 **Whale Mode DISABLED!** No more whale hunts, swarms, or Helius API calls.")
+
+    def _save_whale_mode(self, enabled):
+        """Persist whale_mode_enabled to config.json."""
+        config_path = os.path.join(os.path.dirname(__file__), 'config.json')
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            config['whale_mode_enabled'] = enabled
+            with open(config_path, 'w') as f:
+                json.dump(config, f, indent=4)
+        except Exception as e:
+            print(f"⚠️ Failed to save whale mode: {e}")
+
     @commands.command()
     async def sellprofits(self, ctx):
         """Sell all DEX positions currently in profit. Use for clean slate."""
@@ -1962,6 +2024,10 @@ class AlertSystem(commands.Cog):
         
         # Set heartbeat FIRST so we know loop is alive
         self.last_swarm_scan = datetime.datetime.now()
+        
+        # 🐋 WHALE MODE TOGGLE: Skip if whale mode is disabled
+        if not getattr(self, 'whale_mode_enabled', True):
+            return
         
         # SUSTAINABLE GROWTH V3: Hot-reload config every tick
         self.load_dynamic_config()
