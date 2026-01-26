@@ -43,19 +43,25 @@ class SmartCopyTrader:
             from database import SessionLocal
             from models import ActiveSwarm
             
-            db = SessionLocal()
-            swarms_db = db.query(ActiveSwarm).all()
-            
-            result = defaultdict(set)
-            for s in swarms_db:
-                result[s.token_address].add(s.whale_address)
-            
-            db.close()
-            if result:
-                 self.logger.info(f"🔓 Restored {len(result)} active swarms from DB.")
-            return result
-        except Exception as e:
-            self.logger.error(f"Error loading swarms from DB: {e}")
+            for attempt in range(3):
+                try:
+                    db = SessionLocal()
+                    swarms_db = db.query(ActiveSwarm).all()
+                    
+                    result = defaultdict(set)
+                    for s in swarms_db:
+                        result[s.token_address].add(s.whale_address)
+                    
+                    db.close()
+                    if result:
+                         self.logger.info(f"🔓 Restored {len(result)} active swarms from DB.")
+                    return result
+                except Exception as e:
+                    if attempt < 2:
+                        self.logger.warning(f"⚠️ DB Load attempt {attempt+1} failed, retrying in 2s...")
+                        await asyncio.sleep(2)
+                    else:
+                        self.logger.error(f"Error loading swarms from DB: {e}")
             return defaultdict(set)
 
     def _save_swarm_participant(self, token_address, whale_address):
@@ -100,31 +106,36 @@ class SmartCopyTrader:
             from database import SessionLocal
             from models import WhaleWallet
             
-            db = SessionLocal()
-            wallets_db = db.query(WhaleWallet).all()
-            
-            # Convert to internal dict format
-            # Format: {address: {stats: ..., discovered_on: ...}}
-            result = {}
-            for w in wallets_db:
-                result[w.address] = {
-                    "stats": w.stats,
-                    "discovered_on": w.discovered_on,
-                    "discovered_at": w.discovered_at.isoformat() if w.discovered_at else None,
-                    "score": w.score
-                }
-            
-            db.close()
-            
-            # ✅ LOG SUCCESS/FAILURE
-            if result:
-                self.logger.info(f"✅ Loaded {len(result)} whale wallets from DB.")
-            else:
-                self.logger.warning("⚠️ No whale wallets found in DB. Starting fresh.")
-            
-            return result
-        except Exception as e:
-            self.logger.error(f"❌ Error loading wallets from DB: {e}")
+            for attempt in range(3):
+                try:
+                    db = SessionLocal()
+                    wallets_db = db.query(WhaleWallet).all()
+                    
+                    # Convert to internal dict format
+                    # Format: {address: {stats: ..., discovered_on: ...}}
+                    result = {}
+                    for w in wallets_db:
+                        result[w.address] = {
+                            "stats": w.stats,
+                            "discovered_on": w.discovered_on,
+                            "discovered_at": w.discovered_at.isoformat() if w.discovered_at else None,
+                            "score": w.score
+                        }
+                    
+                    db.close()
+                    if result:
+                        self.logger.info(f"✅ Loaded {len(result)} whale wallets from DB.")
+                    else:
+                        self.logger.warning("⚠️ No whale wallets found in DB. Starting fresh.")
+                    return result
+                except Exception as e:
+                    if "SSL connection" in str(e) and attempt < 2:
+                        self.logger.warning(f"⚠️ DB SSL Drop during wallet load. Retrying {attempt+1}/3...")
+                        import time
+                        time.sleep(2) # Sync sleep because this is often called during init
+                    else:
+                        self.logger.error(f"❌ Error loading wallets from DB: {e}")
+                        break
             return {}
     
     def update_whale_score(self, address, delta):
