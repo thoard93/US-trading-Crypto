@@ -12,8 +12,9 @@ class MemeCreator:
     """
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.anthropic_key = os.getenv('ANTHROPIC_API_KEY')
-        self.kie_ai_key = os.getenv('KIE_AI_API_KEY')
+        # 🛡️ RESILIENCE: Strip all whitespace/newlines from keys
+        self.anthropic_key = os.getenv('ANTHROPIC_API_KEY', '').strip() or None
+        self.kie_ai_key = os.getenv('KIE_AI_API_KEY', '').strip() or None
         
         if self.anthropic_key:
             self.client = Anthropic(api_key=self.anthropic_key)
