@@ -12,9 +12,12 @@ class MemeCreator:
     """
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        # 🛡️ RESILIENCE: Strip all whitespace/newlines from keys
-        self.anthropic_key = os.getenv('ANTHROPIC_API_KEY', '').strip() or None
-        self.kie_ai_key = os.getenv('KIE_AI_API_KEY', '').strip() or None
+        # 🛡️ RESILIENCE: Remove ALL whitespace/newlines from terminal copy-pastes
+        self.anthropic_key = os.getenv('ANTHROPIC_API_KEY', '')
+        self.anthropic_key = "".join(self.anthropic_key.split()) if self.anthropic_key else None
+        
+        self.kie_ai_key = os.getenv('KIE_AI_API_KEY', '')
+        self.kie_ai_key = "".join(self.kie_ai_key.split()) if self.kie_ai_key else None
         
         if self.anthropic_key:
             self.client = Anthropic(api_key=self.anthropic_key)
