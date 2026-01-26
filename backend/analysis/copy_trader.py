@@ -32,6 +32,8 @@ class SmartCopyTrader:
         self._cumulative_exits = defaultdict(set)  # mint -> {wallets who sold}
         self.whale_persistence_hours = 48  # Default, updated by AlertSystem config
         self._unqualified_cache = {} # {address: cleanup_timestamp} - Save credits on known bad wallets
+        self._activity_throttle = {} # {address: last_db_update_time} - Prevents DB spam
+
 
 
     def load_data(self):
@@ -834,10 +836,18 @@ class SmartCopyTrader:
     
     def update_whale_activity(self, wallet_address):
         """Update last_active timestamp for a whale when we see them trade.
-        ULTRA-HARDENED: Retry with SSL recovery."""
+        THROTTLED: Only writes to DB once every 5 minutes per wallet."""
         if wallet_address not in self.qualified_wallets:
             return
             
+        # THROTTLE CHECK: Prevent DB spam from high-frequency whales
+        now = time.time()
+        last_update = self._activity_throttle.get(wallet_address, 0)
+        if now - last_update < 300: # 5 minutes
+            return
+        
+        self._activity_throttle[wallet_address] = now
+        
         for attempt in range(3):
             try:
                 from database import SessionLocal

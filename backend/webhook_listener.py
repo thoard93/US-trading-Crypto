@@ -378,11 +378,11 @@ async def process_helius_data(transactions):
                 asyncio.create_task(alert_system.sync_all_dex_positions())
                 break # One sync is enough per batch
         
-        # 1d. Track whale activity
+        # 1d. Track whale activity (Offloaded to thread to avoid blocking heartbeat)
         for tx in transactions:
             wallet = tx.get('feePayer')
             if wallet and wallet in alert_system.copy_trader.qualified_wallets:
-                alert_system.copy_trader.update_whale_activity(wallet)
+                asyncio.create_task(alert_system.run_sync(alert_system.copy_trader.update_whale_activity, wallet))
         
         # 2. INSTANT EXIT DETECTION
         held_tokens = set()
