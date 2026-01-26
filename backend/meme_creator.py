@@ -121,7 +121,7 @@ class MemeCreator:
                 f"https://api.kie.ai/api/v1/jobs/task/{task_id}",
             ]
             
-            for attempt in range(12):  # 12 * 5s = 60s total
+            for attempt in range(30):  # 30 * 5s = 150s (2.5 min) for slow Nano Banana Pro
                 time.sleep(5)
                 
                 for poll_url in poll_endpoints:

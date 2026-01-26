@@ -384,16 +384,43 @@ class DexTrader:
             tx_data = response.content
             
             # 5. Handle Signing (Requires BOTH Wallet and Mint keypairs)
-            # 5. Handle Signing (Dynamically match signers to their order in account_keys)
+            # Parse the transaction to extract the message
             tx = VersionedTransaction.from_bytes(tx_data)
-            message = tx.message
+            old_message = tx.message
+            
+            # BLOCKHASH FIX: Fetch a FRESH blockhash to prevent expiration errors
+            # The PumpPortal API returns a pre-built tx, but if IPFS upload is slow,
+            # the blockhash may expire before we can submit.
+            print("🔄 Fetching fresh blockhash...")
+            blockhash_resp = requests.post(self.rpc_url, json={
+                "jsonrpc": "2.0", "id": 1,
+                "method": "getLatestBlockhash",
+                "params": [{"commitment": "finalized"}]
+            }, timeout=10).json()
+            
+            fresh_blockhash_str = blockhash_resp.get('result', {}).get('value', {}).get('blockhash')
+            if not fresh_blockhash_str:
+                return {"error": f"Failed to fetch fresh blockhash: {blockhash_resp}"}
+            
+            from solders.hash import Hash
+            fresh_blockhash = Hash.from_string(fresh_blockhash_str)
+            print(f"✅ Fresh Blockhash: {fresh_blockhash_str[:16]}...")
+            
+            # Rebuild MessageV0 with the fresh blockhash
+            new_message = MessageV0(
+                header=old_message.header,
+                account_keys=old_message.account_keys,
+                recent_blockhash=fresh_blockhash,
+                instructions=old_message.instructions,
+                address_table_lookups=old_message.address_table_lookups
+            )
             
             # Identify which accounts need to sign
-            signers_required = message.header.num_required_signatures
-            signer_keys = message.account_keys[:signers_required]
+            signers_required = new_message.header.num_required_signatures
+            signer_keys = new_message.account_keys[:signers_required]
             
             # Use specific serialization for versioned transactions (MessageV0)
-            msg_bytes = to_bytes_versioned(message)
+            msg_bytes = to_bytes_versioned(new_message)
             
             signatures = []
             for key in signer_keys:
@@ -406,7 +433,7 @@ class DexTrader:
                     print(f"⚠️ Unknown signer required: {key}")
                     signatures.append(Signature.default())
             
-            signed_tx = VersionedTransaction.populate(message, signatures)
+            signed_tx = VersionedTransaction.populate(new_message, signatures)
             
             # 6. Final Submission
             print(f"📡 Sending launch transaction to Solana...")
