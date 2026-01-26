@@ -41,16 +41,20 @@ else:
     
     print(f"✅ Key Found in .env")
     print(f"📊 Length: {len(clean_key)}")
-    print(f"🔍 Snippet: {clean_key[:15]}...{clean_key[-4:]}")
+    print(f"🔍 Snippet: {clean_key[:15]}...{clean_key[-10:]}")
+
+    if len(clean_key) != 108:
+        print(f"⚠️ WARNING: Most Anthropic keys are 108 characters. Yours is {len(clean_key)}.")
 
     # 2. Try a simple call
     print("\n📡 Testing connection to Claude...")
     try:
         client = Anthropic(api_key=clean_key)
+        # Use a very cheap model for the test
         message = client.messages.create(
-            model="claude-3-5-sonnet-20240620",
+            model="claude-3-haiku-20240307",
             max_tokens=10,
-            messages=[{"role": "user", "content": "Hello"}]
+            messages=[{"role": "user", "content": "Ping"}]
         )
         print("✅ SUCCESS: Claude responded!")
         print(f"💬 Response: {message.content[0].text}")
