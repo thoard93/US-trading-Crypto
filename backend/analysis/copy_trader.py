@@ -867,7 +867,6 @@ class SmartCopyTrader:
                 
             except Exception as e:
                 if "SSL connection" in str(e) and attempt < 2:
-                    import time
                     time.sleep(1)
                     continue
                 # Silent fail - activity tracking is non-critical
