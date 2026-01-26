@@ -30,6 +30,8 @@ class SmartCopyTrader:
         self._last_429_time = 0
         self._cumulative_exits = defaultdict(set)  # mint -> {wallets who sold}
         self.whale_persistence_hours = 48  # Default, updated by AlertSystem config
+        self._unqualified_cache = {} # {address: cleanup_timestamp} - Save credits on known bad wallets
+
 
     def load_data(self):
         """Heavy lifting: Load wallets and swarms from DB."""
@@ -325,14 +327,12 @@ class SmartCopyTrader:
         self.logger.info(f"✅ Hunt Complete. Found {new_wallets} new qualified wallets. Total: {len(self.qualified_wallets)}")
         return new_wallets
 
-    def scan_market_for_whales_sync(self, max_pairs=10, max_traders_per_pair=5):
+    def scan_market_for_whales_sync(self, max_pairs=10, max_traders_per_pair=3):
         """
         SYNC version of whale scanner - runs in thread to avoid blocking Discord.
+        Optimized: Reduced depth to save Helius credits.
         """
         self.logger.info("🌊 Starting Whale Hunt (Sync)...")
-        # Add jitter to prevent API storms from multiple instances starting simultaneously
-        import time, random
-        time.sleep(random.randint(1, 10))
         
         # 1. Get Trending Pairs (sync call) with retry and fallback
         import requests
@@ -394,9 +394,16 @@ class SmartCopyTrader:
                 if tx.get('type') == 'SWAP':
                     payer = tx.get('feePayer')
                     if payer:
+                        # CREDIT OPTIMIZATION: Check skip cache
+                        now = time.time()
+                        if payer in self._unqualified_cache:
+                            if now < self._unqualified_cache[payer]:
+                                continue # Still in 24h penalty box
+                            else:
+                                del self._unqualified_cache[payer] # Cooldown expired
                         traders.add(payer)
             
-            self.logger.info(f"    found {len(traders)} unique traders.")
+            self.logger.info(f"    found {len(traders)} unique traders (after filtering cached).")
             
             # 4. Analyze Each Trader
             checked_count = 0
@@ -405,7 +412,8 @@ class SmartCopyTrader:
                 if wallet in self.qualified_wallets:
                     continue
                 
-                stats = self.collector.analyze_wallet(wallet, lookback_txs=50)
+                # CREDIT OPTIMIZATION: Lower lookback for discovery screening
+                stats = self.collector.analyze_wallet(wallet, lookback_txs=20)
                 checked_count += 1
                 
                 # ALL TRADERS NOW ALLOWED (Alpha Unlock)
@@ -420,6 +428,9 @@ class SmartCopyTrader:
                     self.qualified_wallets[wallet] = wallet_data
                     new_wallets += 1
                     self._save_wallet_to_db(wallet, wallet_data)
+                else:
+                    # CREDIT OPTIMIZATION: Cache failures for 24h
+                    self._unqualified_cache[wallet] = time.time() + 86400
                     
         if len(self.qualified_wallets) > 500:
             self._prune_old_whales()

@@ -297,51 +297,93 @@ class DexTrader:
 
     def create_pump_token(self, name, symbol, description, image_url, sol_buy_amount=0):
         """
-        Launches a token on pump.fun using the pumpportal.fun API to build the internal instructions.
-        This method generates a new mint keypair, uploads metadata, and executes the on-chain creation.
+        Launches a token on pump.fun using the NEW pumpportal.fun API (2026 format).
+        1. Upload metadata to pump.fun/api/ipfs
+        2. Build create transaction via pumpportal.fun/api/trade-local
+        3. Sign and submit
         """
         if not self.keypair:
             return {"error": "Wallet not initialized"}
             
         try:
-            # 1. Generate a new mint keypair (required for create instruction)
+            import json
             from solders.keypair import Keypair
+            
+            # 1. Generate a new mint keypair (required for create instruction)
             mint_keypair = Keypair()
             mint_pubkey = str(mint_keypair.pubkey())
             
-            # 2. Build the 'create' part via PumpPortal
-            # This API builds the complex instruction set (metadata + bonding curve init)
-            url = "https://pumpportal.fun/api/trade-local"
-            
-            # Download image bytes for upload
+            # 2. Download image bytes for IPFS upload
+            print(f"📥 Downloading image from {image_url[:50]}...")
             img_data = requests.get(image_url, timeout=15).content
             
-            files = {
-                'file': ('logo.png', img_data, 'image/png')
-            }
-            data = {
+            # 3. Upload metadata to pump.fun IPFS
+            print(f"📤 Uploading metadata to pump.fun IPFS...")
+            form_data = {
                 'name': name,
                 'symbol': symbol,
                 'description': description,
                 'twitter': '',
                 'telegram': '',
                 'website': '',
+                'showName': 'true'
+            }
+            files = {
+                'file': ('logo.png', img_data, 'image/png')
+            }
+            
+            ipfs_response = requests.post(
+                "https://pump.fun/api/ipfs",
+                data=form_data,
+                files=files,
+                timeout=30
+            )
+            
+            if ipfs_response.status_code != 200:
+                return {"error": f"IPFS Upload Failed: {ipfs_response.text}"}
+            
+            ipfs_result = ipfs_response.json()
+            metadata_uri = ipfs_result.get('metadataUri')
+            
+            if not metadata_uri:
+                return {"error": f"IPFS returned no metadataUri: {ipfs_result}"}
+            
+            print(f"✅ IPFS Upload Success: {metadata_uri}")
+            
+            # 4. Build the create transaction via PumpPortal
+            token_metadata = {
+                'name': name,
+                'symbol': symbol,
+                'uri': metadata_uri
+            }
+            
+            create_payload = {
+                'publicKey': self.wallet_address,
                 'action': 'create',
+                'tokenMetadata': token_metadata,
                 'mint': mint_pubkey,
-                'amount': sol_buy_amount,
                 'denominatedInSol': 'true',
-                'publicKey': self.wallet_address
+                'amount': sol_buy_amount,
+                'slippage': 10,
+                'priorityFee': 0.0005,
+                'pool': 'pump'
             }
             
             print(f"🚀 Preparing launch for {name} ({symbol}). Mint: {mint_pubkey[:8]}...")
-            response = requests.post(url, data=data, files=files, timeout=30)
+            
+            response = requests.post(
+                "https://pumpportal.fun/api/trade-local",
+                headers={'Content-Type': 'application/json'},
+                data=json.dumps(create_payload),
+                timeout=30
+            )
             
             if response.status_code != 200:
                 return {"error": f"PumpPortal API Error: {response.text}"}
                 
             tx_data = response.content
             
-            # 3. Handle Signing (Requires BOTH Wallet and Mint keypairs)
+            # 5. Handle Signing (Requires BOTH Wallet and Mint keypairs)
             tx = VersionedTransaction.from_bytes(tx_data)
             message = tx.message
             message_bytes = to_bytes_versioned(message)
@@ -349,11 +391,10 @@ class DexTrader:
             sig1 = self.keypair.sign_message(message_bytes)
             sig2 = mint_keypair.sign_message(message_bytes)
             
-            # Populate requires signatures in the order of account keys (Wallet usually first for payer)
-            # PumpPortal builds it correctly - we just need to provide the right signatures
-            signed_tx = VersionedTransaction.populate(message, [sig1, sig2])
+            # PumpPortal expects: [mint_keypair, signer_keypair] order
+            signed_tx = VersionedTransaction.populate(message, [sig2, sig1])
             
-            # 4. Final Submission
+            # 6. Final Submission
             print(f"📡 Sending launch transaction to Solana...")
             resp = requests.post(self.rpc_url, json={
                 "jsonrpc": "2.0", "id": 1,
@@ -370,7 +411,10 @@ class DexTrader:
                 
         except Exception as e:
             print(f"❌ Error in create_pump_token: {e}")
+            import traceback
+            traceback.print_exc()
             return {"error": str(e)}
+
 
     def execute_swap(self, input_mint, output_mint, amount_lamports, override_slippage=None, use_jito=False, priority=False, is_pump=False, attempt=0):
         """Execute a swap via Jupiter with optional Jito bundle support.

@@ -292,7 +292,7 @@ class AlertSystem(commands.Cog):
             key=lambda x: x[1].get('discovered_at', ''),
             reverse=True
         )
-        whales = [w[0] for w in sorted_whales[:500]]
+        whales = [w[0] for w in sorted_whales[:200]]  # CREDIT OPTIMIZATION: Reduced from 500 to 200
         
         # If no whales, use the bot's own wallet as a placeholder to ensure the URL is registered in Helius
         if not whales:
@@ -1544,8 +1544,7 @@ class AlertSystem(commands.Cog):
         
         try:
             # Run in thread to avoid blocking Discord heartbeat
-            import asyncio
-            new_wallets = await asyncio.to_thread(
+            new_wallets = await self.run_sync(
                 self.copy_trader.scan_market_for_whales_sync, 
                 max_pairs=15, 
                 max_traders_per_pair=5
