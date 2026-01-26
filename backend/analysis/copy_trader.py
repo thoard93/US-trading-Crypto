@@ -185,30 +185,37 @@ class SmartCopyTrader:
 
     def _save_wallet_to_db(self, address, data):
         """Save a single wallet to DB."""
-        try:
-            from database import SessionLocal
-            from models import WhaleWallet
-            
-            db = SessionLocal()
-            
-            # Check if exists
-            existing = db.query(WhaleWallet).filter(WhaleWallet.address == address).first()
-            if not existing:
-                new_wallet = WhaleWallet(
-                    address=address,
-                    stats=data.get('stats'),
-                    discovered_on=data.get('discovered_on'),
-                    score=data.get('score', 10.0)
-                )
-                db.add(new_wallet)
-                self.logger.info(f"💾 Saved new whale to DB: {address[:16]}...")
-            else:
-                existing.stats = data.get('stats') # Update stats
-            
-            db.commit()
-            db.close()
-        except Exception as e:
-            self.logger.error(f"❌ Error saving whale to DB: {e}")
+        for attempt in range(3):
+            try:
+                from database import SessionLocal
+                from models import WhaleWallet
+                
+                db = SessionLocal()
+                
+                # Check if exists
+                existing = db.query(WhaleWallet).filter(WhaleWallet.address == address).first()
+                if not existing:
+                    new_wallet = WhaleWallet(
+                        address=address,
+                        stats=data.get('stats'),
+                        discovered_on=data.get('discovered_on'),
+                        score=data.get('score', 10.0)
+                    )
+                    db.add(new_wallet)
+                    self.logger.info(f"💾 Saved new whale to DB: {address[:16]}...")
+                else:
+                    existing.stats = data.get('stats') # Update stats
+                
+                db.commit()
+                db.close()
+                return # Success
+            except Exception as e:
+                if "SSL connection" in str(e) and attempt < 2:
+                    import time
+                    time.sleep(2)
+                else:
+                    self.logger.error(f"❌ Error saving whale to DB: {e}")
+                    break
 
 
     def _prune_old_whales(self, keep_count=500):
