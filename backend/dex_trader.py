@@ -453,16 +453,25 @@ class DexTrader:
                             "params": [signed_tx_b64, {"encoding": "base64"}]
                         }
                         resp = requests.post(jito_url, json=payload, timeout=10).json()
+                        print(f"📡 Jito {jito_base.split('//')[1].split('.')[0]} response: {resp}")
+                        
+                        if 'error' in resp:
+                            print(f"⚠️ Jito error: {resp['error']}")
+                            continue
+                            
                         if 'result' in resp:
                             tx_signature = resp['result']
                             print(f"✅ Jito Launch Success: {tx_signature}")
                             break
-                    except: continue
+                    except Exception as e:
+                        print(f"⚠️ Jito {jito_base} exception: {e}")
+                        continue
                 
                 if tx_signature:
+                    print(f"🎯 Returning Jito success with mint: {mint_pubkey}")
                     return {"success": True, "mint": mint_pubkey, "signature": tx_signature}
                 else:
-                    print("⚠️ Jito submission failed/congested. Falling back to standard send...")
+                    print("⚠️ All Jito endpoints failed. Falling back to standard RPC...")
 
             # Fallback/Standard Submission
             print(f"📡 Sending launch transaction to Solana...")
