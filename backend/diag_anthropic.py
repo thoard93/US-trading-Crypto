@@ -3,10 +3,22 @@ import json
 from dotenv import load_dotenv
 from anthropic import Anthropic
 
-# 1. Load the .env file (Robust pathing)
+# 1. Load the .env file (Hyper-verbose pathing)
 script_dir = os.path.dirname(os.path.abspath(__file__))
 env_path = os.path.join(script_dir, '.env')
-load_dotenv(env_path)
+
+print(f"📂 Searching for .env at: {env_path}")
+if os.path.exists(env_path):
+    print("✅ File found! Loading...")
+    load_dotenv(env_path)
+else:
+    print("❌ FILE NOT FOUND!")
+    print(f"   Current Working Directory: {os.getcwd()}")
+    print(f"   Listing files in {script_dir}:")
+    try:
+        print(f"   {os.listdir(script_dir)}")
+    except:
+        print("   Could not list directory.")
 
 key = os.getenv('ANTHROPIC_API_KEY')
 
