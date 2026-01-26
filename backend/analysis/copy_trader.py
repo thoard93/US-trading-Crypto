@@ -821,26 +821,36 @@ class SmartCopyTrader:
 
     
     def update_whale_activity(self, wallet_address):
-        """Update last_active timestamp for a whale when we see them trade."""
-        try:
-            from database import SessionLocal
-            import models
-            from datetime import datetime
+        """Update last_active timestamp for a whale when we see them trade.
+        ULTRA-HARDENED: Retry with SSL recovery."""
+        if wallet_address not in self.qualified_wallets:
+            return
             
-            if wallet_address not in self.qualified_wallets:
+        for attempt in range(3):
+            try:
+                from database import SessionLocal
+                import models
+                from datetime import datetime
+                
+                db = SessionLocal()
+                whale = db.query(models.WhaleWallet).filter(
+                    models.WhaleWallet.address == wallet_address
+                ).first()
+                
+                if whale:
+                    whale.last_active = datetime.utcnow()
+                    db.commit()
+                db.close()
+                return  # Success
+                
+            except Exception as e:
+                if "SSL connection" in str(e) and attempt < 2:
+                    import time
+                    time.sleep(1)
+                    continue
+                # Silent fail - activity tracking is non-critical
                 return
-            
-            db = SessionLocal()
-            whale = db.query(models.WhaleWallet).filter(
-                models.WhaleWallet.address == wallet_address
-            ).first()
-            
-            if whale:
-                whale.last_active = datetime.utcnow()
-                db.commit()
-            db.close()
-        except Exception as e:
-            pass  # Silent fail - activity tracking is non-critical
+
 
 
     async def check_swarm_exit(self, token_mint):
