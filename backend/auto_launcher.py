@@ -316,7 +316,6 @@ class AutoLauncher:
                         # Step 5: Volume Simulation (if enabled)
                         if self.volume_sim_enabled and self.dex_trader:
                             await channel.send(f"📊 **Volume Simulation** starting in 30s on `{pack['name']}`...")
-                            import asyncio
                             await asyncio.sleep(30)  # Wait before starting simulation
                             
                             sim_result = await self.dex_trader.simulate_volume(

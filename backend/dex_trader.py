@@ -1257,9 +1257,211 @@ class DexTrader:
         
         return result
     
+    def pump_buy(self, mint_address, sol_amount=0.01):
+        """
+        Buy a Pump.fun token using the PumpPortal API (bonding curve native).
+        Works for tokens that haven't graduated to Raydium yet.
+        """
+        if not self.keypair:
+            return {"error": "Wallet not initialized"}
+        
+        import json
+        
+        try:
+            payload = {
+                'publicKey': self.wallet_address,
+                'action': 'buy',
+                'mint': mint_address,
+                'denominatedInSol': 'true',
+                'amount': sol_amount,
+                'slippage': 25,  # 25% slippage for volatile pump tokens
+                'priorityFee': 0.0003,
+                'pool': 'pump'
+            }
+            
+            print(f"🛒 PumpPortal BUY: {sol_amount} SOL → {mint_address[:12]}...")
+            
+            response = requests.post(
+                "https://pumpportal.fun/api/trade-local",
+                headers={'Content-Type': 'application/json'},
+                data=json.dumps(payload),
+                timeout=30
+            )
+            
+            if response.status_code != 200:
+                return {"error": f"PumpPortal API Error: {response.text}"}
+            
+            tx_data = response.content
+            
+            # Parse and sign the transaction
+            tx = VersionedTransaction.from_bytes(tx_data)
+            old_message = tx.message
+            
+            # Fetch fresh blockhash
+            blockhash_resp = requests.post(self.rpc_url, json={
+                "jsonrpc": "2.0", "id": 1,
+                "method": "getLatestBlockhash",
+                "params": [{"commitment": "finalized"}]
+            }, timeout=10).json()
+            
+            fresh_blockhash_str = blockhash_resp.get('result', {}).get('value', {}).get('blockhash')
+            if not fresh_blockhash_str:
+                return {"error": f"Failed to fetch blockhash"}
+            
+            from solders.hash import Hash
+            fresh_blockhash = Hash.from_string(fresh_blockhash_str)
+            
+            # Rebuild message with fresh blockhash
+            new_message = MessageV0(
+                header=old_message.header,
+                account_keys=old_message.account_keys,
+                recent_blockhash=fresh_blockhash,
+                instructions=old_message.instructions,
+                address_table_lookups=old_message.address_table_lookups
+            )
+            
+            # Sign
+            msg_bytes = to_bytes_versioned(new_message)
+            signers = new_message.account_keys[:new_message.header.num_required_signatures]
+            signatures = []
+            
+            for key in signers:
+                if str(key) == self.wallet_address:
+                    signatures.append(self.keypair.sign_message(msg_bytes))
+                else:
+                    signatures.append(Signature.default())
+            
+            signed_tx = VersionedTransaction.populate(new_message, signatures)
+            tx_base64 = base64.b64encode(bytes(signed_tx)).decode('utf-8')
+            
+            # Submit
+            send_resp = requests.post(self.rpc_url, json={
+                "jsonrpc": "2.0", "id": 1,
+                "method": "sendTransaction",
+                "params": [tx_base64, {"skipPreflight": True, "encoding": "base64"}]
+            }, timeout=30).json()
+            
+            if 'result' in send_resp:
+                sig = send_resp['result']
+                print(f"✅ PumpPortal BUY TX: {sig}")
+                return {"success": True, "signature": sig}
+            else:
+                return {"error": f"TX failed: {send_resp}"}
+                
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {"error": str(e)}
+    
+    def pump_sell(self, mint_address, token_amount_pct=100):
+        """
+        Sell a Pump.fun token using the PumpPortal API.
+        token_amount_pct: Percentage of holdings to sell (default 100%)
+        """
+        if not self.keypair:
+            return {"error": "Wallet not initialized"}
+        
+        import json
+        
+        try:
+            # Get current token balance
+            bal_info = self.get_token_balance(mint_address)
+            token_balance = bal_info.get('ui_amount', 0)
+            
+            if token_balance <= 0:
+                return {"error": "No tokens to sell"}
+            
+            sell_amount = token_balance * (token_amount_pct / 100)
+            
+            payload = {
+                'publicKey': self.wallet_address,
+                'action': 'sell',
+                'mint': mint_address,
+                'denominatedInSol': 'false',  # Amount in tokens
+                'amount': sell_amount,
+                'slippage': 50,  # 50% slippage for exit
+                'priorityFee': 0.0003,
+                'pool': 'pump'
+            }
+            
+            print(f"🏷️ PumpPortal SELL: {sell_amount:.2f} tokens ({token_amount_pct}%) of {mint_address[:12]}...")
+            
+            response = requests.post(
+                "https://pumpportal.fun/api/trade-local",
+                headers={'Content-Type': 'application/json'},
+                data=json.dumps(payload),
+                timeout=30
+            )
+            
+            if response.status_code != 200:
+                return {"error": f"PumpPortal API Error: {response.text}"}
+            
+            tx_data = response.content
+            
+            # Parse and sign the transaction
+            tx = VersionedTransaction.from_bytes(tx_data)
+            old_message = tx.message
+            
+            # Fetch fresh blockhash
+            blockhash_resp = requests.post(self.rpc_url, json={
+                "jsonrpc": "2.0", "id": 1,
+                "method": "getLatestBlockhash",
+                "params": [{"commitment": "finalized"}]
+            }, timeout=10).json()
+            
+            fresh_blockhash_str = blockhash_resp.get('result', {}).get('value', {}).get('blockhash')
+            if not fresh_blockhash_str:
+                return {"error": f"Failed to fetch blockhash"}
+            
+            from solders.hash import Hash
+            fresh_blockhash = Hash.from_string(fresh_blockhash_str)
+            
+            # Rebuild message with fresh blockhash
+            new_message = MessageV0(
+                header=old_message.header,
+                account_keys=old_message.account_keys,
+                recent_blockhash=fresh_blockhash,
+                instructions=old_message.instructions,
+                address_table_lookups=old_message.address_table_lookups
+            )
+            
+            # Sign
+            msg_bytes = to_bytes_versioned(new_message)
+            signers = new_message.account_keys[:new_message.header.num_required_signatures]
+            signatures = []
+            
+            for key in signers:
+                if str(key) == self.wallet_address:
+                    signatures.append(self.keypair.sign_message(msg_bytes))
+                else:
+                    signatures.append(Signature.default())
+            
+            signed_tx = VersionedTransaction.populate(new_message, signatures)
+            tx_base64 = base64.b64encode(bytes(signed_tx)).decode('utf-8')
+            
+            # Submit
+            send_resp = requests.post(self.rpc_url, json={
+                "jsonrpc": "2.0", "id": 1,
+                "method": "sendTransaction",
+                "params": [tx_base64, {"skipPreflight": True, "encoding": "base64"}]
+            }, timeout=30).json()
+            
+            if 'result' in send_resp:
+                sig = send_resp['result']
+                print(f"✅ PumpPortal SELL TX: {sig}")
+                return {"success": True, "signature": sig}
+            else:
+                return {"error": f"TX failed: {send_resp}"}
+                
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {"error": str(e)}
+
     async def simulate_volume(self, mint_address, rounds=5, sol_per_round=0.01, delay_seconds=30, callback=None):
         """
-        Create organic-looking volume on a token by doing small buy/sell cycles.
+        Create organic-looking volume on a Pump.fun token by doing small buy/sell cycles.
+        Uses PumpPortal API for native bonding curve trades (not Jupiter).
         
         Args:
             mint_address: Token mint address to pump
@@ -1284,7 +1486,6 @@ class DexTrader:
         await notify(f"Starting volume simulation on {mint_address[:12]}...")
         await notify(f"Config: {rounds} rounds × {sol_per_round} SOL, {delay_seconds}s delay")
         
-        sol_lamports = int(sol_per_round * 1_000_000_000)
         total_bought = 0
         total_sold = 0
         
@@ -1292,14 +1493,8 @@ class DexTrader:
             try:
                 await notify(f"Round {i+1}/{rounds}: Buying {sol_per_round} SOL...")
                 
-                # BUY
-                buy_result = self.execute_swap(
-                    self.SOL_MINT,
-                    mint_address,
-                    sol_lamports,
-                    override_slippage=2000,  # 20% slippage for pump tokens
-                    use_jito=False
-                )
+                # BUY using PumpPortal (native bonding curve)
+                buy_result = self.pump_buy(mint_address, sol_amount=sol_per_round)
                 
                 if buy_result.get('success'):
                     total_bought += 1
@@ -1314,12 +1509,7 @@ class DexTrader:
                 # SELL 80% (keep 20% as position)
                 await notify(f"Round {i+1}/{rounds}: Selling 80%...")
                 
-                sell_result = self.sell_token(
-                    mint_address,
-                    percentage=80,
-                    override_slippage=5000,  # 50% slippage for meme exits
-                    priority=False
-                )
+                sell_result = self.pump_sell(mint_address, token_amount_pct=80)
                 
                 if sell_result.get('success'):
                     total_sold += 1
