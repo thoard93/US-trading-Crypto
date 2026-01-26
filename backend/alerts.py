@@ -1959,6 +1959,19 @@ class AlertSystem(commands.Cog):
         
         await ctx.send(embed=embed)
 
+    @autolaunch.command(name="reset")
+    async def autolaunch_reset(self, ctx, keyword: str):
+        """🔄 Reset cooldown for a keyword (use after failed launches). Usage: !autolaunch reset AUTO"""
+        if not self.auto_launcher:
+            await ctx.send("⚠️ Auto-launcher not initialized.")
+            return
+        
+        result = self.auto_launcher.clear_cooldown(keyword)
+        if result:
+            await ctx.send(f"✅ **Cooldown cleared** for `{keyword.upper()}`. It can now be launched again!")
+        else:
+            await ctx.send(f"ℹ️ `{keyword.upper()}` was not on cooldown.")
+
     @commands.group(invoke_without_command=True)
     async def whales(self, ctx):
         """Manage whale hunting and swarm detection. Use !whales on/off/status."""

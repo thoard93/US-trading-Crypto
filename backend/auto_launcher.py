@@ -95,6 +95,14 @@ class AutoLauncher:
         keyword_upper = keyword.upper()
         self._keyword_cooldowns[keyword_upper] = datetime.utcnow() + timedelta(hours=self.cooldown_hours)
     
+    def clear_cooldown(self, keyword):
+        """Clear cooldown for a specific keyword (useful after failed launches)."""
+        keyword_upper = keyword.upper()
+        if keyword_upper in self._keyword_cooldowns:
+            del self._keyword_cooldowns[keyword_upper]
+            return True
+        return False
+    
     def check_safety_limits(self):
         """
         Check all safety limits before launching.
@@ -259,7 +267,7 @@ class AutoLauncher:
                 description=pack['description'],
                 image_url=pack['image_url'],
                 sol_buy_amount=buy_amount,
-                use_jito=True
+                use_jito=False  # DISABLED: Jito bundles drop silently. Using standard RPC for now.
             )
             
             # Reset boost after launch attempt
