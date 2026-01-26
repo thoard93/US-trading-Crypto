@@ -281,7 +281,84 @@ class DexTrader:
         except Exception as e:
             print(f"❌ Error fetching wallet holdings: {e}")
             return {}
-    
+
+    def create_pump_token(self, name, symbol, description, image_url, sol_buy_amount=0):
+        """
+        Launches a token on pump.fun using the pumpportal.fun API to build the internal instructions.
+        This method generates a new mint keypair, uploads metadata, and executes the on-chain creation.
+        """
+        if not self.keypair:
+            return {"error": "Wallet not initialized"}
+            
+        try:
+            # 1. Generate a new mint keypair (required for create instruction)
+            from solders.keypair import Keypair
+            mint_keypair = Keypair()
+            mint_pubkey = str(mint_keypair.pubkey())
+            
+            # 2. Build the 'create' part via PumpPortal
+            # This API builds the complex instruction set (metadata + bonding curve init)
+            url = "https://pumpportal.fun/api/trade-local"
+            
+            # Download image bytes for upload
+            img_data = requests.get(image_url, timeout=15).content
+            
+            files = {
+                'file': ('logo.png', img_data, 'image/png')
+            }
+            data = {
+                'name': name,
+                'symbol': symbol,
+                'description': description,
+                'twitter': '',
+                'telegram': '',
+                'website': '',
+                'action': 'create',
+                'mint': mint_pubkey,
+                'amount': sol_buy_amount,
+                'denominatedInSol': 'true',
+                'publicKey': self.wallet_address
+            }
+            
+            print(f"🚀 Preparing launch for {name} ({symbol}). Mint: {mint_pubkey[:8]}...")
+            response = requests.post(url, data=data, files=files, timeout=30)
+            
+            if response.status_code != 200:
+                return {"error": f"PumpPortal API Error: {response.text}"}
+                
+            tx_data = response.content
+            
+            # 3. Handle Signing (Requires BOTH Wallet and Mint keypairs)
+            tx = VersionedTransaction.from_bytes(tx_data)
+            message = tx.message
+            message_bytes = to_bytes_versioned(message)
+            
+            sig1 = self.keypair.sign_message(message_bytes)
+            sig2 = mint_keypair.sign_message(message_bytes)
+            
+            # Populate requires signatures in the order of account keys (Wallet usually first for payer)
+            # PumpPortal builds it correctly - we just need to provide the right signatures
+            signed_tx = VersionedTransaction.populate(message, [sig1, sig2])
+            
+            # 4. Final Submission
+            print(f"📡 Sending launch transaction to Solana...")
+            resp = requests.post(self.rpc_url, json={
+                "jsonrpc": "2.0", "id": 1,
+                "method": "sendTransaction",
+                "params": [base64.b64encode(bytes(signed_tx)).decode('utf-8'), {"encoding": "base64"}]
+            }, timeout=15).json()
+            
+            if 'result' in resp:
+                sig = resp['result']
+                print(f"✅ SUCCESS! Created coin: {name} | Mint: {mint_pubkey} | Sig: {sig}")
+                return {"success": True, "mint": mint_pubkey, "signature": sig}
+            else:
+                return {"error": f"Submission Failed: {resp.get('error')}"}
+                
+        except Exception as e:
+            print(f"❌ Error in create_pump_token: {e}")
+            return {"error": str(e)}
+
     def execute_swap(self, input_mint, output_mint, amount_lamports, override_slippage=None, use_jito=False, priority=False, is_pump=False, attempt=0):
         """Execute a swap via Jupiter with optional Jito bundle support.
         

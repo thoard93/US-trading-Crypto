@@ -7,6 +7,8 @@ from collectors.crypto_collector import CryptoCollector
 # from analysis.technical_engine import TechnicalAnalysis  # Disabled: pandas_ta not compatible with Python 3.11
 from analysis.safety_checker import SafetyChecker
 from alerts import AlertSystem
+from meme_creator import MemeCreator
+from dex_trader import DexTrader
 
 # Load environment variables
 load_dotenv()
@@ -22,6 +24,8 @@ else:
 crypto = CryptoCollector()
 # analyzer = TechnicalAnalysis()  # Disabled: pandas_ta not compatible with Python 3.11
 safety = SafetyChecker()
+meme_gen = MemeCreator()
+trader = DexTrader()
 
 # Initialize bot with standard intents
 intents = discord.Intents.default()
@@ -141,8 +145,64 @@ async def help(ctx):
     embed.add_field(name="`!track [address] [chain]`", value="Monitor a DEX token by contract address (Default: `solana`).", inline=False)
     embed.add_field(name="`!scan`", value="Trigger an immediate market scan summary.", inline=False)
     embed.add_field(name="`!balance`", value="Check your Kraken USDT balance.", inline=False)
+    embed.add_field(name="`!launch [keyword]`", value="🚀 Launch an AI-generated meme coin on pump.fun (e.g., `!launch Blue Whale`).", inline=False)
     embed.set_footer(text="Short-term trading assistant | GoPlus & CCXT")
     await ctx.send(embed=embed)
+
+@bot.command()
+async def launch(ctx, *, keyword: str):
+    """🚀 Launch an AI-generated meme coin on pump.fun (e.g., !launch Blue Whale)."""
+    # Only allow in specific trading channels to prevent spam
+    TRADING_CHANNEL_IDS = [1456078814567202960, 1456078864684945531, 1456439911896060028]
+    if ctx.channel.id not in TRADING_CHANNEL_IDS:
+        return
+        
+    await ctx.send(f"🧠 **AI Strategist**: Analyzing '{keyword}' for viral potential... 🧊")
+    
+    # 1. Generate Meme Concept & Logo
+    result = await asyncio.to_thread(meme_gen.create_full_meme, keyword)
+    
+    if not result:
+        await ctx.send("❌ Error: AI Brain failed to generate a viral concept. Check logs.")
+        return
+        
+    embed = discord.Embed(title=f"🚀 Viral Intent Detected: {result['name']} ({result['ticker']})", color=discord.Color.gold())
+    embed.add_field(name="Concept", value=result['description'], inline=False)
+    embed.set_image(url=result['image_url'])
+    await ctx.send(embed=embed)
+    
+    confirm_msg = await ctx.send("⚠️ **CONFIRMATION REQUIRED**: Do you want to launch this coin on pump.fun? (Cost: ~0.02 SOL). React with ✅ to deploy.")
+    await confirm_msg.add_reaction("✅")
+    
+    def check(reaction, user):
+        return user == ctx.author and str(reaction.emoji) == "✅" and reaction.message.id == confirm_msg.id
+        
+    try:
+        reaction, user = await bot.wait_for('reaction_add', timeout=60.0, check=check)
+    except asyncio.TimeoutError:
+        await ctx.send("⏳ Launch cancelled (Timeout).")
+        return
+        
+    await ctx.send("⚡ **DEPLOYING TO SOLANA MAINNET**... Hold your breath.")
+    
+    # 2. Launch on-chain
+    launch_res = await asyncio.to_thread(
+        trader.create_pump_token,
+        name=result['name'],
+        symbol=result['ticker'],
+        description=result['description'],
+        image_url=result['image_url'],
+        sol_buy_amount=0.01  # Small initial buy to seed the bonding curve
+    )
+    
+    if launch_res.get('success'):
+        success_embed = discord.Embed(title="🚀 COIN IS LIVE ON PUMP.FUN!", color=discord.Color.green())
+        success_embed.add_field(name="Mint Address", value=f"`{launch_res['mint']}`", inline=False)
+        success_embed.add_field(name="Solscan", value=f"[View Transaction](https://solscan.io/tx/{launch_res['signature']})", inline=False)
+        success_embed.add_field(name="Pump.fun", value=f"[View on Pump.fun](https://pump.fun/{launch_res['mint']})", inline=False)
+        await ctx.send(embed=success_embed)
+    else:
+        await ctx.send(f"❌ **LAUNCH FAILED**: {launch_res.get('error', 'Unknown Error')}")
 
 async def start_services():
     # 1. Start Webhook Listener (FastAPI)
