@@ -93,6 +93,9 @@ class DexTrader:
         
         if private_key:
             try:
+                # 🛡️ RESILIENCE: Remove ALL potential whitespace/newlines from terminal copy-pastes
+                private_key = "".join(private_key.split())
+                
                 # Handle both base58 and byte array formats
                 if private_key.startswith('['):
                     # Byte array format
@@ -101,10 +104,16 @@ class DexTrader:
                     # Base58 format
                     key_bytes = base58.b58decode(private_key)
                 
-                # Store the raw bytes for signing (first 32 = seed, or all 64 if full key)
-                self._raw_secret = key_bytes
-                
-                self.keypair = Keypair.from_bytes(key_bytes)
+                # 🛡️ RESILIENCE: Support both 32-byte seeds and 64-byte keypairs
+                if len(key_bytes) == 32:
+                    self.keypair = Keypair.from_seed(key_bytes)
+                    print("🔐 Initialized wallet from 32-byte seed.")
+                elif len(key_bytes) == 64:
+                    self.keypair = Keypair.from_bytes(key_bytes)
+                    print("🔐 Initialized wallet from 64-byte keypair.")
+                else:
+                    raise ValueError(f"Invalid key length: {len(key_bytes)} bytes. Expected 32 or 64.")
+
                 self.wallet_address = str(self.keypair.pubkey())
                 print(f"✅ DexTrader initialized. Wallet: {self.wallet_address[:8]}...{self.wallet_address[-4:]}")
             except Exception as e:
