@@ -70,26 +70,32 @@ class SmartCopyTrader:
 
     def _save_swarm_participant(self, token_address, whale_address):
         """Persist a single swarm participant mapping."""
-        try:
-            from database import SessionLocal
-            from models import ActiveSwarm
-            
-            db = SessionLocal()
-            # Check if exists
-            exists = db.query(ActiveSwarm).filter(
-                ActiveSwarm.token_address == token_address,
-                ActiveSwarm.whale_address == whale_address
-            ).first()
-            
-            if not exists:
-                new_entry = ActiveSwarm(token_address=token_address, whale_address=whale_address)
-                db.add(new_entry)
-                db.commit()
-            
-            db.close()
-        except Exception:
-            # Silence DB spam - swarms are still processed in memory
-            pass
+        for attempt in range(3):
+            try:
+                from database import SessionLocal
+                from models import ActiveSwarm
+                
+                db = SessionLocal()
+                # Check if exists
+                exists = db.query(ActiveSwarm).filter(
+                    ActiveSwarm.token_address == token_address,
+                    ActiveSwarm.whale_address == whale_address
+                ).first()
+                
+                if not exists:
+                    new_entry = ActiveSwarm(token_address=token_address, whale_address=whale_address)
+                    db.add(new_entry)
+                    db.commit()
+                
+                db.close()
+                return # Success
+            except Exception as e:
+                if "SSL connection" in str(e) and attempt < 2:
+                    import time
+                    time.sleep(2)
+                else:
+                    self.logger.error(f"Error saving swarm participant to DB: {e}")
+                    break
 
     def _delete_swarm_from_db(self, token_address):
         """Remove all participants for a token from DB (on exit)."""
@@ -156,16 +162,23 @@ class SmartCopyTrader:
             self.qualified_wallets[address]['score'] = new_score
             
             # Sync to DB
-            try:
-                from database import SessionLocal
-                from models import WhaleWallet
-                db = SessionLocal()
-                existing = db.query(WhaleWallet).filter(WhaleWallet.address == address).first()
-                if existing:
-                    existing.score = new_score
-                    db.commit()
-                db.close()
-            except: pass
+            for attempt in range(3):
+                try:
+                    from database import SessionLocal
+                    from models import WhaleWallet
+                    db = SessionLocal()
+                    existing = db.query(WhaleWallet).filter(WhaleWallet.address == address).first()
+                    if existing:
+                        existing.score = new_score
+                        db.commit()
+                    db.close()
+                    return new_score # Success
+                except Exception as e:
+                    if "SSL connection" in str(e) and attempt < 2:
+                        import time
+                        time.sleep(2)
+                    else:
+                        break
             
             return new_score
         return None
