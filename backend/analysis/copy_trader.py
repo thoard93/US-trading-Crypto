@@ -630,7 +630,7 @@ class SmartCopyTrader:
                 
                 # Re-check threshold after filtering
                 if len(qualified_buyers) < min_buyers:
-                    self.logger.info(f"⏭️ Filtered Swarm: {mint[:8]}... ({len(buyers)} raw, {len(qualified_buyers)} qualified)")
+                    self.logger.debug(f"⏭️ Filtered Swarm: {mint[:8]}... ({len(buyers)} raw, {len(qualified_buyers)} qualified)")
                     continue
                     
                 self.logger.info(f"🚀 SWARM DETECTED: {len(qualified_buyers)} QUALIFIED whales bought {mint}")

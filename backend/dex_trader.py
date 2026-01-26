@@ -392,12 +392,15 @@ class DexTrader:
             signers_required = message.header.num_required_signatures
             signer_keys = message.account_keys[:signers_required]
             
+            # Use specific serialization for versioned transactions (MessageV0)
+            msg_bytes = to_bytes_versioned(message)
+            
             signatures = []
             for key in signer_keys:
                 if str(key) == str(self.wallet_address):
-                    signatures.append(self.keypair.sign_message(bytes(message)))
+                    signatures.append(self.keypair.sign_message(msg_bytes))
                 elif str(key) == str(mint_pubkey):
-                    signatures.append(mint_keypair.sign_message(bytes(message)))
+                    signatures.append(mint_keypair.sign_message(msg_bytes))
                 else:
                     # Should not happen for a create tx
                     print(f"⚠️ Unknown signer required: {key}")
