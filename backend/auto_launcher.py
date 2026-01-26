@@ -22,7 +22,7 @@ class AutoLauncher:
         self.enabled = os.getenv('AUTO_LAUNCH_ENABLED', 'true').lower() == 'true'  # 🚀 Auto-enabled on startup
         self.max_daily_launches = int(os.getenv('AUTO_LAUNCH_MAX_DAILY', '5'))
         self.min_sol_balance = float(os.getenv('AUTO_LAUNCH_MIN_SOL', '0.1'))
-        self.volume_seed_sol = float(os.getenv('AUTO_LAUNCH_VOLUME_SEED', '0.1'))  # 0.1 SOL to hit 15k mcap
+        self.volume_seed_sol = float(os.getenv('AUTO_LAUNCH_VOLUME_SEED', '0.5'))  # 0.5 SOL for ~5% bonding curve
         
         # State tracking
         self.launched_today = []  # List of {keyword, mint, timestamp}
@@ -36,7 +36,7 @@ class AutoLauncher:
         
         # Volume simulation settings
         self.volume_sim_enabled = os.getenv('AUTO_LAUNCH_VOLUME_SIM', 'false').lower() == 'true'
-        self.volume_sim_rounds = int(os.getenv('AUTO_LAUNCH_VOLUME_ROUNDS', '5'))
+        self.volume_sim_rounds = int(os.getenv('AUTO_LAUNCH_VOLUME_ROUNDS', '10'))
         self.volume_sim_amount = float(os.getenv('AUTO_LAUNCH_VOLUME_AMOUNT', '0.01'))
         self.volume_sim_delay = int(os.getenv('AUTO_LAUNCH_VOLUME_DELAY', '30'))
     

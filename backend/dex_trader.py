@@ -1458,20 +1458,20 @@ class DexTrader:
             traceback.print_exc()
             return {"error": str(e)}
 
-    async def simulate_volume(self, mint_address, rounds=5, sol_per_round=0.01, delay_seconds=30, callback=None):
+    async def simulate_volume(self, mint_address, rounds=10, sol_per_round=0.01, delay_seconds=30, callback=None):
         """
-        Create organic-looking volume on a Pump.fun token by doing small buy/sell cycles.
-        Uses PumpPortal API for native bonding curve trades (not Jupiter).
+        Create organic-looking volume on a Pump.fun token with NET-ZERO strategy.
+        Uses PumpPortal API for native bonding curve trades.
+        
+        NET-ZERO MODE: Each round buys X SOL worth, then sells ONLY those tokens back.
+        This creates chart activity WITHOUT eroding your initial position.
         
         Args:
             mint_address: Token mint address to pump
-            rounds: Number of buy/sell cycles (default 5)
+            rounds: Number of buy/sell cycles (default 10)
             sol_per_round: SOL amount per buy (default 0.01 SOL = ~$2)
             delay_seconds: Wait time between trades (default 30s)
             callback: Optional async function to call with status updates (for Discord)
-        
-        Each round: BUY → wait → SELL 80% → wait → repeat
-        Net effect: Small position built + chart activity created
         """
         import asyncio
         
@@ -1483,14 +1483,21 @@ class DexTrader:
                 except:
                     pass
         
-        await notify(f"Starting volume simulation on {mint_address[:12]}...")
+        await notify(f"Starting NET-ZERO volume simulation on {mint_address[:12]}...")
         await notify(f"Config: {rounds} rounds × {sol_per_round} SOL, {delay_seconds}s delay")
+        await notify(f"💡 Net-zero mode: sells only what's bought each round (preserves your bag)")
         
         total_bought = 0
         total_sold = 0
         
+        # Get initial balance to track what we buy
+        initial_balance = self.get_token_balance(mint_address).get('ui_amount', 0)
+        
         for i in range(rounds):
             try:
+                # Get balance BEFORE buy
+                pre_buy_balance = self.get_token_balance(mint_address).get('ui_amount', 0)
+                
                 await notify(f"Round {i+1}/{rounds}: Buying {sol_per_round} SOL...")
                 
                 # BUY using PumpPortal (native bonding curve)
@@ -1503,19 +1510,93 @@ class DexTrader:
                     await notify(f"⚠️ Buy {i+1} failed: {buy_result.get('error', 'Unknown')}")
                     continue
                 
-                # Wait between trades
-                await asyncio.sleep(delay_seconds)
+                # Wait for balance to update
+                await asyncio.sleep(3)
                 
-                # SELL 80% (keep 20% as position)
-                await notify(f"Round {i+1}/{rounds}: Selling 80%...")
+                # Get balance AFTER buy to calculate tokens received
+                post_buy_balance = self.get_token_balance(mint_address).get('ui_amount', 0)
+                tokens_bought = post_buy_balance - pre_buy_balance
                 
-                sell_result = self.pump_sell(mint_address, token_amount_pct=80)
+                if tokens_bought <= 0:
+                    await notify(f"⚠️ No tokens received, skipping sell")
+                    await asyncio.sleep(delay_seconds - 3)
+                    continue
                 
-                if sell_result.get('success'):
-                    total_sold += 1
-                    await notify(f"✅ Sell {i+1} complete")
+                await notify(f"Round {i+1}/{rounds}: Selling {tokens_bought:.0f} tokens (net-zero)...")
+                
+                # SELL only what we just bought (net-zero)
+                sell_payload = {
+                    'publicKey': self.wallet_address,
+                    'action': 'sell',
+                    'mint': mint_address,
+                    'denominatedInSol': 'false',
+                    'amount': tokens_bought,  # Exact amount bought
+                    'slippage': 50,
+                    'priorityFee': 0.0003,
+                    'pool': 'pump'
+                }
+                
+                import json
+                response = requests.post(
+                    "https://pumpportal.fun/api/trade-local",
+                    headers={'Content-Type': 'application/json'},
+                    data=json.dumps(sell_payload),
+                    timeout=30
+                )
+                
+                if response.status_code == 200:
+                    # Sign and submit the sell transaction
+                    tx_data = response.content
+                    tx = VersionedTransaction.from_bytes(tx_data)
+                    old_message = tx.message
+                    
+                    blockhash_resp = requests.post(self.rpc_url, json={
+                        "jsonrpc": "2.0", "id": 1,
+                        "method": "getLatestBlockhash",
+                        "params": [{"commitment": "finalized"}]
+                    }, timeout=10).json()
+                    
+                    fresh_blockhash_str = blockhash_resp.get('result', {}).get('value', {}).get('blockhash')
+                    if fresh_blockhash_str:
+                        from solders.hash import Hash
+                        fresh_blockhash = Hash.from_string(fresh_blockhash_str)
+                        
+                        new_message = MessageV0(
+                            header=old_message.header,
+                            account_keys=old_message.account_keys,
+                            recent_blockhash=fresh_blockhash,
+                            instructions=old_message.instructions,
+                            address_table_lookups=old_message.address_table_lookups
+                        )
+                        
+                        msg_bytes = to_bytes_versioned(new_message)
+                        signers = new_message.account_keys[:new_message.header.num_required_signatures]
+                        signatures = []
+                        
+                        for key in signers:
+                            if str(key) == self.wallet_address:
+                                signatures.append(self.keypair.sign_message(msg_bytes))
+                            else:
+                                signatures.append(Signature.default())
+                        
+                        signed_tx = VersionedTransaction.populate(new_message, signatures)
+                        tx_base64 = base64.b64encode(bytes(signed_tx)).decode('utf-8')
+                        
+                        send_resp = requests.post(self.rpc_url, json={
+                            "jsonrpc": "2.0", "id": 1,
+                            "method": "sendTransaction",
+                            "params": [tx_base64, {"skipPreflight": True, "encoding": "base64"}]
+                        }, timeout=30).json()
+                        
+                        if 'result' in send_resp:
+                            total_sold += 1
+                            await notify(f"✅ Sell {i+1} complete (net-zero)")
+                        else:
+                            await notify(f"⚠️ Sell {i+1} failed: {send_resp}")
+                    else:
+                        await notify(f"⚠️ Sell {i+1} failed: no blockhash")
                 else:
-                    await notify(f"⚠️ Sell {i+1} failed: {sell_result.get('error', 'Unknown')}")
+                    await notify(f"⚠️ Sell {i+1} failed: {response.text}")
                 
                 # Wait before next round
                 if i < rounds - 1:
@@ -1525,8 +1606,14 @@ class DexTrader:
                 await notify(f"❌ Round {i+1} error: {e}")
                 continue
         
+        # Report final balance vs initial
+        final_balance = self.get_token_balance(mint_address).get('ui_amount', 0)
+        position_change = final_balance - initial_balance
+        
         await notify(f"✅ Volume simulation complete! {total_bought} buys, {total_sold} sells")
-        return {"success": True, "buys": total_bought, "sells": total_sold}
+        await notify(f"📈 Position change: {position_change:+.0f} tokens (should be ~0 for net-zero)")
+        return {"success": True, "buys": total_bought, "sells": total_sold, "position_change": position_change}
+
 
 
 # Test function
