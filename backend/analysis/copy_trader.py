@@ -756,11 +756,13 @@ class SmartCopyTrader:
         """
         Remove whales who haven't traded in X hours.
         Returns count of pruned whales.
+        ULTRA-HARDENED: Batch deletes with retry logic.
         """
         try:
             from database import SessionLocal
             import models
             from datetime import datetime, timedelta
+            import time
             
             db = SessionLocal()
             cutoff = datetime.utcnow() - timedelta(hours=inactive_hours)
@@ -772,21 +774,40 @@ class SmartCopyTrader:
             ).all()
             
             pruned_count = 0
-            pruned_addresses = []
             
-            for whale in lazy_whales:
-                address = whale.address
-                pruned_addresses.append(address[:8])
+            # BATCH DELETE: Process in groups of 50 to avoid transaction timeouts
+            batch_size = 50
+            for i in range(0, len(lazy_whales), batch_size):
+                batch = lazy_whales[i:i + batch_size]
                 
-                # Remove from memory
-                if address in self.qualified_wallets:
-                    del self.qualified_wallets[address]
-                
-                # Remove from DB
-                db.delete(whale)
-                pruned_count += 1
+                for attempt in range(3):  # 3 retries
+                    try:
+                        for whale in batch:
+                            address = whale.address
+                            
+                            # Remove from memory
+                            if address in self.qualified_wallets:
+                                del self.qualified_wallets[address]
+                            
+                            # Remove from DB
+                            db.delete(whale)
+                            pruned_count += 1
+                        
+                        db.commit()
+                        break  # Success, exit retry loop
+                        
+                    except Exception as e:
+                        db.rollback()
+                        if "SSL connection" in str(e) and attempt < 2:
+                            self.logger.warning(f"⚠️ DB SSL Drop during prune. Retrying {attempt + 1}/3...")
+                            time.sleep(2)
+                            # Reconnect
+                            db.close()
+                            db = SessionLocal()
+                        else:
+                            self.logger.error(f"❌ Failed to prune batch: {e}")
+                            break
             
-            db.commit()
             db.close()
             
             if pruned_count > 0:
@@ -797,6 +818,7 @@ class SmartCopyTrader:
         except Exception as e:
             self.logger.error(f"❌ Error pruning whales: {e}")
             return 0
+
     
     def update_whale_activity(self, wallet_address):
         """Update last_active timestamp for a whale when we see them trade."""
