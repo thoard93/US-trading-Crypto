@@ -80,13 +80,33 @@ class MemeCreator:
 
     def generate_logo(self, prompt):
         """
-        Uses Kie AI (Nano Banana Pro) to generate a 2K logo.
-        UPDATED: Multi-endpoint retry + placeholder fallback.
+        Uses a multi-tier image cascade for maximum reliability.
+        Priority: Kie AI → Replicate SDXL → Pollinations.AI → DiceBear
         """
-        if not self.kie_ai_key:
-            self.logger.warning("🚫 KIE_AI_API_KEY not found. Using placeholder image.")
-            return self._get_placeholder_image()
-            
+        # Tier 1: Kie AI (Nano Banana Pro) - Best quality, slowest
+        if self.kie_ai_key:
+            result = self._try_kie_ai(prompt)
+            if result:
+                return result
+        
+        # Tier 2: Replicate SDXL Lightning - Great quality, fast, cheap
+        replicate_key = os.getenv('REPLICATE_API_KEY', '').strip()
+        if replicate_key:
+            result = self._try_replicate(prompt, replicate_key)
+            if result:
+                return result
+        
+        # Tier 3: Pollinations.AI - Good quality, FREE, no API key
+        result = self._try_pollinations(prompt)
+        if result:
+            return result
+        
+        # Tier 4: DiceBear - Basic placeholder (always works)
+        self.logger.warning("⚠️ All image sources failed. Using placeholder.")
+        return self._get_placeholder_image()
+    
+    def _try_kie_ai(self, prompt):
+        """Attempt Kie AI generation with 5 minute timeout."""
         url = "https://api.kie.ai/api/v1/jobs/createTask"
         headers = {
             "Content-Type": "application/json",
@@ -97,66 +117,121 @@ class MemeCreator:
             "input": {
                 "prompt": prompt,
                 "aspect_ratio": "1:1",
-                "resolution": "1K",  # Use 1K for faster generation
+                "resolution": "1K",
                 "output_format": "png"
             }
         }
         
         try:
-            # 1. Create Task
             response = requests.post(url, headers=headers, json=payload, timeout=15)
             result = response.json()
             
             if result.get('code') != 200:
                 self.logger.error(f"Kie AI Task Creation Failed: {result}")
-                return self._get_placeholder_image()
+                return None
                 
             task_id = result['data']['taskId']
             self.logger.info(f"🎨 Kie AI Task Created: {task_id}")
             
-            # 2. Poll for Result - Try multiple endpoint formats
-            poll_endpoints = [
-                f"https://api.kie.ai/api/v1/jobs/queryTask?taskId={task_id}",
-                f"https://api.kie.ai/api/v1/jobs/{task_id}",
-                f"https://api.kie.ai/api/v1/jobs/task/{task_id}",
-            ]
+            # Poll for 5 minutes (60 attempts × 5s)
+            poll_url = f"https://api.kie.ai/api/v1/jobs/queryTask?taskId={task_id}"
             
-            for attempt in range(30):  # 30 * 5s = 150s (2.5 min) for slow Nano Banana Pro
+            for attempt in range(60):
                 time.sleep(5)
-                
-                for poll_url in poll_endpoints:
-                    try:
-                        poll_resp = requests.get(poll_url, headers=headers, timeout=10)
+                try:
+                    poll_resp = requests.get(poll_url, headers=headers, timeout=10)
+                    poll_result = poll_resp.json()
+                    
+                    if poll_result.get('code') == 200:
+                        data = poll_result.get('data', {})
+                        state = data.get('state')
                         
-                        if poll_resp.status_code == 404:
-                            continue  # Try next endpoint
-                            
-                        poll_result = poll_resp.json()
-                        
-                        if poll_result.get('code') == 200:
-                            data = poll_result.get('data', {})
-                            state = data.get('state')
-                            
-                            if state == 'success':
-                                res_json_str = data.get('resultJson', '{}')
-                                res_json = json.loads(res_json_str) if isinstance(res_json_str, str) else res_json_str
-                                image_url = res_json.get('resultUrls', [None])[0]
-                                self.logger.info(f"✅ Logo Generated: {image_url}")
-                                return image_url
-                            elif state == 'fail':
-                                self.logger.error(f"❌ Kie AI Task Failed: {data.get('failMsg')}")
-                                return self._get_placeholder_image()
-                            elif state in ['pending', 'processing']:
-                                break  # Valid response, keep polling this endpoint
-                    except Exception as e:
-                        continue  # Try next endpoint
-                        
-            self.logger.warning("⏳ Kie AI Generation Timeout. Using placeholder.")
-            return self._get_placeholder_image()
+                        if state == 'success':
+                            res_json_str = data.get('resultJson', '{}')
+                            res_json = json.loads(res_json_str) if isinstance(res_json_str, str) else res_json_str
+                            image_url = res_json.get('resultUrls', [None])[0]
+                            self.logger.info(f"✅ Kie AI Logo Generated: {image_url}")
+                            return image_url
+                        elif state == 'fail':
+                            self.logger.error(f"❌ Kie AI Task Failed: {data.get('failMsg')}")
+                            return None
+                except Exception:
+                    continue
+                    
+            self.logger.warning("⏳ Kie AI Timeout (5 min). Trying fallback...")
+            return None
             
         except Exception as e:
-            self.logger.error(f"Error generating logo via Kie AI: {e}")
-            return self._get_placeholder_image()
+            self.logger.error(f"Kie AI Error: {e}")
+            return None
+    
+    def _try_replicate(self, prompt, api_key):
+        """Attempt Replicate SDXL Lightning generation."""
+        try:
+            url = "https://api.replicate.com/v1/predictions"
+            headers = {
+                "Authorization": f"Token {api_key}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "version": "5599ed30703defd1d160a25a63321b4dec97101d98b4674bcc56e41f62f35637",  # SDXL Lightning
+                "input": {
+                    "prompt": f"meme coin logo, {prompt}, centered, vibrant colors, high quality, 2K resolution",
+                    "num_outputs": 1,
+                    "width": 1024,
+                    "height": 1024
+                }
+            }
+            
+            response = requests.post(url, headers=headers, json=payload, timeout=15)
+            result = response.json()
+            
+            if 'urls' not in result:
+                self.logger.error(f"Replicate API Error: {result}")
+                return None
+            
+            # Poll for completion (max 60s)
+            get_url = result['urls']['get']
+            for attempt in range(12):
+                time.sleep(5)
+                poll_resp = requests.get(get_url, headers=headers, timeout=10)
+                poll_result = poll_resp.json()
+                
+                if poll_result.get('status') == 'succeeded':
+                    output = poll_result.get('output', [])
+                    if output:
+                        self.logger.info(f"✅ Replicate Logo Generated: {output[0][:50]}...")
+                        return output[0]
+                elif poll_result.get('status') == 'failed':
+                    self.logger.error(f"❌ Replicate Failed: {poll_result.get('error')}")
+                    return None
+            
+            self.logger.warning("⏳ Replicate Timeout. Trying fallback...")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Replicate Error: {e}")
+            return None
+    
+    def _try_pollinations(self, prompt):
+        """Attempt Pollinations.AI generation (FREE, no API key)."""
+        try:
+            # Pollinations.AI is completely free and requires no API key
+            encoded_prompt = requests.utils.quote(f"meme coin logo, {prompt}, centered, vibrant, high quality")
+            url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true"
+            
+            # Test if the URL works (Pollinations generates on-demand)
+            response = requests.head(url, timeout=30)
+            if response.status_code == 200:
+                self.logger.info(f"✅ Pollinations Logo Generated: {url[:50]}...")
+                return url
+            else:
+                self.logger.warning(f"Pollinations returned status {response.status_code}")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Pollinations Error: {e}")
+            return None
     
     def _get_placeholder_image(self):
         """Returns a placeholder meme coin image URL using DiceBear avatar API."""

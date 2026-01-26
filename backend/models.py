@@ -81,3 +81,11 @@ class ActiveSwarm(Base):
     id = Column(Integer, primary_key=True, index=True)
     token_address = Column(String, index=True)
     whale_address = Column(String, index=True)
+
+class LaunchedKeyword(Base):
+    """Tracks auto-launched keywords to prevent duplicates."""
+    __tablename__ = "launched_keywords"
+    id = Column(Integer, primary_key=True, index=True)
+    keyword = Column(String, index=True)          # The trending keyword used
+    mint_address = Column(String, index=True)     # Created token mint
+    launched_at = Column(DateTime, default=datetime.datetime.utcnow)

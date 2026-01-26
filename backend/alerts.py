@@ -16,6 +16,16 @@ from database import SessionLocal
 import models
 from analysis.copy_trader import SmartCopyTrader
 
+# Auto-Launch Pipeline (Phase 7)
+try:
+    from trend_hunter import TrendHunter
+    from auto_launcher import AutoLauncher
+    from meme_creator import MemeCreator
+    AUTO_LAUNCH_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️ Auto-Launch modules not available: {e}")
+    AUTO_LAUNCH_AVAILABLE = False
+
 # Import Polymarket modules (optional - may not be installed)
 try:
     from collectors.polymarket_collector import get_polymarket_collector
@@ -144,6 +154,18 @@ class AlertSystem(commands.Cog):
         self.load_dynamic_config()
         self.signal_log_path = os.path.join(os.path.dirname(__file__), 'data', 'trading_signals.jsonl')
         
+        # AUTO-LAUNCH PIPELINE (Phase 7)
+        self.auto_launcher = None
+        self.trend_hunter = None
+        self.meme_creator = None
+        if AUTO_LAUNCH_AVAILABLE:
+            try:
+                self.trend_hunter = TrendHunter()
+                self.meme_creator = MemeCreator()
+                print("🚀 Auto-Launch modules loaded (TrendHunter + MemeCreator)")
+            except Exception as e:
+                print(f"⚠️ Auto-Launch init error: {e}")
+        
         # Note: Loops and Webhook setup moved to cog_load for speed
 
     async def run_sync(self, func, *args, **kwargs):
@@ -229,6 +251,18 @@ class AlertSystem(commands.Cog):
         if self.dex_trader and self.dex_trader.wallet_address:
             sol_balance = await self.run_sync(self.dex_trader.get_sol_balance)
             print(f"💰 DEX Wallet SOL Balance: {sol_balance:.4f} SOL")
+
+        # 🚀 AUTO-LAUNCHER INITIALIZATION (Sustainable Growth V3)
+        if AUTO_LAUNCH_AVAILABLE and self.trend_hunter:
+            try:
+                self.auto_launcher = AutoLauncher(
+                    dex_trader=self.dex_trader,
+                    meme_creator=self.meme_creator,
+                    trend_hunter=self.trend_hunter
+                )
+                print("🚀 Auto-Launcher Pipeline READY (Discovery + Deployment)")
+            except Exception as e:
+                print(f"⚠️ Auto-Launcher failed to start: {e}")
         
         # Sync Stock positions from Alpaca - DISABLED (Alpaca removed)
         # if self.stocks and self.stocks.api:
@@ -267,6 +301,11 @@ class AlertSystem(commands.Cog):
         if not self.dex_sync_loop.is_running():
             self.dex_sync_loop.start()
             print("💎 Diamond Hands Sync Loop STARTED (every 5 min)")
+
+        # 🛡️ AUTO-LAUNCH LOOP (Phase 7)
+        if self.auto_launcher and not self.auto_launch_loop.is_running():
+            self.auto_launch_loop.start()
+            print("🔥 Auto-Launch Pipeline Loop STARTED (every 30 min)")
 
         # ⚡ IMMEDIATE SYNC: Sync current positions on startup
         asyncio.create_task(self.sync_all_dex_positions())
@@ -1098,6 +1137,39 @@ class AlertSystem(commands.Cog):
         except Exception as e:
             print(f"❌ Error in dex_sync_loop: {e}")
 
+    @tasks.loop(minutes=30)
+    async def auto_launch_loop(self):
+        """Automatically discover trending keywords and launch tokens."""
+        import random
+        await asyncio.sleep(random.randint(30, 120))  # Jitter
+        
+        if not self.ready:
+            return
+        if not self.auto_launcher or not self.auto_launcher.is_enabled():
+            return
+        
+        try:
+            # Step 1: Discover trending keywords
+            added = await self.auto_launcher.discover_and_queue()
+            if added > 0:
+                print(f"🔍 Auto-Launch: Queued {added} new keywords")
+            
+            # Step 2: Process queue (launch one at a time)
+            result = await self.auto_launcher.process_queue(
+                bot=self.bot,
+                channel_id=self.MEMECOINS_CHANNEL_ID
+            )
+            
+            if result:
+                if result.get('success'):
+                    print(f"🚀 Auto-Launch SUCCESS: {result.get('name')} (${result.get('ticker')})")
+                elif result.get('error'):
+                    print(f"⚠️ Auto-Launch failed: {result.get('error')}")
+                    
+        except Exception as e:
+            print(f"❌ Auto-Launch error: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def _check_and_alert(self, symbol, channel, asset_type):
         """Helper to fetch data, check exits, and process alerts."""
@@ -1520,7 +1592,9 @@ class AlertSystem(commands.Cog):
             "• `!status` - Show bot health\n"
             "• `!balance` - Check wallet balance\n"
             "• `!sellall` - Emergency liquidation\n"
-            "• `!rugcheck <addr>` - Audit a token safety"
+            "• `!rugcheck <addr>` - Audit a token safety\n"
+            "• `!autolaunch status` - Show launch queue & stats\n"
+            "• `!autolaunch on/off` - Enable/Disable auto-factory"
         )
         await ctx.send(help_text)
 
@@ -1689,42 +1763,89 @@ class AlertSystem(commands.Cog):
         else:
             await ctx.send(f"✅ All {after} whales are active. No lazy whales to prune.")
 
-    @commands.command()
-    async def polymarket(self, ctx):
-        """Check Polymarket paper trading status."""
-        if not POLYMARKET_ENABLED or not self.polymarket_trader:
-            await ctx.send("⚠️ Polymarket module is not enabled.")
+    @commands.group(invoke_without_command=True)
+    async def autolaunch(self, ctx):
+        """Manage the auto-launch pipeline. Use !autolaunch status/on/off."""
+        if ctx.invoked_subcommand is None:
+            await self.autolaunch_status(ctx)
+
+    @autolaunch.command(name="status")
+    async def autolaunch_status(self, ctx):
+        """Show current auto-launch status and queue."""
+        if not self.auto_launcher:
+            await ctx.send("⚠️ Auto-Launcher not initialized.")
             return
-        
-        status = self.polymarket_trader.get_status()
+            
+        status = self.auto_launcher.get_status()
         
         embed = discord.Embed(
-            title="🎲 Polymarket Copy-Trader Status",
-            color=discord.Color.purple()
+            title="🚀 Auto-Launch Pipeline Status",
+            color=discord.Color.blue() if status['enabled'] else discord.Color.red()
         )
         
-        # Mode indicator
-        mode_emoji = "📝" if status['mode'] == "PAPER" else "💰"
-        embed.add_field(name="Mode", value=f"{mode_emoji} {status['mode']}", inline=True)
-        embed.add_field(name="Balance", value=f"${status['balance']:.2f}", inline=True)
-        embed.add_field(name="Open Positions", value=str(status['open_positions']), inline=True)
+        mode = "🟢 ENABLED" if status['enabled'] else "🔴 DISABLED"
+        embed.add_field(name="Mode", value=mode, inline=True)
+        embed.add_field(name="Launches Today", value=f"{status['launches_today']} / {status['max_daily']}", inline=True)
+        embed.add_field(name="Queue Size", value=f"{status['queue_size']} keywords", inline=True)
         
-        embed.add_field(name="Position Value", value=f"${status['total_position_value']:.2f}", inline=True)
-        embed.add_field(name="Daily P&L", value=f"${status['daily_pnl']:+.2f}", inline=True)
-        embed.add_field(name="Total P&L", value=f"${status['total_pnl']:+.2f}", inline=True)
+        embed.add_field(name="Min SOL Balance", value=f"{status['min_sol']} SOL", inline=True)
+        embed.add_field(name="Volume Seed", value=f"{status['volume_seed']} SOL", inline=True)
         
-        if status['daily_loss_limit_hit']:
-            embed.add_field(name="⚠️ Status", value="Daily loss limit hit - paused", inline=False)
-        
-        # Show open positions if any
-        if self.polymarket_trader.positions:
-            pos_list = []
-            for token_id, pos in list(self.polymarket_trader.positions.items())[:5]:
-                pos_list.append(f"• {pos.outcome}: ${pos.size_usdc:.2f} @ {pos.entry_price:.2f}¢")
-            if pos_list:
-                embed.add_field(name="📊 Open Positions", value="\n".join(pos_list), inline=False)
-        
+        # Show queue preview
+        if self.auto_launcher.launch_queue:
+            queue_text = "\n".join([f"• {kw}" for kw in self.auto_launcher.launch_queue[:5]])
+            if len(self.auto_launcher.launch_queue) > 5:
+                queue_text += f"\n...and {len(self.auto_launcher.launch_queue)-5} more"
+            embed.add_field(name="📋 Next in Queue", value=queue_text, inline=False)
+            
         await ctx.send(embed=embed)
+
+    @autolaunch.command(name="on")
+    async def autolaunch_on(self, ctx):
+        """Enable auto-launch."""
+        if not self.auto_launcher:
+            await ctx.send("⚠️ Auto-Launcher not initialized.")
+            return
+        self.auto_launcher.toggle(True)
+        await ctx.send("🚀 **Auto-Launch Pipeline ENABLED!** Watching for trending gems...")
+
+    @autolaunch.command(name="off")
+    async def autolaunch_off(self, ctx):
+        """Disable auto-launch."""
+        if not self.auto_launcher:
+            await ctx.send("⚠️ Auto-Launcher not initialized.")
+            return
+        self.auto_launcher.toggle(False)
+        await ctx.send("🛑 **Auto-Launch Pipeline DISABLED.**")
+
+    @autolaunch.command(name="config")
+    async def autolaunch_config(self, ctx, key: str, value: float):
+        """Configure auto-launch settings. Usage: !autolaunch config max_daily 10"""
+        if not self.auto_launcher:
+            await ctx.send("⚠️ Auto-Launcher not initialized.")
+            return
+            
+        key = key.lower()
+        if key == "max_daily":
+            self.auto_launcher.max_daily_launches = int(value)
+        elif key == "min_sol":
+            self.auto_launcher.min_sol_balance = float(value)
+        elif key == "volume_seed":
+            self.auto_launcher.volume_seed_sol = float(value)
+        else:
+            await ctx.send(f"❌ Unknown config key: `{key}`. Use `max_daily`, `min_sol`, or `volume_seed`.")
+            return
+            
+        await ctx.send(f"✅ Auto-Launch config updated: `{key}` is now `{value}`")
+
+    @autolaunch.command(name="clear")
+    async def autolaunch_clear(self, ctx):
+        """Clear the launch queue."""
+        if not self.auto_launcher:
+            return
+        count = len(self.auto_launcher.launch_queue)
+        self.auto_launcher.launch_queue = []
+        await ctx.send(f"🧹 Cleared {count} items from the launch queue.")
 
     @commands.command()
     async def sellprofits(self, ctx):

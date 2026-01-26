@@ -148,6 +148,7 @@ async def help(ctx):
     embed.add_field(name="`!scan`", value="Trigger an immediate market scan summary.", inline=False)
     embed.add_field(name="`!balance`", value="Check your Kraken USDT balance.", inline=False)
     embed.add_field(name="`!launch [keyword]`", value="🚀 Launch an AI-generated meme coin on pump.fun (e.g., `!launch Blue Whale`).", inline=False)
+    embed.add_field(name="`!autolaunch [on/off/status]`", value="🤖 Manage the automatic trend-discovery and launch pipeline.", inline=False)
     embed.set_footer(text="Short-term trading assistant | GoPlus & CCXT")
     await ctx.send(embed=embed)
 
