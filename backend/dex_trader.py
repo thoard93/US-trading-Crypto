@@ -105,6 +105,7 @@ class DexTrader:
                     key_bytes = base58.b58decode(private_key)
                 
                 # 🛡️ RESILIENCE: Support both 32-byte seeds and 64-byte keypairs
+                print(f"DEBUG: Decoded Key Bytes Length: {len(key_bytes)}")
                 if len(key_bytes) == 32:
                     self.keypair = Keypair.from_seed(key_bytes)
                     print("🔐 Initialized wallet from 32-byte seed.")
@@ -112,7 +113,10 @@ class DexTrader:
                     self.keypair = Keypair.from_bytes(key_bytes)
                     print("🔐 Initialized wallet from 64-byte keypair.")
                 else:
-                    raise ValueError(f"Invalid key length: {len(key_bytes)} bytes. Expected 32 or 64.")
+                    print(f"❌ ERROR: Invalid key length: {len(key_bytes)} bytes. Expected 32 or 64.")
+                    # Fallback to byte-by-byte check (Diagnostic)
+                    # We don't print the bytes themselves for security, but we confirm they were decoded.
+                    raise ValueError(f"Invalid key length: {len(key_bytes)} bytes. Check for extra characters.")
 
                 self.wallet_address = str(self.keypair.pubkey())
                 print(f"✅ DexTrader initialized. Wallet: {self.wallet_address[:8]}...{self.wallet_address[-4:]}")

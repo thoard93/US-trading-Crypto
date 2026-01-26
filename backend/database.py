@@ -32,7 +32,8 @@ engine = create_engine(
     pool_size=3,
     max_overflow=0,
     pool_timeout=10,
-    pool_recycle=1800,
+    pool_recycle=300, # Refresh connections every 5 mins to prevent SSL drops
+    pool_pre_ping=True, # CHECK connection before use (Crucial for Hetzner -> Render)
     connect_args={"check_same_thread": False} if "sqlite" in SQLALCHEMY_DATABASE_URL else {}
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

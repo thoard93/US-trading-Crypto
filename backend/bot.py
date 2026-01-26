@@ -159,7 +159,20 @@ async def launch(ctx, *, keyword: str):
     if ctx.channel.id not in TRADING_CHANNEL_IDS:
         return
         
-    await ctx.send(f"🧠 **AI Strategist**: Analyzing '{keyword}' for viral potential... 🧊")
+    # Parse optional SOL amount from end of keyword (e.g. !launch MyCoin 0.05)
+    sol_amount = 0.01  # Default
+    parts = keyword.rsplit(' ', 1)
+    if len(parts) > 1:
+        try:
+            potential_amount = float(parts[1])
+            if 0.001 <= potential_amount <= 2.0: # Cap at 2 SOL for safety
+                sol_amount = potential_amount
+                keyword = parts[0]
+                print(f"🚀 BUNDLE: Using manual volume: {sol_amount} SOL")
+        except ValueError:
+            pass # Keep original keyword and default amount
+
+    await ctx.send(f"🧠 **AI Strategist**: Analyzing '{keyword}' for viral potential (Volume: {sol_amount} SOL)... 🧊")
     
     # 1. Generate Meme Concept & Logo
     result = await asyncio.to_thread(meme_gen.create_full_meme, keyword)
@@ -173,7 +186,7 @@ async def launch(ctx, *, keyword: str):
     embed.set_image(url=result['image_url'])
     await ctx.send(embed=embed)
     
-    confirm_msg = await ctx.send("⚠️ **CONFIRMATION REQUIRED**: Do you want to launch this coin on pump.fun? (Cost: ~0.02 SOL). React with ✅ to deploy.")
+    confirm_msg = await ctx.send(f"⚠️ **CONFIRMATION REQUIRED**: Do you want to launch this coin on pump.fun?\n🔥 **Volume Seed**: {sol_amount} SOL\nReact with ✅ to deploy.")
     await confirm_msg.add_reaction("✅")
     
     def check(reaction, user):
@@ -194,7 +207,7 @@ async def launch(ctx, *, keyword: str):
         symbol=result['ticker'],
         description=result['description'],
         image_url=result['image_url'],
-        sol_buy_amount=0.01  # Small initial buy to seed the bonding curve
+        sol_buy_amount=sol_amount
     )
     
     if launch_res.get('success'):
