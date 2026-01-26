@@ -3,6 +3,7 @@ import logging
 import json
 import os
 import random
+import time
 from datetime import datetime
 from collections import defaultdict
 from collectors.dex_scout import DexScout

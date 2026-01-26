@@ -384,15 +384,26 @@ class DexTrader:
             tx_data = response.content
             
             # 5. Handle Signing (Requires BOTH Wallet and Mint keypairs)
+            # 5. Handle Signing (Dynamically match signers to their order in account_keys)
             tx = VersionedTransaction.from_bytes(tx_data)
             message = tx.message
-            message_bytes = to_bytes_versioned(message)
             
-            sig1 = self.keypair.sign_message(message_bytes)
-            sig2 = mint_keypair.sign_message(message_bytes)
+            # Identify which accounts need to sign
+            signers_required = message.header.num_required_signatures
+            signer_keys = message.account_keys[:signers_required]
             
-            # PumpPortal expects: [mint_keypair, signer_keypair] order
-            signed_tx = VersionedTransaction.populate(message, [sig2, sig1])
+            signatures = []
+            for key in signer_keys:
+                if str(key) == str(self.wallet_address):
+                    signatures.append(self.keypair.sign_message(bytes(message)))
+                elif str(key) == str(mint_pubkey):
+                    signatures.append(mint_keypair.sign_message(bytes(message)))
+                else:
+                    # Should not happen for a create tx
+                    print(f"⚠️ Unknown signer required: {key}")
+                    signatures.append(Signature.default())
+            
+            signed_tx = VersionedTransaction.populate(message, signatures)
             
             # 6. Final Submission
             print(f"📡 Sending launch transaction to Solana...")
