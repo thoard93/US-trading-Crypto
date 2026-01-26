@@ -11,6 +11,15 @@ print(f"📂 Searching for .env at: {env_path}")
 if os.path.exists(env_path):
     print("✅ File found! Loading...")
     load_dotenv(env_path)
+    # 🕵️ RAW CHECK: What's actually in there?
+    with open(env_path, 'r') as f:
+        raw_content = f.read()
+        print(f"📄 Raw File Length: {len(raw_content)} characters")
+        if "ANTHROPIC" in raw_content:
+             print("🔍 'ANTHROPIC' string found in raw text.")
+        else:
+             print("❌ 'ANTHROPIC' string NOT found in raw text.")
+             print(f"   Excerpt: {raw_content[:50]}...")
 else:
     print("❌ FILE NOT FOUND!")
     print(f"   Current Working Directory: {os.getcwd()}")
