@@ -10,8 +10,10 @@ from alerts import AlertSystem
 from meme_creator import MemeCreator
 from dex_trader import DexTrader
 
-# Load environment variables
-load_dotenv()
+# Load environment variables (Robust pathing)
+script_dir = os.path.dirname(os.path.abspath(__file__))
+env_path = os.path.join(script_dir, '.env')
+load_dotenv(env_path)
 TOKEN = os.getenv('DISCORD_TOKEN', '').strip()
 
 # DEBUG: Print token info (Safe)

@@ -1,9 +1,15 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from models import Base, User
+from dotenv import load_dotenv
 import os
 
-# Use DATABASE_URL from environment (provided by Render Postgres)
+# Load environment variables (Robust pathing)
+script_dir = os.path.dirname(os.path.abspath(__file__))
+env_path = os.path.join(script_dir, '.env')
+load_dotenv(env_path)
+
+# Use DATABASE_URL from environment
 # Fallback to local SQLite for development
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "").strip() or None
 
