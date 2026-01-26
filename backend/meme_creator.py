@@ -159,14 +159,14 @@ class MemeCreator:
             return self._get_placeholder_image()
     
     def _get_placeholder_image(self):
-        """Returns a placeholder meme coin image URL."""
-        # Generic placeholder images for meme coins
-        placeholders = [
-            "https://i.imgur.com/Yw4NFvP.png",  # Generic coin logo
-            "https://i.imgur.com/3v2X4Dq.png",  # Rocket emoji style
-        ]
+        """Returns a placeholder meme coin image URL using DiceBear avatar API."""
         import random
-        return random.choice(placeholders)
+        import hashlib
+        # Generate a random seed for unique placeholder each time
+        seed = hashlib.md5(str(random.random()).encode()).hexdigest()[:8]
+        # DiceBear bottts style - futuristic robot avatars perfect for meme coins
+        return f"https://api.dicebear.com/7.x/bottts/png?seed={seed}&size=512&backgroundColor=0d1117"
+
 
 
     def create_full_meme(self, keyword):
