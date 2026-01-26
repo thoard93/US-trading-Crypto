@@ -81,10 +81,11 @@ class MemeCreator:
     def generate_logo(self, prompt):
         """
         Uses Kie AI (Nano Banana Pro) to generate a 2K logo.
+        UPDATED: Multi-endpoint retry + placeholder fallback.
         """
         if not self.kie_ai_key:
-            self.logger.warning("🚫 KIE_AI_API_KEY not found. Image generation disabled.")
-            return None
+            self.logger.warning("🚫 KIE_AI_API_KEY not found. Using placeholder image.")
+            return self._get_placeholder_image()
             
         url = "https://api.kie.ai/api/v1/jobs/createTask"
         headers = {
@@ -96,7 +97,7 @@ class MemeCreator:
             "input": {
                 "prompt": prompt,
                 "aspect_ratio": "1:1",
-                "resolution": "2K",
+                "resolution": "1K",  # Use 1K for faster generation
                 "output_format": "png"
             }
         }
@@ -108,38 +109,65 @@ class MemeCreator:
             
             if result.get('code') != 200:
                 self.logger.error(f"Kie AI Task Creation Failed: {result}")
-                return None
+                return self._get_placeholder_image()
                 
             task_id = result['data']['taskId']
             self.logger.info(f"🎨 Kie AI Task Created: {task_id}")
             
-            # 2. Poll for Result (wait up to 60s)
-            poll_url = f"https://api.kie.ai/api/v1/jobs/queryTask?taskId={task_id}"
-            for _ in range(12): # 12 * 5s = 60s
+            # 2. Poll for Result - Try multiple endpoint formats
+            poll_endpoints = [
+                f"https://api.kie.ai/api/v1/jobs/queryTask?taskId={task_id}",
+                f"https://api.kie.ai/api/v1/jobs/{task_id}",
+                f"https://api.kie.ai/api/v1/jobs/task/{task_id}",
+            ]
+            
+            for attempt in range(12):  # 12 * 5s = 60s total
                 time.sleep(5)
-                poll_resp = requests.get(poll_url, headers=headers, timeout=10)
-                poll_result = poll_resp.json()
                 
-                if poll_result.get('code') == 200:
-                    state = poll_result['data'].get('state')
-                    if state == 'success':
-                        # The result is in resultJson
-                        res_json = json.loads(poll_result['data'].get('resultJson', '{}'))
-                        image_url = res_json.get('resultUrls', [None])[0]
-                        self.logger.info(f"✅ Logo Generated: {image_url}")
-                        return image_url
-                    elif state == 'fail':
-                        self.logger.error(f"❌ Kie AI Task Failed: {poll_result['data'].get('failMsg')}")
-                        return None
-                else:
-                    self.logger.error(f"Kie AI Poll Error: {poll_result}")
-                    return None
-                    
-            self.logger.warning("⏳ Kie AI Generation Timeout")
-            return None
+                for poll_url in poll_endpoints:
+                    try:
+                        poll_resp = requests.get(poll_url, headers=headers, timeout=10)
+                        
+                        if poll_resp.status_code == 404:
+                            continue  # Try next endpoint
+                            
+                        poll_result = poll_resp.json()
+                        
+                        if poll_result.get('code') == 200:
+                            data = poll_result.get('data', {})
+                            state = data.get('state')
+                            
+                            if state == 'success':
+                                res_json_str = data.get('resultJson', '{}')
+                                res_json = json.loads(res_json_str) if isinstance(res_json_str, str) else res_json_str
+                                image_url = res_json.get('resultUrls', [None])[0]
+                                self.logger.info(f"✅ Logo Generated: {image_url}")
+                                return image_url
+                            elif state == 'fail':
+                                self.logger.error(f"❌ Kie AI Task Failed: {data.get('failMsg')}")
+                                return self._get_placeholder_image()
+                            elif state in ['pending', 'processing']:
+                                break  # Valid response, keep polling this endpoint
+                    except Exception as e:
+                        continue  # Try next endpoint
+                        
+            self.logger.warning("⏳ Kie AI Generation Timeout. Using placeholder.")
+            return self._get_placeholder_image()
+            
         except Exception as e:
             self.logger.error(f"Error generating logo via Kie AI: {e}")
-            return None
+            return self._get_placeholder_image()
+    
+    def _get_placeholder_image(self):
+        """Returns a placeholder meme coin image URL."""
+        # Generic placeholder images for meme coins
+        placeholders = [
+            "https://i.imgur.com/Yw4NFvP.png",  # Generic coin logo
+            "https://i.imgur.com/3v2X4Dq.png",  # Rocket emoji style
+        ]
+        import random
+        return random.choice(placeholders)
+
 
     def create_full_meme(self, keyword):
         """
