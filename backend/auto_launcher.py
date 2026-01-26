@@ -39,6 +39,7 @@ class AutoLauncher:
         self.boosted_volume = amount
         return self.boosted_volume
 
+    def is_enabled(self):
         """Check if auto-launch is enabled."""
         return self.enabled
     
