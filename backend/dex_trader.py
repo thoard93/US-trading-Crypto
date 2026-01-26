@@ -437,67 +437,32 @@ class DexTrader:
             
             # 6. Final Submission
             # PHASE 47: Jito-Protected Launch (Visibility & Atomic Execution)
+            # Submit to Jito Block Engines for priority inclusion (no frontrunning)
+            signed_tx_b64 = base64.b64encode(bytes(signed_tx)).decode('utf-8')
+            
             if use_jito:
-                tip_sol = 0.005 # Strategic Launch Tip (Priority)
-                tip_lamports = int(tip_sol * 1e9)
-                tip_account = Pubkey.from_string(random.choice(JITO_TIP_ACCOUNTS))
-                
-                # Jito Tip Instruction
-                tip_ix = transfer(TransferParams(
-                    from_pubkey=self.keypair.pubkey(),
-                    to_pubkey=tip_account,
-                    lamports=tip_lamports
-                ))
-                
-                # Re-add tip to instructions
-                instructions = list(new_message.instructions)
-                instructions.append(tip_ix)
-                
-                # Recompile MessageV0 with the tip
-                final_message = MessageV0.compile(
-                    payer=self.keypair.pubkey(),
-                    instructions=instructions,
-                    address_lookup_table_accounts=lookup_tables if 'lookup_tables' in locals() else [],
-                    recent_blockhash=fresh_blockhash
-                )
-                
-                final_msg_bytes = to_bytes_versioned(final_message)
-                final_signatures = []
-                final_signer_keys = final_message.account_keys[:final_message.header.num_required_signatures]
-                
-                for key in final_signer_keys:
-                    if str(key) == str(self.wallet_address):
-                        final_signatures.append(self.keypair.sign_message(final_msg_bytes))
-                    elif str(key) == str(mint_pubkey):
-                        final_signatures.append(mint_keypair.sign_message(final_msg_bytes))
-                    else:
-                        final_signatures.append(Signature.default())
-                
-                final_tx = VersionedTransaction.populate(final_message, final_signatures)
-                final_tx_b64 = base64.b64encode(bytes(final_tx)).decode('utf-8')
-                
-                print(f"🔐 Submitting Launch Jito Bundle (Tip: {tip_sol} SOL)...")
+                print(f"🔐 Submitting Launch to Jito Block Engines...")
                 
                 tx_signature = None
                 for jito_base in JITO_BLOCK_ENGINES:
                     try:
-                        jito_url = f"{jito_base}/api/v1/bundles" # Use bundles endpoint for atomic create+tip
+                        jito_url = f"{jito_base}/api/v1/transactions?bundleOnly=true"
                         payload = {
                             "jsonrpc": "2.0", "id": 1,
-                            "method": "sendBundle",
-                            "params": [[final_tx_b64]]
+                            "method": "sendTransaction",
+                            "params": [signed_tx_b64, {"encoding": "base64"}]
                         }
                         resp = requests.post(jito_url, json=payload, timeout=10).json()
                         if 'result' in resp:
                             tx_signature = resp['result']
-                            print(f"✅ Jito Launch Bundle Success: {tx_signature}")
+                            print(f"✅ Jito Launch Success: {tx_signature}")
                             break
                     except: continue
                 
                 if tx_signature:
                     return {"success": True, "mint": mint_pubkey, "signature": tx_signature}
                 else:
-                    print("⚠️ Jito Launch Bundle failed/congested. Falling back to standard send...")
+                    print("⚠️ Jito submission failed/congested. Falling back to standard send...")
 
             # Fallback/Standard Submission
             print(f"📡 Sending launch transaction to Solana...")
