@@ -3,8 +3,10 @@ import json
 from dotenv import load_dotenv
 from anthropic import Anthropic
 
-# 1. Load the .env file
-load_dotenv()
+# 1. Load the .env file (Robust pathing)
+script_dir = os.path.dirname(os.path.abspath(__file__))
+env_path = os.path.join(script_dir, '.env')
+load_dotenv(env_path)
 
 key = os.getenv('ANTHROPIC_API_KEY')
 
