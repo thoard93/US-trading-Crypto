@@ -20,6 +20,10 @@ class MemeCreator:
         self.kie_ai_key = "".join(self.kie_ai_key.split()) if self.kie_ai_key else None
         
         if self.anthropic_key:
+            # 🛡️ DEBUG: Verify key length and format (masked)
+            start_snippet = self.anthropic_key[:15]
+            end_snippet = self.anthropic_key[-4:]
+            print(f"🧠 AI Brain: Loading Anthropic Key (Len: {len(self.anthropic_key)}, Starts: {start_snippet}..., Ends: ...{end_snippet})")
             self.client = Anthropic(api_key=self.anthropic_key)
         else:
             self.client = None
