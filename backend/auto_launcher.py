@@ -167,7 +167,8 @@ class AutoLauncher:
             return 0
         
         try:
-            keywords = self.trend_hunter.get_trending_keywords(limit=5)
+            # 🛡️ CRITICAL: Run in thread to prevent Discord heartbeat timeout
+            keywords = await asyncio.to_thread(self.trend_hunter.get_trending_keywords, 5)
             added = 0
             
             for keyword in keywords:
@@ -177,8 +178,9 @@ class AutoLauncher:
                 if keyword.upper() in [k.upper() for k in self.launch_queue]:
                     continue
                 
-                # Use AI filter if available
-                if self.trend_hunter.is_meme_worthy(keyword):
+                # Use AI filter if available (also run in thread)
+                is_worthy = await asyncio.to_thread(self.trend_hunter.is_meme_worthy, keyword)
+                if is_worthy:
                     self.launch_queue.append(keyword)
                     added += 1
                     self.logger.info(f"📥 Queued for launch: {keyword}")
