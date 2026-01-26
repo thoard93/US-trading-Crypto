@@ -9,6 +9,7 @@ class MemeCreator:
     """
     The 'Creative Engine' for Phase 6.
     Uses AI to generate viral coin concepts and Kie AI for 2K logos.
+    """
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         # 🛡️ RESILIENCE: Remove ALL whitespace/newlines from terminal copy-pastes
