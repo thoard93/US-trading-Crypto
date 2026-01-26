@@ -1,7 +1,7 @@
 {
-    "dex_min_liquidity": 250000,
+    "dex_min_liquidity": 25000,
     "dex_max_positions": 5,
-    "whale_confidence_threshold": 45,
+    "whale_confidence_threshold": 30,
     "dex_min_safety_score": 50,
     "trailing_stop_pnl_trigger": 20.0,
     "trailing_stop_distance": 10.0,
