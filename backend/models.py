@@ -87,5 +87,7 @@ class LaunchedKeyword(Base):
     __tablename__ = "launched_keywords"
     id = Column(Integer, primary_key=True, index=True)
     keyword = Column(String, index=True)          # The trending keyword used
+    name = Column(String, nullable=True)          # Token Name (e.g. "Lookmaxxing")
+    symbol = Column(String, nullable=True)        # Token Symbol (e.g. "LOOKZ")
     mint_address = Column(String, index=True)     # Created token mint
     launched_at = Column(DateTime, default=datetime.datetime.utcnow)

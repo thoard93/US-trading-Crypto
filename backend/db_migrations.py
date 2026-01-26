@@ -51,7 +51,11 @@ def run_migrations():
         safe_execute("dex_positions", "highest_pnl", "ALTER TABLE dex_positions ADD COLUMN highest_pnl FLOAT DEFAULT 0.0", "highest_pnl in dex_positions")
         safe_execute("dex_positions", "trade_count", "ALTER TABLE dex_positions ADD COLUMN trade_count INTEGER DEFAULT 1", "trade_count in dex_positions")
 
-        # 6. One-time Score Bump (Ultimate Bot Consensus Fix)
+        # 6. Update 'launched_keywords' table
+        safe_execute("launched_keywords", "name", "ALTER TABLE launched_keywords ADD COLUMN name VARCHAR", "name in launched_keywords")
+        safe_execute("launched_keywords", "symbol", "ALTER TABLE launched_keywords ADD COLUMN symbol VARCHAR", "symbol in launched_keywords")
+
+        # 7. One-time Score Bump (Ultimate Bot Consensus Fix)
         # Brings existing whales (10.0) up to the new Alpha Hunter baseline (12.5)
         try:
             with conn.begin():

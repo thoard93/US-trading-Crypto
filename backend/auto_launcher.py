@@ -133,7 +133,7 @@ class AutoLauncher:
             self.logger.error(f"DB check error: {e}")
             return False  # Allow launch if DB check fails
     
-    def _save_launch(self, keyword, mint_address):
+    def _save_launch(self, keyword, mint_address, name=None, symbol=None):
         """Save launch to database."""
         try:
             from database import SessionLocal
@@ -142,6 +142,8 @@ class AutoLauncher:
             db = SessionLocal()
             new_launch = LaunchedKeyword(
                 keyword=keyword.upper(),
+                name=name,
+                symbol=symbol,
                 mint_address=mint_address,
                 launched_at=datetime.utcnow()
             )
@@ -259,22 +261,28 @@ class AutoLauncher:
                 "timestamp": datetime.utcnow()
             })
             self._set_cooldown(keyword)
-            self._save_launch(keyword, mint_address)
+            self._save_launch(keyword, mint_address, name=pack['name'], symbol=pack['ticker'])
             
             # Step 4: Notify Discord
             if bot and channel_id:
                 try:
+                    import discord
                     channel = bot.get_channel(int(channel_id))
                     if channel:
-                        embed_msg = (
-                            f"🤖 **AUTO-LAUNCH SUCCESS!**\n"
-                            f"**Keyword:** {keyword}\n"
-                            f"**Name:** {pack['name']}\n"
-                            f"**Ticker:** ${pack['ticker']}\n"
-                            f"**Mint:** `{mint_address}`\n"
-                            f"**Pump.fun:** https://pump.fun/{mint_address}"
+                        embed = discord.Embed(
+                            title="🤖 AUTO-LAUNCH SUCCESS!",
+                            description=f"Successfully deployed **{pack['name']}** on-chain.",
+                            color=discord.Color.green()
                         )
-                        await channel.send(embed_msg)
+                        embed.add_field(name="Keyword", value=keyword, inline=True)
+                        embed.add_field(name="Ticker", value=f"${pack['ticker']}", inline=True)
+                        embed.add_field(name="Mint", value=f"`{mint_address}`", inline=False)
+                        embed.add_field(name="Pump.fun", value=f"[View on Pump.fun](https://pump.fun/{mint_address})", inline=False)
+                        
+                        if pack.get('image_url'):
+                            embed.set_image(url=pack['image_url'])
+                            
+                        await channel.send(embed=embed)
                 except Exception as e:
                     self.logger.error(f"Discord notification error: {e}")
             

@@ -1601,6 +1601,7 @@ class AlertSystem(commands.Cog):
             "🚀 **DEGEN DEX Commands:**\n"
             "• `!hunt` - Scan for new whale wallets\n"
             "• `!track <addr>` - Track a specific token\n"
+            "• `!tokens` - List all tokens you've created\n"
             "• `!status` - Show bot health\n"
             "• `!balance` - Check wallet balance\n"
             "• `!sellall` - Emergency liquidation\n"
@@ -1610,6 +1611,37 @@ class AlertSystem(commands.Cog):
             "• `!autolaunch on/off` - Enable/Disable auto-factory"
         )
         await ctx.send(help_text)
+
+    @commands.command()
+    async def tokens(self, ctx):
+        """List all tokens created by the bot."""
+        from database import SessionLocal
+        from models import LaunchedKeyword
+        import discord
+        
+        db = SessionLocal()
+        try:
+            tokens = db.query(LaunchedKeyword).order_by(LaunchedKeyword.launched_at.desc()).limit(20).all()
+            db.close()
+            
+            if not tokens:
+                await ctx.send("📋 **Token Registry Empty.** You haven't created any coins yet! Use `!launch` to start.")
+                return
+                
+            embed = discord.Embed(title="🚀 Your Created Tokens (Recent 20)", color=discord.Color.blue())
+            
+            for t in tokens:
+                name = t.name if t.name else "Unknown"
+                symbol = t.symbol if t.symbol else "???"
+                date = t.launched_at.strftime("%Y-%m-%d %H:%M")
+                
+                value = f"🔗 [Pump.fun](https://pump.fun/{t.mint_address})\n📅 {date}"
+                embed.add_field(name=f"{name} (${symbol})", value=value, inline=True)
+            
+            await ctx.send(embed=embed)
+        except Exception as e:
+            if db: db.close()
+            await ctx.send(f"❌ Error fetching tokens: {e}")
 
     @commands.command()
     async def hunt(self, ctx):

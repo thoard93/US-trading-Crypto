@@ -182,7 +182,10 @@ async def launch(ctx, *, keyword: str):
         
     embed = discord.Embed(title=f"🚀 Viral Intent Detected: {result['name']} ({result['ticker']})", color=discord.Color.gold())
     embed.add_field(name="Concept", value=result['description'], inline=False)
-    embed.set_image(url=result['image_url'])
+    
+    if result.get('image_url'):
+        embed.set_image(url=result['image_url'])
+        
     await ctx.send(embed=embed)
     
     confirm_msg = await ctx.send(f"⚠️ **CONFIRMATION REQUIRED**: Do you want to launch this coin on pump.fun?\n🔥 **Volume Seed**: {sol_amount} SOL\nReact with ✅ to deploy.")
@@ -215,6 +218,27 @@ async def launch(ctx, *, keyword: str):
         success_embed.add_field(name="Solscan", value=f"[View Transaction](https://solscan.io/tx/{launch_res['signature']})", inline=False)
         success_embed.add_field(name="Pump.fun", value=f"[View on Pump.fun](https://pump.fun/{launch_res['mint']})", inline=False)
         await ctx.send(embed=success_embed)
+        
+        # 💾 RECORD TO DATABASE: Ensures manual launches show up in !tokens
+        try:
+            from database import SessionLocal
+            from models import LaunchedKeyword
+            from datetime import datetime
+            
+            db = SessionLocal()
+            new_launch = LaunchedKeyword(
+                keyword=keyword.upper(),
+                name=result['name'],
+                symbol=result['ticker'],
+                mint_address=launch_res['mint'],
+                launched_at=datetime.utcnow()
+            )
+            db.add(new_launch)
+            db.commit()
+            db.close()
+            print(f"💾 Saved manual launch for {result['name']} to DB.")
+        except Exception as db_err:
+            print(f"⚠️ Failed to save manual launch to DB: {db_err}")
     else:
         await ctx.send(f"❌ **LAUNCH FAILED**: {launch_res.get('error', 'Unknown Error')}")
 
