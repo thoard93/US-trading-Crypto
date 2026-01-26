@@ -225,11 +225,12 @@ class AutoLauncher:
         self.logger.info(f"🚀 AUTO-LAUNCHING: {keyword}")
         
         try:
-            # Step 1: Generate meme pack
+            # Step 1: Generate meme pack (run in thread to avoid blocking heartbeat)
             if not self.meme_creator:
                 return {"error": "MemeCreator not initialized"}
             
-            pack = self.meme_creator.create_full_meme(keyword)
+            # 🛡️ CRITICAL: Run in thread to prevent Discord heartbeat timeout
+            pack = await asyncio.to_thread(self.meme_creator.create_full_meme, keyword)
             if not pack:
                 return {"error": f"Failed to generate meme for {keyword}"}
             
