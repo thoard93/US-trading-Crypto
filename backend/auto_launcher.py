@@ -19,7 +19,7 @@ class AutoLauncher:
         self.trend_hunter = trend_hunter
         
         # Configuration (can be overridden via Discord commands)
-        self.enabled = os.getenv('AUTO_LAUNCH_ENABLED', 'false').lower() == 'true'
+        self.enabled = os.getenv('AUTO_LAUNCH_ENABLED', 'true').lower() == 'true'  # 🚀 Auto-enabled on startup
         self.max_daily_launches = int(os.getenv('AUTO_LAUNCH_MAX_DAILY', '5'))
         self.min_sol_balance = float(os.getenv('AUTO_LAUNCH_MIN_SOL', '0.1'))
         self.volume_seed_sol = float(os.getenv('AUTO_LAUNCH_VOLUME_SEED', '0.02'))

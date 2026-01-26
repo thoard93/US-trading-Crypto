@@ -1860,6 +1860,44 @@ class AlertSystem(commands.Cog):
         self.auto_launcher.launch_queue = []
         await ctx.send(f"🧹 Cleared {count} items from the launch queue.")
 
+    @autolaunch.command(name="scan")
+    async def autolaunch_scan(self, ctx):
+        """Manually trigger a trend scan and queue keywords for launch."""
+        if not self.auto_launcher:
+            await ctx.send("⚠️ Auto-launcher not initialized.")
+            return
+        if not self.auto_launcher.trend_hunter:
+            await ctx.send("⚠️ Trend hunter not configured.")
+            return
+        
+        await ctx.send("🔍 Scanning for trending keywords...")
+        
+        try:
+            keywords = self.auto_launcher.trend_hunter.get_trending_keywords(limit=10)
+            
+            if not keywords:
+                await ctx.send("❌ No trending keywords found from any source.")
+                return
+            
+            # Queue the best keywords (up to 3)
+            queued = []
+            for kw in keywords[:3]:
+                if kw not in self.auto_launcher.launch_queue:
+                    self.auto_launcher.launch_queue.append(kw)
+                    queued.append(kw)
+            
+            keywords_display = ", ".join(keywords[:10])
+            queued_display = ", ".join(queued) if queued else "None (already queued)"
+            
+            await ctx.send(
+                f"📊 **Trend Scan Results**\n"
+                f"**Found**: {keywords_display}\n"
+                f"**Queued**: {queued_display}\n"
+                f"**Queue Size**: {len(self.auto_launcher.launch_queue)}"
+            )
+        except Exception as e:
+            await ctx.send(f"❌ Scan error: {e}")
+
     @commands.group(invoke_without_command=True)
     async def whales(self, ctx):
         """Manage whale hunting and swarm detection. Use !whales on/off/status."""
