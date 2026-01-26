@@ -63,6 +63,9 @@ class SmartCopyTrader:
                     else:
                         self.logger.error(f"Error loading swarms from DB: {e}")
             return defaultdict(set)
+        except Exception as e:
+            self.logger.error(f"❌ CRITICAL: Failed to initialize swarm loading: {e}")
+            return defaultdict(set)
 
     def _save_swarm_participant(self, token_address, whale_address):
         """Persist a single swarm participant mapping."""
@@ -136,6 +139,9 @@ class SmartCopyTrader:
                     else:
                         self.logger.error(f"❌ Error loading wallets from DB: {e}")
                         break
+            return {}
+        except Exception as e:
+            self.logger.error(f"❌ CRITICAL: Failed to initialize wallet loading: {e}")
             return {}
     
     def update_whale_score(self, address, delta):
