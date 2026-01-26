@@ -295,12 +295,12 @@ class DexTrader:
             print(f"❌ Error fetching wallet holdings: {e}")
             return {}
 
-    def create_pump_token(self, name, symbol, description, image_url, sol_buy_amount=0):
+    def create_pump_token(self, name, symbol, description, image_url, sol_buy_amount=0, use_jito=True):
         """
         Launches a token on pump.fun using the NEW pumpportal.fun API (2026 format).
         1. Upload metadata to pump.fun/api/ipfs
         2. Build create transaction via pumpportal.fun/api/trade-local
-        3. Sign and submit
+        3. Sign and submit (Jito-protected)
         """
         if not self.keypair:
             return {"error": "Wallet not initialized"}
@@ -436,11 +436,76 @@ class DexTrader:
             signed_tx = VersionedTransaction.populate(new_message, signatures)
             
             # 6. Final Submission
+            # PHASE 47: Jito-Protected Launch (Visibility & Atomic Execution)
+            if use_jito:
+                tip_sol = 0.005 # Strategic Launch Tip (Priority)
+                tip_lamports = int(tip_sol * 1e9)
+                tip_account = Pubkey.from_string(random.choice(JITO_TIP_ACCOUNTS))
+                
+                # Jito Tip Instruction
+                tip_ix = transfer(TransferParams(
+                    from_pubkey=self.keypair.pubkey(),
+                    to_pubkey=tip_account,
+                    lamports=tip_lamports
+                ))
+                
+                # Re-add tip to instructions
+                instructions = list(new_message.instructions)
+                instructions.append(tip_ix)
+                
+                # Recompile MessageV0 with the tip
+                final_message = MessageV0.compile(
+                    payer=self.keypair.pubkey(),
+                    instructions=instructions,
+                    address_lookup_table_accounts=lookup_tables if 'lookup_tables' in locals() else [],
+                    recent_blockhash=fresh_blockhash
+                )
+                
+                final_msg_bytes = to_bytes_versioned(final_message)
+                final_signatures = []
+                final_signer_keys = final_message.account_keys[:final_message.header.num_required_signatures]
+                
+                for key in final_signer_keys:
+                    if str(key) == str(self.wallet_address):
+                        final_signatures.append(self.keypair.sign_message(final_msg_bytes))
+                    elif str(key) == str(mint_pubkey):
+                        final_signatures.append(mint_keypair.sign_message(final_msg_bytes))
+                    else:
+                        final_signatures.append(Signature.default())
+                
+                final_tx = VersionedTransaction.populate(final_message, final_signatures)
+                final_tx_b64 = base64.b64encode(bytes(final_tx)).decode('utf-8')
+                
+                print(f"🔐 Submitting Launch Jito Bundle (Tip: {tip_sol} SOL)...")
+                
+                tx_signature = None
+                for jito_base in JITO_BLOCK_ENGINES:
+                    try:
+                        jito_url = f"{jito_base}/api/v1/bundles" # Use bundles endpoint for atomic create+tip
+                        payload = {
+                            "jsonrpc": "2.0", "id": 1,
+                            "method": "sendBundle",
+                            "params": [[final_tx_b64]]
+                        }
+                        resp = requests.post(jito_url, json=payload, timeout=10).json()
+                        if 'result' in resp:
+                            tx_signature = resp['result']
+                            print(f"✅ Jito Launch Bundle Success: {tx_signature}")
+                            break
+                    except: continue
+                
+                if tx_signature:
+                    return {"success": True, "mint": mint_pubkey, "signature": tx_signature}
+                else:
+                    print("⚠️ Jito Launch Bundle failed/congested. Falling back to standard send...")
+
+            # Fallback/Standard Submission
             print(f"📡 Sending launch transaction to Solana...")
+            signed_tx_b64 = base64.b64encode(bytes(signed_tx)).decode('utf-8')
             resp = requests.post(self.rpc_url, json={
                 "jsonrpc": "2.0", "id": 1,
                 "method": "sendTransaction",
-                "params": [base64.b64encode(bytes(signed_tx)).decode('utf-8'), {"encoding": "base64"}]
+                "params": [signed_tx_b64, {"encoding": "base64", "skipPreflight": True}]
             }, timeout=15).json()
             
             if 'result' in resp:

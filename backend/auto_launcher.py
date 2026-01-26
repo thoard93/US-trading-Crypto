@@ -32,8 +32,13 @@ class AutoLauncher:
         # Cooldown tracking (keyword -> last launch timestamp)
         self._keyword_cooldowns = {}
         self.cooldown_hours = 24
+        self.boosted_volume = None  # Temporary boost for the next launch
     
-    def is_enabled(self):
+    def set_boost(self, amount):
+        """Set a temporary boost for the next launch."""
+        self.boosted_volume = amount
+        return self.boosted_volume
+
         """Check if auto-launch is enabled."""
         return self.enabled
     
@@ -53,7 +58,8 @@ class AutoLauncher:
             "max_daily": self.max_daily_launches,
             "queue_size": len(self.launch_queue),
             "min_sol": self.min_sol_balance,
-            "volume_seed": self.volume_seed_sol
+            "volume_seed": self.volume_seed_sol,
+            "boost": self.boosted_volume
         }
     
     def configure(self, **kwargs):
@@ -242,12 +248,21 @@ class AutoLauncher:
             if not self.dex_trader:
                 return {"error": "DexTrader not initialized"}
             
+            # PHASE 47: Apply Boost if active
+            buy_amount = self.boosted_volume if self.boosted_volume is not None else self.volume_seed_sol
+            self.logger.info(f"🔥 Launching with seed: {buy_amount} SOL {'(BOOSTED)' if self.boosted_volume else ''}")
+            
             result = self.dex_trader.create_pump_token(
                 name=pack['name'],
                 symbol=pack['ticker'],
                 description=pack['description'],
                 image_url=pack['image_url'],
-                sol_buy_amount=self.volume_seed_sol
+                sol_buy_amount=buy_amount,
+                use_jito=True
+            )
+            
+            # Reset boost after launch attempt
+            self.boosted_volume = None
             )
             
             if result.get('error'):

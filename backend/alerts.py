@@ -1836,6 +1836,9 @@ class AlertSystem(commands.Cog):
         embed.add_field(name="Min SOL Balance", value=f"{status['min_sol']} SOL", inline=True)
         embed.add_field(name="Volume Seed", value=f"{status['volume_seed']} SOL", inline=True)
         
+        if status.get('boost'):
+            embed.add_field(name="🚀 ACTIVE BOOST", value=f"**{status['boost']} SOL** (Next Launch)", inline=False)
+        
         # Show queue preview
         if self.auto_launcher.launch_queue:
             queue_text = "\n".join([f"• {kw}" for kw in self.auto_launcher.launch_queue[:5]])
@@ -1929,6 +1932,32 @@ class AlertSystem(commands.Cog):
             )
         except Exception as e:
             await ctx.send(f"❌ Scan error: {e}")
+
+    @autolaunch.command(name="boost")
+    async def autolaunch_boost(self, ctx, amount: float):
+        """🚀 Boost the next launch's volume seed (e.g. !autolaunch boost 0.1)."""
+        if not self.auto_launcher:
+            await ctx.send("⚠️ Auto-launcher not initialized.")
+            return
+        if amount < 0.001 or amount > 2.0:
+            await ctx.send("❌ Amount must be between 0.001 and 2.0 SOL.")
+            return
+            
+        self.auto_launcher.set_boost(amount)
+        await ctx.send(f"🚀 **BOOST ARMED**: The next auto-launch will use **{amount} SOL** seed buy.")
+
+    @autolaunch.command(name="logic")
+    async def autolaunch_logic(self, ctx):
+        """📊 Show Dylan's Growth & Visibility Logic."""
+        embed = discord.Embed(title="📊 Token Visibility & PVP Strategy", color=discord.Color.gold())
+        embed.description = "To get picked up by snipers and the 'Movers' tab, your coin needs visibility."
+        
+        embed.add_field(name="1. Market Cap Filter", value="Majority of snipers filter for coins >$10k-$15k mcap. A 0.01 SOL launch is too small.", inline=False)
+        embed.add_field(name="2. Volume Seeding", value="Launch with 0.05-0.1 SOL and use `!autolaunch boost` to jumpstart momentum.", inline=False)
+        embed.add_field(name="3. Jito Protection", value="All launches are now Jito-protected to ensure the 'Create + Buy' is atomic and invisible to frontrunners.", inline=False)
+        embed.add_field(name="4. The 'Dylan' Effect", value="Once snipers start PVPing, the coin hits the front page, and that's when massive rewards roll in.", inline=False)
+        
+        await ctx.send(embed=embed)
 
     @commands.group(invoke_without_command=True)
     async def whales(self, ctx):
