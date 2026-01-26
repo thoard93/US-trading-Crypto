@@ -77,7 +77,7 @@ class AlertSystem(commands.Cog):
         self.dex_min_safety_score = 50
         
         # Ultimate Bot Configuration (SAFE HARBOR V1)
-        self.whale_confidence_threshold = 45 # Increased from 25 for lower frequency/higher conviction
+        self.whale_confidence_threshold = 25 # Lowered from 45 to enable 3-whale swarms (Sustainable Growth V3)
         self.trailing_stop_pnl_trigger = 20.0 # Activates at 20% profit
         self.trailing_stop_distance = 10.0 # Trails 10% behind ATH
         self.dev_shadow_enabled = True

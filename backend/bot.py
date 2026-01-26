@@ -154,10 +154,8 @@ async def help(ctx):
 @bot.command()
 async def launch(ctx, *, keyword: str):
     """🚀 Launch an AI-generated meme coin on pump.fun (e.g., !launch Blue Whale)."""
-    # Only allow in specific trading channels to prevent spam
-    TRADING_CHANNEL_IDS = [1456078814567202960, 1456078864684945531, 1456439911896060028]
-    if ctx.channel.id not in TRADING_CHANNEL_IDS:
-        return
+    # Log channel ID for debugging
+    print(f"🚀 Launch command called in channel ID: {ctx.channel.id}")
         
     # Parse optional SOL amount from end of keyword (e.g. !launch MyCoin 0.05)
     sol_amount = 0.01  # Default
