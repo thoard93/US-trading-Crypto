@@ -263,7 +263,6 @@ class AutoLauncher:
             
             # Reset boost after launch attempt
             self.boosted_volume = None
-            )
             
             if result.get('error'):
                 return result
