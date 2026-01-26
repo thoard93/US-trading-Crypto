@@ -59,7 +59,8 @@ class SmartCopyTrader:
                 except Exception as e:
                     if attempt < 2:
                         self.logger.warning(f"⚠️ DB Load attempt {attempt+1} failed, retrying in 2s...")
-                        await asyncio.sleep(2)
+                        import time
+                        time.sleep(2)
                     else:
                         self.logger.error(f"Error loading swarms from DB: {e}")
             return defaultdict(set)
