@@ -242,6 +242,55 @@ async def launch(ctx, *, keyword: str):
     else:
         await ctx.send(f"❌ **LAUNCH FAILED**: {launch_res.get('error', 'Unknown Error')}")
 
+@bot.command()
+async def pump(ctx, mint_address: str, rounds: int = 5, sol_per_round: float = 0.01, delay: int = 30):
+    """🔥 Pump volume on an existing token (e.g., !pump 6XZnFH8... 5 0.02 30)."""
+    # Validate mint address
+    if len(mint_address) < 32 or len(mint_address) > 50:
+        await ctx.send("❌ Invalid mint address. Use the full token address from Pump.fun.")
+        return
+    
+    # Validate parameters
+    if rounds < 1 or rounds > 20:
+        await ctx.send("❌ Rounds must be between 1 and 20.")
+        return
+    if sol_per_round < 0.005 or sol_per_round > 0.5:
+        await ctx.send("❌ SOL per round must be between 0.005 and 0.5.")
+        return
+    
+    total_cost = rounds * sol_per_round
+    await ctx.send(
+        f"🔥 **VOLUME SIMULATION** starting on `{mint_address[:12]}...`\n"
+        f"📊 **Config**: {rounds} rounds × {sol_per_round} SOL = ~{total_cost:.3f} SOL total\n"
+        f"⏱️ **Delay**: {delay}s between trades\n"
+        f"_Watch the logs for real-time updates..._"
+    )
+    
+    # Discord callback for live updates
+    async def discord_callback(msg):
+        await ctx.send(f"📊 {msg}")
+    
+    # Run simulation in background
+    try:
+        result = await trader.simulate_volume(
+            mint_address,
+            rounds=rounds,
+            sol_per_round=sol_per_round,
+            delay_seconds=delay,
+            callback=discord_callback
+        )
+        
+        if result.get('success'):
+            await ctx.send(
+                f"✅ **VOLUME SIMULATION COMPLETE!**\n"
+                f"🛒 {result['buys']} buys | 🏷️ {result['sells']} sells\n"
+                f"🔗 [View on Pump.fun](https://pump.fun/{mint_address})"
+            )
+        else:
+            await ctx.send(f"⚠️ Simulation ended with issues. Check logs.")
+    except Exception as e:
+        await ctx.send(f"❌ Simulation error: {e}")
+
 async def start_services():
     # 1. Start Webhook Listener (FastAPI)
     import uvicorn

@@ -1256,6 +1256,87 @@ class DexTrader:
                 del self.positions[token_mint]
         
         return result
+    
+    async def simulate_volume(self, mint_address, rounds=5, sol_per_round=0.01, delay_seconds=30, callback=None):
+        """
+        Create organic-looking volume on a token by doing small buy/sell cycles.
+        
+        Args:
+            mint_address: Token mint address to pump
+            rounds: Number of buy/sell cycles (default 5)
+            sol_per_round: SOL amount per buy (default 0.01 SOL = ~$2)
+            delay_seconds: Wait time between trades (default 30s)
+            callback: Optional async function to call with status updates (for Discord)
+        
+        Each round: BUY → wait → SELL 80% → wait → repeat
+        Net effect: Small position built + chart activity created
+        """
+        import asyncio
+        
+        async def notify(msg):
+            print(f"📊 VolSim: {msg}")
+            if callback:
+                try:
+                    await callback(msg)
+                except:
+                    pass
+        
+        await notify(f"Starting volume simulation on {mint_address[:12]}...")
+        await notify(f"Config: {rounds} rounds × {sol_per_round} SOL, {delay_seconds}s delay")
+        
+        sol_lamports = int(sol_per_round * 1_000_000_000)
+        total_bought = 0
+        total_sold = 0
+        
+        for i in range(rounds):
+            try:
+                await notify(f"Round {i+1}/{rounds}: Buying {sol_per_round} SOL...")
+                
+                # BUY
+                buy_result = self.execute_swap(
+                    self.SOL_MINT,
+                    mint_address,
+                    sol_lamports,
+                    override_slippage=2000,  # 20% slippage for pump tokens
+                    use_jito=False
+                )
+                
+                if buy_result.get('success'):
+                    total_bought += 1
+                    await notify(f"✅ Buy {i+1} complete")
+                else:
+                    await notify(f"⚠️ Buy {i+1} failed: {buy_result.get('error', 'Unknown')}")
+                    continue
+                
+                # Wait between trades
+                await asyncio.sleep(delay_seconds)
+                
+                # SELL 80% (keep 20% as position)
+                await notify(f"Round {i+1}/{rounds}: Selling 80%...")
+                
+                sell_result = self.sell_token(
+                    mint_address,
+                    percentage=80,
+                    override_slippage=5000,  # 50% slippage for meme exits
+                    priority=False
+                )
+                
+                if sell_result.get('success'):
+                    total_sold += 1
+                    await notify(f"✅ Sell {i+1} complete")
+                else:
+                    await notify(f"⚠️ Sell {i+1} failed: {sell_result.get('error', 'Unknown')}")
+                
+                # Wait before next round
+                if i < rounds - 1:
+                    await asyncio.sleep(delay_seconds)
+                    
+            except Exception as e:
+                await notify(f"❌ Round {i+1} error: {e}")
+                continue
+        
+        await notify(f"✅ Volume simulation complete! {total_bought} buys, {total_sold} sells")
+        return {"success": True, "buys": total_bought, "sells": total_sold}
 
 
 # Test function

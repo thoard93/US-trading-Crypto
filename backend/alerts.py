@@ -1972,6 +1972,65 @@ class AlertSystem(commands.Cog):
         else:
             await ctx.send(f"ℹ️ `{keyword.upper()}` was not on cooldown.")
 
+    @autolaunch.command(name="volume")
+    async def autolaunch_volume(self, ctx, action: str = "status", *args):
+        """📊 Toggle/configure volume simulation. Usage: !autolaunch volume on|off|config <rounds> <sol> <delay>"""
+        if not self.auto_launcher:
+            await ctx.send("⚠️ Auto-launcher not initialized.")
+            return
+        
+        if action.lower() == "on":
+            self.auto_launcher.volume_sim_enabled = True
+            await ctx.send(
+                f"✅ **Volume Simulation ENABLED!**\n"
+                f"📊 Config: {self.auto_launcher.volume_sim_rounds} rounds × "
+                f"{self.auto_launcher.volume_sim_amount} SOL, {self.auto_launcher.volume_sim_delay}s delay\n"
+                f"_New auto-launches will automatically pump volume after creation._"
+            )
+        elif action.lower() == "off":
+            self.auto_launcher.volume_sim_enabled = False
+            await ctx.send("🔴 **Volume Simulation DISABLED.** New auto-launches will not pump volume.")
+        elif action.lower() == "config" and len(args) >= 3:
+            try:
+                rounds = int(args[0])
+                sol_amount = float(args[1])
+                delay = int(args[2])
+                
+                if rounds < 1 or rounds > 20:
+                    await ctx.send("❌ Rounds must be 1-20.")
+                    return
+                if sol_amount < 0.005 or sol_amount > 0.5:
+                    await ctx.send("❌ SOL amount must be 0.005-0.5.")
+                    return
+                if delay < 10 or delay > 120:
+                    await ctx.send("❌ Delay must be 10-120 seconds.")
+                    return
+                    
+                self.auto_launcher.volume_sim_rounds = rounds
+                self.auto_launcher.volume_sim_amount = sol_amount
+                self.auto_launcher.volume_sim_delay = delay
+                
+                await ctx.send(
+                    f"⚙️ **Volume Simulation Config Updated!**\n"
+                    f"📊 {rounds} rounds × {sol_amount} SOL, {delay}s delay\n"
+                    f"💰 Total cost per launch: ~{rounds * sol_amount:.3f} SOL"
+                )
+            except ValueError:
+                await ctx.send("❌ Invalid config. Usage: `!autolaunch volume config <rounds> <sol> <delay>`")
+        else:
+            # Status / help
+            enabled = "🟢 Enabled" if self.auto_launcher.volume_sim_enabled else "🔴 Disabled"
+            await ctx.send(
+                f"📊 **Volume Simulation Status**\n"
+                f"**Status**: {enabled}\n"
+                f"**Config**: {self.auto_launcher.volume_sim_rounds} rounds × "
+                f"{self.auto_launcher.volume_sim_amount} SOL, {self.auto_launcher.volume_sim_delay}s delay\n\n"
+                f"**Commands**:\n"
+                f"`!autolaunch volume on` - Enable\n"
+                f"`!autolaunch volume off` - Disable\n"
+                f"`!autolaunch volume config 5 0.02 30` - 5 rounds, 0.02 SOL, 30s delay"
+            )
+
     @commands.group(invoke_without_command=True)
     async def whales(self, ctx):
         """Manage whale hunting and swarm detection. Use !whales on/off/status."""

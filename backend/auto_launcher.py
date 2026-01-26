@@ -33,6 +33,12 @@ class AutoLauncher:
         self._keyword_cooldowns = {}
         self.cooldown_hours = 24
         self.boosted_volume = None  # Temporary boost for the next launch
+        
+        # Volume simulation settings
+        self.volume_sim_enabled = os.getenv('AUTO_LAUNCH_VOLUME_SIM', 'false').lower() == 'true'
+        self.volume_sim_rounds = int(os.getenv('AUTO_LAUNCH_VOLUME_ROUNDS', '5'))
+        self.volume_sim_amount = float(os.getenv('AUTO_LAUNCH_VOLUME_AMOUNT', '0.01'))
+        self.volume_sim_delay = int(os.getenv('AUTO_LAUNCH_VOLUME_DELAY', '30'))
     
     def set_boost(self, amount):
         """Set a temporary boost for the next launch."""
@@ -306,6 +312,25 @@ class AutoLauncher:
                             embed.set_image(url=pack['image_url'])
                             
                         await channel.send(embed=embed)
+                        
+                        # Step 5: Volume Simulation (if enabled)
+                        if self.volume_sim_enabled and self.dex_trader:
+                            await channel.send(f"📊 **Volume Simulation** starting in 30s on `{pack['name']}`...")
+                            import asyncio
+                            await asyncio.sleep(30)  # Wait before starting simulation
+                            
+                            sim_result = await self.dex_trader.simulate_volume(
+                                mint_address,
+                                rounds=self.volume_sim_rounds,
+                                sol_per_round=self.volume_sim_amount,
+                                delay_seconds=self.volume_sim_delay
+                            )
+                            
+                            if sim_result.get('success'):
+                                await channel.send(f"✅ Volume simulation complete! {sim_result['buys']} buys, {sim_result['sells']} sells")
+                            else:
+                                await channel.send(f"⚠️ Volume simulation had issues. Check logs.")
+                                
                 except Exception as e:
                     self.logger.error(f"Discord notification error: {e}")
             
