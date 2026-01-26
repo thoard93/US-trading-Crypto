@@ -191,7 +191,11 @@ class TrendHunter:
             'way', 'who', 'boy', 'did', 'get', 'let', 'put', 'say',
             'she', 'too', 'use', 'coin', 'token', 'crypto', 'solana',
             'with', 'this', 'that', 'from', 'have', 'will', 'your',
-            'more', 'when', 'make', 'like', 'just', 'over', 'such'
+            'more', 'when', 'make', 'like', 'just', 'over', 'such',
+            'looking', 'faithfulness', 'hallmark', 'straight', 'waited',
+            'about', 'there', 'their', 'which', 'would', 'could', 'should',
+            'every', 'everyone', 'everything', 'something', 'anything',
+            'really', 'think', 'thought', 'people', 'going', 'been', 'want'
         }
         
         result = []
@@ -239,8 +243,10 @@ class TrendHunter:
                 continue
             
             # 🎯 PRIORITY CHECK: AI/Agent or Absurdist terms go first
-            is_priority = any(term in kw_lower for term in ai_boost_terms) or \
-                          any(term in kw_lower for term in absurd_boost_terms)
+            # Use exact word matching to avoid "STRAIGHT" matching "AI"
+            words_in_kw = set(kw_lower.split())
+            is_priority = any(term in words_in_kw for term in ai_boost_terms) or \
+                          any(term in words_in_kw for term in absurd_boost_terms)
             
             if is_priority:
                 priority_keywords.append(keyword.upper())

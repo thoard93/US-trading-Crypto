@@ -158,7 +158,7 @@ class MemeCreator:
             self.logger.info(f"🎨 Kie AI Task Created: {task_id}")
             
             # Poll for 5 minutes (60 attempts × 5s)
-            poll_url = f"https://api.kie.ai/api/v1/jobs/queryTask?taskId={task_id}"
+            poll_url = f"https://api.kie.ai/api/v1/jobs/recordInfo?taskId={task_id}"
             
             for attempt in range(60):
                 time.sleep(5)
