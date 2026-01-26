@@ -64,7 +64,6 @@ class SmartCopyTrader:
                 except Exception as e:
                     if attempt < 2:
                         self.logger.warning(f"⚠️ DB Load attempt {attempt+1} failed, retrying in 2s...")
-                        import time
                         time.sleep(2)
                     else:
                         self.logger.error(f"Error loading swarms from DB: {e}")
@@ -146,7 +145,6 @@ class SmartCopyTrader:
                 except Exception as e:
                     if "SSL connection" in str(e) and attempt < 2:
                         self.logger.warning(f"⚠️ DB SSL Drop during wallet load. Retrying {attempt+1}/3...")
-                        import time
                         time.sleep(2) # Sync sleep because this is often called during init
                     else:
                         self.logger.error(f"❌ Error loading wallets from DB: {e}")
@@ -180,7 +178,6 @@ class SmartCopyTrader:
                     return new_score # Success
                 except Exception as e:
                     if "SSL connection" in str(e) and attempt < 2:
-                        import time
                         time.sleep(2)
                     else:
                         break
@@ -776,7 +773,6 @@ class SmartCopyTrader:
             from database import SessionLocal
             import models
             from datetime import datetime, timedelta
-            import time
             
             db = SessionLocal()
             cutoff = datetime.utcnow() - timedelta(hours=inactive_hours)
