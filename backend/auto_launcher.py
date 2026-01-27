@@ -52,9 +52,9 @@ class AutoLauncher:
         self.fixed_twitter = os.getenv('AUTO_LAUNCH_X_HANDLE', '')
         self.fixed_telegram = os.getenv('AUTO_LAUNCH_TG_LINK', '')
         
-        # Phase 56: Parallel Token Support
-        self.active_simulations = {}  # mint -> Task object
-        self.max_parallel_sims = 3    # To prevent VPS overload
+        # Phase 56: Parallel Token Support (now tracks per-wallet sims)
+        self.active_simulations = {}  # "mint:wallet_idx" -> Task object
+        self.max_parallel_sims = 10   # Increased: 2 wallets × 5 tokens = 10 max concurrent
     
     def set_boost(self, amount):
         """Set a temporary boost for the next launch."""
@@ -383,45 +383,55 @@ class AutoLauncher:
                                 await channel.send(f"⚠️ **Parallel Limit reached** ({self.max_parallel_sims}). Skipping volume sim for `{pack['name']}`.")
                                 self.logger.warning(f"Skipping volume sim for {mint_address} - already {len(self.active_simulations)} active.")
                             else:
-                                await channel.send(f"📊 **Volume Simulation** starting (Background) on `{pack['name']}`...")
-                                
-                                # Callback to send status updates to Discord
-                                async def discord_callback(msg):
-                                    try:
-                                        await channel.send(f"📊 {msg}")
-                                    except:
-                                        pass
-                                
-                                # Start simulation in background USING SUPPORT WALLET (not dev!)
-                                # This avoids (dev) label on trades
-                                vol_sim_key = None
+                                # Get ALL support wallets for parallel volume simulation
+                                support_keys = []
                                 if hasattr(self.dex_trader, 'wallet_manager'):
-                                    support_keys = self.dex_trader.wallet_manager.get_all_support_keys()
-                                    if support_keys:
-                                        vol_sim_key = support_keys[0]  # Use first support wallet for volume sim
-                                        print(f"📊 VolSim using support wallet: {vol_sim_key[:8]}...")
+                                    support_keys = self.dex_trader.wallet_manager.get_all_support_keys() or []
                                 
-                                sim_task = asyncio.create_task(self.dex_trader.simulate_volume(
-                                    mint_address,
-                                    rounds=self.volume_sim_rounds,
-                                    sol_per_round=self.volume_sim_amount,
-                                    delay_seconds=self.volume_sim_delay,
-                                    callback=discord_callback,
-                                    moon_bias=0.95,
-                                    ticker=pack['ticker'],
-                                    payer_key=vol_sim_key  # Use support wallet, not dev!
-                                ))
-                                
-                                # Add to tracking
-                                self.active_simulations[mint_address] = sim_task
-                                
-                                # Cleanup task when done
-                                def cleanup(t):
-                                    if mint_address in self.active_simulations:
-                                        del self.active_simulations[mint_address]
-                                        print(f"🧹 VolSim finished for {pack['ticker']} ({mint_address[:8]}). Active: {len(self.active_simulations)}")
-                                
-                                sim_task.add_done_callback(cleanup)
+                                if not support_keys:
+                                    await channel.send(f"⚠️ **No support wallets configured** - skipping volume sim")
+                                else:
+                                    await channel.send(f"📊 **Volume Simulation** starting with {len(support_keys)} wallets on `{pack['name']}`...")
+                                    
+                                    # Start volume sim on EACH support wallet in parallel
+                                    for wallet_idx, wallet_key in enumerate(support_keys):
+                                        wallet_label = f"W{wallet_idx+1}"
+                                        wallet_short = wallet_key[:8]
+                                        print(f"📊 [{pack['ticker']}] VolSim {wallet_label} starting: {wallet_short}...")
+                                        
+                                        # Create callback with wallet label for clarity
+                                        def make_callback(label):
+                                            async def cb(msg):
+                                                try:
+                                                    await channel.send(f"📊 [{label}] {msg}")
+                                                except:
+                                                    pass
+                                            return cb
+                                        
+                                        sim_task = asyncio.create_task(self.dex_trader.simulate_volume(
+                                            mint_address,
+                                            rounds=self.volume_sim_rounds,
+                                            sol_per_round=self.volume_sim_amount,
+                                            delay_seconds=self.volume_sim_delay,
+                                            callback=make_callback(wallet_label),
+                                            moon_bias=0.95,
+                                            ticker=f"{pack['ticker']}-{wallet_label}",
+                                            payer_key=wallet_key
+                                        ))
+                                        
+                                        # Track with unique key per wallet
+                                        sim_key = f"{mint_address}:{wallet_idx}"
+                                        self.active_simulations[sim_key] = sim_task
+                                        
+                                        # Cleanup when done
+                                        def make_cleanup(key, label, ticker):
+                                            def cleanup(t):
+                                                if key in self.active_simulations:
+                                                    del self.active_simulations[key]
+                                                    print(f"🧹 VolSim {label} finished for {ticker}. Active: {len(self.active_simulations)}")
+                                            return cleanup
+                                        
+                                        sim_task.add_done_callback(make_cleanup(sim_key, wallet_label, pack['ticker']))
                                 
                 except Exception as e:
                     self.logger.error(f"Discord notification error: {e}")
