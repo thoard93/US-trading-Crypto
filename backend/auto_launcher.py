@@ -25,7 +25,7 @@ class AutoLauncher:
         self.enabled = os.getenv('AUTO_LAUNCH_ENABLED', 'true').lower() == 'true'  # 🚀 Auto-enabled on startup
         self.max_daily_launches = int(os.getenv('AUTO_LAUNCH_MAX_DAILY', '10'))  # MEGA BOT: 10 launches/day
         self.min_sol_balance = float(os.getenv('AUTO_LAUNCH_MIN_SOL', '0.1'))
-        self.volume_seed_sol = float(os.getenv('AUTO_LAUNCH_VOLUME_SEED', '0.5'))  # 0.5 SOL for ~5% bonding curve
+        self.volume_seed_sol = float(os.getenv('AUTO_LAUNCH_VOLUME_SEED', '0.01'))  # MOON BIAS: Default to 0.01 SOL
         
         # State tracking
         self.launched_today = []  # List of {keyword, mint, timestamp}
@@ -292,6 +292,7 @@ class AutoLauncher:
             
             # Determine buy amount (apply boost if set)
             buy_amount = self.boosted_volume if self.boosted_volume else self.volume_seed_sol
+            print(f"💰 AUTO-LAUNCH: Buying {buy_amount} SOL of {pack['name']}...")
             
             result = self.dex_trader.create_pump_token(
                 name=pack['name'],
