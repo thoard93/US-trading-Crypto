@@ -58,7 +58,7 @@ def test_endpoints():
                 if isinstance(data, list):
                     tokens = data
                 elif isinstance(data, dict):
-                    tokens = data.get('coins', data.get('data', data.get('tokens', [data] if 'mint' in data else []))
+                    tokens = data.get('coins', data.get('data', data.get('tokens', [])))
                 else:
                     tokens = []
                 
