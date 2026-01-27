@@ -606,8 +606,7 @@ class DexTrader:
             signature = op_keypair.sign_message(message_bytes)
             signature_base58 = str(signature)
             
-            # 3. Submit to the frontend API
-            # Note: This endpoint is reverse-engineered from frontend behavior
+            # 3. Submit to the frontend API with robust browser headers
             url = "https://frontend-api-v3.pump.fun/replies"
             payload = {
                 "mint": mint_address,
@@ -617,11 +616,28 @@ class DexTrader:
                 "timestamp": timestamp
             }
             
+            # Robust headers to bypass Cloudflare/Bot detection
+            # Rotating User-Agents to mimic real browser distribution
+            user_agents = [
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            ]
+            
             headers = {
                 'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'User-Agent': random.choice(user_agents),
+                'Accept': '*/*',
+                'Accept-Language': 'en-US,en;q=0.9',
                 'Origin': 'https://pump.fun',
-                'Referer': f'https://pump.fun/coin/{mint_address}'
+                'Referer': f'https://pump.fun/coin/{mint_address}',
+                'Referrer-Policy': 'strict-origin-when-cross-origin',
+                'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"',
+                'sec-fetch-dest': 'empty',
+                'sec-fetch-mode': 'cors',
+                'sec-fetch-site': 'same-site'
             }
             
             # Use proxy session for Cloudflare bypass (Phase 57)
@@ -1684,25 +1700,26 @@ class DexTrader:
                     await asyncio.sleep(delay_seconds)
                     continue
                 
-                # Wait longer for balance to update with retries
+                # Wait longer for balance to update with retries (Phase 62 Update)
                 tokens_bought = 0
-                for balance_check in range(5):  # Try up to 5 times (15 seconds total)
+                for balance_check in range(15):  # Try up to 15 times (45 seconds total)
                     await asyncio.sleep(3)  # Wait 3 seconds between checks
                     post_buy_balance = self.get_token_balance(mint_address).get('ui_amount', 0)
                     tokens_bought = post_buy_balance - pre_buy_balance
                     if tokens_bought > 0:
                         break
-                    await notify(f"⏳ Waiting for balance update... ({balance_check+1}/5)")
+                    if (balance_check + 1) % 3 == 0:
+                        await notify(f"⏳ Still waiting for balance update... ({balance_check+1}/15)")
                 
                 # Apply Moon Bias: Sell only a portion of what was bought
                 tokens_to_sell = int(tokens_bought * moon_bias)
                 await notify(f"Tokens received: {tokens_bought:.0f} | Moon Bias Sell: {tokens_to_sell:.0f}")
                 
-                # FALLBACK: If balance didn't update, estimate sell as ~1% of total balance
+                # FALLBACK: If balance didn't update, sell 25% of holdings
                 if tokens_to_sell <= 0:
-                    # Use a small percentage sell as fallback to still create chart movement
-                    fallback_pct = 1.0  # Sell 1% of holdings
-                    await notify(f"⚠️ Balance not updated, using fallback: selling {fallback_pct}% of holdings...")
+                    # Increase fallback to 25% to prevent 'big bag' accumulation (Phase 62)
+                    fallback_pct = 25.0  
+                    await notify(f"⚠️ Balance not updated after 45s, using safety fallback: selling {fallback_pct}% of holdings...")
                     sell_result = self.pump_sell(mint_address, token_amount_pct=fallback_pct, payer_key=payer_key)
                 else:
                     # Use pump_sell with calculated amount as percentage of CURRENT balance
