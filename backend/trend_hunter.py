@@ -185,9 +185,8 @@ class TrendHunter:
     
     def _get_helius_pump_tokens(self):
         """
-        Fetch recent pump.fun token names using Helius DAS API.
-        Bypasses Cloudflare-blocked pump.fun frontend API.
-        Uses searchAssets with pump.fun authority to find recent tokens.
+        Fetch recent pump.fun token names using Helius Enhanced Transactions API.
+        Gets recent transactions from pump.fun program and extracts token names.
         """
         if not self.helius_key:
             return []
@@ -198,53 +197,67 @@ class TrendHunter:
             if self._last_helius_fetch and (now - self._last_helius_fetch) < self._cache_duration:
                 return self._helius_cache
             
-            # Helius DAS API - Get pump.fun tokens created recently
-            # Pump.fun uses specific mint authority pattern
-            url = f"https://mainnet.helius-rpc.com/?api-key={self.helius_key}"
+            # Pump.fun Program ID
+            PUMP_PROGRAM = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
             
-            # Search for recently created tokens with pump.fun traits
-            payload = {
+            # Step 1: Get recent signatures from pump.fun program
+            rpc_url = f"https://mainnet.helius-rpc.com/?api-key={self.helius_key}"
+            
+            sig_payload = {
                 "jsonrpc": "2.0",
-                "id": "pump-trends",
-                "method": "searchAssets",
-                "params": {
-                    # Filter: tokens created by pump.fun
-                    "creatorAddress": "TSLvdd1pWpHVjahSpsvCXUbgwsL3JAcvokwaKt1eokM",  # Pump.fun creator
-                    "creatorVerified": False,  # New pump tokens aren't verified
-                    "ownerType": "all",
-                    "sortBy": {
-                        "sortBy": "recent_action",
-                        "sortDirection": "desc"
-                    },
-                    "page": 1,
-                    "limit": 50
-                }
+                "id": "pump-sigs",
+                "method": "getSignaturesForAddress",
+                "params": [
+                    PUMP_PROGRAM,
+                    {"limit": 100}  # Get last 100 transactions
+                ]
             }
             
-            resp = requests.post(url, json=payload, timeout=15)
-            
-            if resp.status_code != 200:
-                self.logger.warning(f"Helius DAS API returned {resp.status_code}")
+            sig_resp = requests.post(rpc_url, json=sig_payload, timeout=10)
+            if sig_resp.status_code != 200:
+                self.logger.warning(f"Helius getSignatures returned {sig_resp.status_code}")
                 return self._helius_cache
             
-            data = resp.json()
-            items = data.get('result', {}).get('items', [])
+            sig_data = sig_resp.json()
+            signatures = [s['signature'] for s in sig_data.get('result', [])[:50]]
+            
+            if not signatures:
+                self.logger.debug("No pump.fun signatures found")
+                return self._helius_cache
+            
+            # Step 2: Parse transactions to get token metadata
+            parse_url = f"https://api.helius.xyz/v0/transactions?api-key={self.helius_key}"
+            
+            parse_resp = requests.post(parse_url, json={"transactions": signatures[:20]}, timeout=15)
+            if parse_resp.status_code != 200:
+                self.logger.warning(f"Helius parseTransactions returned {parse_resp.status_code}")
+                return self._helius_cache
+            
+            parsed_txs = parse_resp.json()
             
             keywords = []
-            for item in items:
-                content = item.get('content', {})
-                metadata = content.get('metadata', {})
-                name = metadata.get('name', '')
+            for tx in parsed_txs:
+                # Look for token creation events
+                events = tx.get('events', {})
+                token_transfers = tx.get('tokenTransfers', [])
                 
-                if name:
-                    # Clean and extract keyword from token name
-                    clean_name = re.sub(r'[^a-zA-Z0-9\s]', '', name).strip()
-                    if clean_name and len(clean_name) >= 3 and len(clean_name) <= 30:
-                        keywords.append(clean_name.upper())
+                # Extract token names from metadata if available
+                for transfer in token_transfers:
+                    name = transfer.get('tokenName', '') or transfer.get('name', '')
+                    if name:
+                        clean_name = re.sub(r'[^a-zA-Z0-9\s]', '', name).strip()
+                        if clean_name and len(clean_name) >= 3 and len(clean_name) <= 30:
+                            keywords.append(clean_name.upper())
+                
+                # Also check description for token info
+                description = tx.get('description', '')
+                if 'created' in description.lower() or 'mint' in description.lower():
+                    words = self._extract_words(description)
+                    keywords.extend(words[:2])  # Take first 2 words from creation tx
             
             # Update cache
             self._last_helius_fetch = now
-            self._helius_cache = list(set(keywords))
+            self._helius_cache = list(set(keywords))[:20]  # Limit to 20 unique
             
             self.logger.info(f"🔗 Helius: Found {len(self._helius_cache)} pump.fun token names")
             if self._helius_cache:
