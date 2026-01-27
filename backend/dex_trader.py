@@ -1518,27 +1518,32 @@ class DexTrader:
                     await asyncio.sleep(delay_seconds)
                     continue
                 
-                # Wait longer for balance to update (5 seconds)
-                await asyncio.sleep(5)
-                
-                # Get balance AFTER buy
-                post_buy_balance = self.get_token_balance(mint_address).get('ui_amount', 0)
-                tokens_bought = post_buy_balance - pre_buy_balance
+                # Wait longer for balance to update with retries
+                tokens_bought = 0
+                for balance_check in range(5):  # Try up to 5 times (15 seconds total)
+                    await asyncio.sleep(3)  # Wait 3 seconds between checks
+                    post_buy_balance = self.get_token_balance(mint_address).get('ui_amount', 0)
+                    tokens_bought = post_buy_balance - pre_buy_balance
+                    if tokens_bought > 0:
+                        break
+                    await notify(f"⏳ Waiting for balance update... ({balance_check+1}/5)")
                 
                 # Apply Moon Bias: Sell only a portion of what was bought
                 tokens_to_sell = int(tokens_bought * moon_bias)
                 await notify(f"Tokens received: {tokens_bought:.0f} | Moon Bias Sell: {tokens_to_sell:.0f}")
                 
+                # FALLBACK: If balance didn't update, estimate sell as ~1% of total balance
                 if tokens_to_sell <= 0:
-                    await notify(f"⚠️ Not enough tokens to sell with {moon_bias*100:.0f}% bias, skipping sell")
-                    await asyncio.sleep(delay_seconds - 5)
-                    continue
-                
-                # Use pump_sell with calculated amount as percentage of CURRENT balance
-                current_balance = post_buy_balance
-                sell_pct = (tokens_to_sell / current_balance) * 100 if current_balance > 0 else 1
-                await notify(f"Round {i+1}/{rounds}: Selling {sell_pct:.1f}% ({tokens_to_sell:.0f} tokens)...")
-                sell_result = self.pump_sell(mint_address, token_amount_pct=min(sell_pct, 100))
+                    # Use a small percentage sell as fallback to still create chart movement
+                    fallback_pct = 1.0  # Sell 1% of holdings
+                    await notify(f"⚠️ Balance not updated, using fallback: selling {fallback_pct}% of holdings...")
+                    sell_result = self.pump_sell(mint_address, token_amount_pct=fallback_pct)
+                else:
+                    # Use pump_sell with calculated amount as percentage of CURRENT balance
+                    current_balance = post_buy_balance
+                    sell_pct = (tokens_to_sell / current_balance) * 100 if current_balance > 0 else 1
+                    await notify(f"Round {i+1}/{rounds}: Selling {sell_pct:.1f}% ({tokens_to_sell:.0f} tokens)...")
+                    sell_result = self.pump_sell(mint_address, token_amount_pct=min(sell_pct, 100))
                 
                 if sell_result.get('success'):
                     total_sold += 1
