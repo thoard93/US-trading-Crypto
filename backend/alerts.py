@@ -308,7 +308,7 @@ class AlertSystem(commands.Cog):
         # 🛡️ AUTO-LAUNCH LOOP (Phase 7)
         if self.auto_launcher and not self.auto_launch_loop.is_running():
             self.auto_launch_loop.start()
-            print("🔥 Auto-Launch Pipeline Loop STARTED (every 30 min)")
+            print("🔥 Auto-Launch Pipeline Loop STARTED (every 20 min)")
 
         # ⚡ IMMEDIATE SYNC: Sync current positions on startup
         asyncio.create_task(self.sync_all_dex_positions())
