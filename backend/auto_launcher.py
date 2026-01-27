@@ -55,6 +55,27 @@ class AutoLauncher:
         # Phase 56: Parallel Token Support (now tracks per-wallet sims)
         self.active_simulations = {}  # "mint:wallet_idx" -> Task object
         self.max_parallel_sims = 10   # Increased: 2 wallets × 5 tokens = 10 max concurrent
+        
+        # Phase 59: Multi-Wallet Token Creation (Organic Bot Farm)
+        # Rotate token creation across all wallets for authentic trading history
+        self._creation_wallet_index = 0
+    
+    def _get_next_creation_wallet(self):
+        """
+        Round-robin through all wallets (main + support) for token creation.
+        Each wallet builds its own token creation history for organic appearance.
+        """
+        if not self.dex_trader or not hasattr(self.dex_trader, 'wallet_manager'):
+            return None
+        
+        all_keys = self.dex_trader.wallet_manager.get_all_keys()
+        if not all_keys:
+            return None
+        
+        # Round-robin selection
+        key = all_keys[self._creation_wallet_index % len(all_keys)]
+        self._creation_wallet_index += 1
+        return key
     
     def set_boost(self, amount):
         """Set a temporary boost for the next launch."""
@@ -301,6 +322,13 @@ class AutoLauncher:
             twitter_link = self.fixed_twitter if self.fixed_twitter else f"https://x.com/{clean_name}_sol"
             tg_link = self.fixed_telegram if self.fixed_telegram else f"https://t.me/{clean_name}_portal"
             
+            # Phase 59: Select which wallet creates this token (round-robin all wallets)
+            creator_key = self._get_next_creation_wallet()
+            creator_label = "Main"
+            if creator_key and hasattr(self.dex_trader, 'wallet_manager'):
+                creator_label = self.dex_trader.wallet_manager.get_wallet_label(creator_key)
+            print(f"🎨 Token being created by: {creator_label}")
+            
             # Determine buy amount (apply boost if set)
             buy_amount = self.boosted_volume if self.boosted_volume else self.volume_seed_sol
             print(f"💰 AUTO-LAUNCH: Buying {buy_amount} SOL of {pack['name']}...")
@@ -314,7 +342,8 @@ class AutoLauncher:
                 use_jito=False,  # DISABLED: Jito bundles drop silently. Using standard RPC for now.
                 twitter=twitter_link,
                 telegram=tg_link,
-                website=''
+                website='',
+                payer_key=creator_key  # Phase 59: Rotating wallet for organic history!
             )
             
             # Reset boost after launch attempt
@@ -383,18 +412,22 @@ class AutoLauncher:
                                 await channel.send(f"⚠️ **Parallel Limit reached** ({self.max_parallel_sims}). Skipping volume sim for `{pack['name']}`.")
                                 self.logger.warning(f"Skipping volume sim for {mint_address} - already {len(self.active_simulations)} active.")
                             else:
-                                # Get ALL support wallets for parallel volume simulation
-                                support_keys = []
+                                # Get ALL wallets for parallel volume simulation
+                                # EXCEPT the creator wallet (they'd show as "dev")
+                                all_keys = []
                                 if hasattr(self.dex_trader, 'wallet_manager'):
-                                    support_keys = self.dex_trader.wallet_manager.get_all_support_keys() or []
+                                    all_keys = self.dex_trader.wallet_manager.get_all_keys() or []
                                 
-                                if not support_keys:
-                                    await channel.send(f"⚠️ **No support wallets configured** - skipping volume sim")
+                                # Filter out the creator wallet - they're the "dev" on this token
+                                sim_wallets = [k for k in all_keys if k != creator_key]
+                                
+                                if not sim_wallets:
+                                    await channel.send(f"⚠️ **No non-creator wallets available** - skipping volume sim")
                                 else:
-                                    await channel.send(f"📊 **Volume Simulation** starting with {len(support_keys)} wallets on `{pack['name']}`...")
+                                    await channel.send(f"📊 **Volume Simulation** starting with {len(sim_wallets)} wallets on `{pack['name']}`...")
                                     
-                                    # Start volume sim on EACH support wallet in parallel
-                                    for wallet_idx, wallet_key in enumerate(support_keys):
+                                    # Start volume sim on EACH non-creator wallet in parallel
+                                    for wallet_idx, wallet_key in enumerate(sim_wallets):
                                         wallet_label = f"W{wallet_idx+1}"
                                         wallet_short = wallet_key[:8]
                                         print(f"📊 [{pack['ticker']}] VolSim {wallet_label} starting: {wallet_short}...")
