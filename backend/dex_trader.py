@@ -632,13 +632,13 @@ class DexTrader:
             if response.status_code == 200 or response.status_code == 201:
                 return {"success": True, "signature": signature_base58}
             else:
-                # FALLBACK: Try the legacy API if v3 fails
+                # FALLBACK: Try the legacy API if v3 fails (also with proxy!)
                 url_legacy = "https://frontend-api.pump.fun/replies"
-                response = requests.post(url_legacy, json=payload, headers=headers, timeout=10)
+                response = session.post(url_legacy, json=payload, headers=headers, timeout=15)
                 if response.status_code == 200 or response.status_code == 201:
                     return {"success": True, "signature": signature_base58}
                 
-                return {"error": f"API Error ({response.status_code}): {response.text}"}
+                return {"error": f"API Error ({response.status_code}): {response.text[:200]}"}
                 
         except Exception as e:
             print(f"❌ Error in post_pump_comment: {e}")
