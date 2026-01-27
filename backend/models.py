@@ -91,3 +91,20 @@ class LaunchedKeyword(Base):
     symbol = Column(String, nullable=True)        # Token Symbol (e.g. "LOOKZ")
     mint_address = Column(String, index=True)     # Created token mint
     launched_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class MoverSnapshot(Base):
+    """
+    Tracks token momentum data over time for research.
+    Helps understand: What causes low MC tokens to grow?
+    """
+    __tablename__ = "mover_snapshots"
+    id = Column(Integer, primary_key=True, index=True)
+    mint = Column(String, index=True)             # Token mint address
+    symbol = Column(String, nullable=True)        # Token symbol
+    mc_usd = Column(Float, nullable=True)         # Market cap at snapshot time
+    unique_buyers = Column(Integer)               # Unique buyers in window
+    buy_count = Column(Integer)                   # Total buys in window
+    sol_volume = Column(Float)                    # Total SOL volume in window
+    score = Column(Float)                         # Momentum score
+    snapshot_at = Column(DateTime, default=datetime.datetime.utcnow, index=True)
+

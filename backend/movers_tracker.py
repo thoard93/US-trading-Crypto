@@ -209,6 +209,40 @@ class MoversTracker:
         """Clear all activity data."""
         self.activity.clear()
         self.token_cache.clear()
+    
+    async def log_snapshot(self):
+        """
+        Log current top movers to database for research.
+        Call this periodically (e.g., every 10 minutes) to track MC changes over time.
+        """
+        try:
+            from database import SessionLocal
+            import models
+            
+            db = SessionLocal()
+            movers = await self.get_movers(limit=20, min_buyers=2, min_sol_volume=0.2)
+            
+            logged = 0
+            for m in movers:
+                snapshot = models.MoverSnapshot(
+                    mint=m['mint'],
+                    symbol=m['symbol'],
+                    mc_usd=m.get('mc', 0),
+                    unique_buyers=m['buyers'],
+                    buy_count=m['buys'],
+                    sol_volume=m['sol_volume'],
+                    score=m['score']
+                )
+                db.add(snapshot)
+                logged += 1
+            
+            db.commit()
+            db.close()
+            logger.info(f"📊 Logged {logged} mover snapshots for research")
+            return logged
+        except Exception as e:
+            logger.error(f"Failed to log mover snapshots: {e}")
+            return 0
 
 
 # Singleton for use across modules
