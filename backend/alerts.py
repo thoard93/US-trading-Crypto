@@ -310,6 +310,14 @@ class AlertSystem(commands.Cog):
             self.auto_launch_loop.start()
             print("🔥 Auto-Launch Pipeline Loop STARTED (every 20 min)")
 
+        # 📊 MOVERS RESEARCH LOOP (Phase 57) - Passive data collection
+        try:
+            from movers_tracker import auto_snapshot_loop
+            asyncio.create_task(auto_snapshot_loop())
+            print("📊 Movers Research Loop STARTED (snapshots every 10 min)")
+        except Exception as e:
+            print(f"⚠️ Movers research loop failed: {e}")
+
         # ⚡ IMMEDIATE SYNC: Sync current positions on startup
         asyncio.create_task(self.sync_all_dex_positions())
 

@@ -253,3 +253,28 @@ def get_movers_tracker():
     if _tracker_instance is None:
         _tracker_instance = MoversTracker()
     return _tracker_instance
+
+
+async def auto_snapshot_loop():
+    """
+    Background loop that logs mover snapshots every 10 minutes for research.
+    Call once on bot startup: asyncio.create_task(auto_snapshot_loop())
+    """
+    import asyncio
+    tracker = get_movers_tracker()
+    
+    # Wait 5 minutes after startup to let data accumulate
+    await asyncio.sleep(300)
+    logger.info("📊 Movers Research Loop STARTED (snapshot every 10 min)")
+    
+    while True:
+        try:
+            logged = await tracker.log_snapshot()
+            if logged > 0:
+                logger.info(f"📊 Movers snapshot: {logged} tokens logged")
+        except Exception as e:
+            logger.error(f"Snapshot loop error: {e}")
+        
+        # Wait 10 minutes
+        await asyncio.sleep(600)
+
