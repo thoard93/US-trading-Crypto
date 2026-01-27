@@ -4,9 +4,19 @@ Find ALL endpoints including lower MC movers
 """
 import requests
 import json
+import os
 
 def test_endpoints():
     """Test various Pump.fun API endpoints"""
+    
+    # Use residential proxy if available (Phase 57)
+    proxy_url = os.getenv('RESIDENTIAL_PROXY')
+    proxies = None
+    if proxy_url:
+        proxies = {'http': proxy_url, 'https': proxy_url}
+        print("🌐 Using residential proxy for API discovery")
+    else:
+        print("⚠️ No proxy - may hit Cloudflare blocks")
     
     endpoints = [
         # Known endpoints
@@ -42,8 +52,8 @@ def test_endpoints():
         print(f"{'='*80}")
         
         try:
-            resp = requests.get(url, timeout=10, headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            resp = requests.get(url, timeout=15, proxies=proxies, headers={
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'application/json',
                 'Origin': 'https://pump.fun',
                 'Referer': 'https://pump.fun/',
