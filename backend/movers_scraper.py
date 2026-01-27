@@ -59,48 +59,64 @@ def scrape_pump_board():
                 scripts = soup.find_all('script')
                 print(f"\nFound {len(scripts)} script tags")
                 
-                # Look for __NEXT_DATA__ (Next.js apps store initial data here)
-                for script in scripts:
-                    if script.get('id') == '__NEXT_DATA__':
-                        print("\n✅ Found __NEXT_DATA__ - contains pre-rendered data!")
-                        try:
-                            data = json.loads(script.text)
-                            print(f"Data keys: {list(data.keys())}")
-                            
-                            # Navigate to find token data
-                            if 'props' in data:
-                                props = data['props']
-                                if 'pageProps' in props:
-                                    page_props = props['pageProps']
-                                    print(f"PageProps keys: {list(page_props.keys())}")
-                                    
-                                    # Look for tokens/coins
-                                    for key in ['coins', 'tokens', 'movers', 'data']:
-                                        if key in page_props:
-                                            tokens = page_props[key]
-                                            if isinstance(tokens, list):
-                                                print(f"\n🎯 Found {len(tokens)} tokens in '{key}'!")
-                                                for i, t in enumerate(tokens[:10]):
-                                                    if isinstance(t, dict):
-                                                        symbol = t.get('symbol', t.get('ticker', '?'))
-                                                        mc = t.get('usd_market_cap', t.get('market_cap', 0))
-                                                        mint = t.get('mint', t.get('address', '?'))[:20]
-                                                        print(f"  {i+1}. {symbol:12} | MC: ${mc:,.0f} | {mint}...")
-                        except json.JSONDecodeError as e:
-                            print(f"Error parsing __NEXT_DATA__: {e}")
+                found_tokens = False
                 
-                # Also look for any JSON in regular script tags
-                for script in scripts:
-                    if script.string and '"usd_market_cap"' in script.string:
-                        print("\n✅ Found embedded token data in script!")
-                        # Try to extract JSON
-                        match = re.search(r'\[.*?\]', script.string, re.DOTALL)
-                        if match:
-                            try:
-                                tokens = json.loads(match.group())
-                                print(f"Found {len(tokens)} tokens")
-                            except:
-                                pass
+                # Search ALL scripts for token-related JSON
+                for idx, script in enumerate(scripts):
+                    script_text = script.string or ''
+                    
+                    # Look for __NEXT_DATA__ 
+                    if script.get('id') == '__NEXT_DATA__':
+                        print(f"\n✅ Found __NEXT_DATA__ at script #{idx}")
+                        try:
+                            data = json.loads(script_text)
+                            print(f"Keys: {list(data.keys())[:5]}")
+                            # Deep search for tokens
+                            found_tokens = search_for_tokens(data, "NEXT_DATA")
+                        except:
+                            pass
+                    
+                    # Look for any script containing token keywords
+                    keywords = ['usd_market_cap', 'market_cap', '"mint":', '"symbol":', 'virtualSolReserves']
+                    for kw in keywords:
+                        if kw in script_text:
+                            print(f"\n🎯 Found '{kw}' in script #{idx} ({len(script_text)} chars)")
+                            
+                            # Try to extract JSON arrays
+                            for match in re.finditer(r'(\[[\s\S]*?\])', script_text):
+                                try:
+                                    arr = json.loads(match.group(1))
+                                    if isinstance(arr, list) and len(arr) > 0 and isinstance(arr[0], dict):
+                                        if any(k in arr[0] for k in ['mint', 'symbol', 'market_cap', 'usd_market_cap']):
+                                            print(f"  ✅ Found token array with {len(arr)} items!")
+                                            for i, t in enumerate(arr[:8]):
+                                                symbol = t.get('symbol', t.get('name', '?'))
+                                                mc = t.get('usd_market_cap', t.get('market_cap', 0))
+                                                mint = t.get('mint', '?')[:16]
+                                                print(f"    {i+1}. {symbol:12} | MC: ${mc:>12,.0f} | {mint}...")
+                                            found_tokens = True
+                                            break
+                                except:
+                                    pass
+                            
+                            # Also try extracting JSON objects
+                            for match in re.finditer(r'(\{[^\{\}]{100,10000}\})', script_text):
+                                try:
+                                    obj = json.loads(match.group(1))
+                                    if 'mint' in obj and ('symbol' in obj or 'market_cap' in obj):
+                                        print(f"  Found single token: {obj.get('symbol', '?')}")
+                                except:
+                                    pass
+                            break  # Only report once per script
+                
+                if not found_tokens:
+                    print("\n⚠️ No embedded token data found in scripts")
+                    print("Checking raw HTML for clues...")
+                    # Look for data attributes
+                    html_preview = resp.text[:5000]
+                    if 'data-' in html_preview:
+                        attrs = re.findall(r'data-[\w-]+', html_preview)
+                        print(f"Data attributes found: {set(attrs)}")
                 
                 # Check for specific elements that might contain tokens
                 token_els = soup.find_all(attrs={'data-token': True}) or soup.find_all(class_=re.compile(r'token|card|coin', re.I))
