@@ -5,6 +5,8 @@ Find ALL endpoints including lower MC movers
 import requests
 import json
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
 def test_endpoints():
     """Test various Pump.fun API endpoints"""
