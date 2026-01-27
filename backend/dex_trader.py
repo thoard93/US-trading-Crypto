@@ -368,7 +368,6 @@ class DexTrader:
             
         try:
             import json
-            from solders.keypair import Keypair
             
             # 1. Generate a new mint keypair (required for create instruction)
             mint_keypair = Keypair()
