@@ -7,6 +7,8 @@ import re
 import logging
 import requests
 import time
+import json
+import threading
 from datetime import datetime, timedelta
 
 class TrendHunter:
@@ -39,6 +41,14 @@ class TrendHunter:
         self._last_helius_fetch = None
         self._helius_cache = []
         self._cache_duration = 300  # 5 minutes
+        
+        # PumpPortal WebSocket state (Phase 62: Real-time token discovery)
+        self._pumpportal_ws = None
+        self._pumpportal_tokens = []  # [(name, timestamp), ...]
+        self._pumpportal_lock = threading.Lock()
+        self._pumpportal_connected = False
+        self._pumpportal_thread = None
+        self._ws_reconnect_delay = 1  # Exponential backoff starting at 1s
     
     def _get_proxy_session(self):
         """Get a requests session with residential proxy for Cloudflare bypass."""
@@ -185,26 +195,110 @@ class TrendHunter:
     
     def _get_helius_pump_tokens(self):
         """
-        Fetch recent pump.fun token names using Helius API.
+        Get recently created pump.fun token names from PumpPortal WebSocket stream.
         
-        NOTE: Helius parseTransactions doesn't return token names for pump.fun transactions.
-        This method is a placeholder for future implementation using Helius gRPC streams or
-        DAS getAsset API to fetch token metadata from mints.
-        
-        For now, trend discovery relies on:
-        - Direct pump.fun API (when not blocked)
-        - Twitter trending
-        - DexScreener trending
+        Phase 62: Real-time token discovery via PumpPortal WebSocket.
+        Connects to wss://pumpportal.fun/api/data and subscribes to subscribeNewToken.
+        Returns cached token names from the last 5 minutes.
         """
-        if not self.helius_key:
-            return []
+        # Start WebSocket thread if not running
+        if self._pumpportal_thread is None or not self._pumpportal_thread.is_alive():
+            self._start_pumpportal_websocket()
         
-        # TODO: Implement using Helius gRPC/Websockets for real-time pump.fun monitoring
-        # The current parseTransactions approach doesn't return token metadata
-        # See: https://docs.helius.xyz/compression-and-das-api/digital-asset-standard-das-api
+        # Clean expired tokens (older than 5 minutes)
+        cutoff = time.time() - 300
+        with self._pumpportal_lock:
+            self._pumpportal_tokens = [(name, ts) for name, ts in self._pumpportal_tokens if ts > cutoff]
+            token_names = [name for name, ts in self._pumpportal_tokens]
         
-        self.logger.debug("🔗 Helius pump.fun discovery: Not implemented (parseTransactions doesn't return token names)")
-        return []
+        if token_names:
+            self.logger.info(f"🔗 PumpPortal WS: Found {len(token_names)} recent tokens")
+        
+        return token_names[:20]  # Return max 20 recent tokens
+    
+    def _start_pumpportal_websocket(self):
+        """Start the PumpPortal WebSocket listener in a background thread."""
+        def ws_thread():
+            try:
+                import websocket
+            except ImportError:
+                self.logger.error("❌ websocket-client not installed. Run: pip install websocket-client")
+                return
+            
+            while True:
+                try:
+                    self.logger.info("🔗 PumpPortal: Connecting to WebSocket...")
+                    
+                    ws = websocket.create_connection(
+                        "wss://pumpportal.fun/api/data",
+                        timeout=30
+                    )
+                    self._pumpportal_ws = ws
+                    self._pumpportal_connected = True
+                    self._ws_reconnect_delay = 1  # Reset backoff on successful connect
+                    
+                    self.logger.info("✅ PumpPortal WebSocket connected!")
+                    
+                    # Subscribe to new token events
+                    ws.send(json.dumps({"method": "subscribeNewToken"}))
+                    self.logger.info("📡 Subscribed to subscribeNewToken")
+                    
+                    while True:
+                        try:
+                            msg = ws.recv()
+                            if msg:
+                                self._handle_pumpportal_message(msg)
+                        except websocket.WebSocketTimeoutException:
+                            continue  # Normal timeout, keep listening
+                        except Exception as e:
+                            self.logger.warning(f"⚠️ PumpPortal WS receive error: {e}")
+                            break
+                            
+                except Exception as e:
+                    self._pumpportal_connected = False
+                    self.logger.error(f"❌ PumpPortal WS error: {e}")
+                
+                # Exponential backoff reconnect
+                self.logger.info(f"🔄 Reconnecting in {self._ws_reconnect_delay}s...")
+                time.sleep(self._ws_reconnect_delay)
+                self._ws_reconnect_delay = min(self._ws_reconnect_delay * 2, 60)  # Max 60s
+        
+        self._pumpportal_thread = threading.Thread(target=ws_thread, daemon=True)
+        self._pumpportal_thread.start()
+        self.logger.info("🚀 PumpPortal WebSocket thread started")
+    
+    def _handle_pumpportal_message(self, msg):
+        """Handle incoming PumpPortal WebSocket message."""
+        try:
+            data = json.loads(msg)
+            
+            # Token creation event contains: signature, mint, name, symbol, uri, etc.
+            name = data.get('name', '')
+            symbol = data.get('symbol', '')
+            
+            if name or symbol:
+                # Use name preferentially, fall back to symbol
+                token_name = name or symbol
+                
+                # Clean and normalize
+                clean_name = re.sub(r'[^a-zA-Z0-9\s]', '', token_name).strip().upper()
+                
+                if clean_name and len(clean_name) >= 3 and len(clean_name) <= 30:
+                    with self._pumpportal_lock:
+                        # Check for duplicates
+                        existing_names = [n for n, _ in self._pumpportal_tokens]
+                        if clean_name not in existing_names:
+                            self._pumpportal_tokens.append((clean_name, time.time()))
+                            self.logger.debug(f"🆕 New token: {clean_name}")
+                            
+                            # Keep only last 50 tokens to prevent memory growth
+                            if len(self._pumpportal_tokens) > 50:
+                                self._pumpportal_tokens = self._pumpportal_tokens[-50:]
+                                
+        except json.JSONDecodeError:
+            pass  # Ignore malformed messages
+        except Exception as e:
+            self.logger.debug(f"Error handling PumpPortal message: {e}")
     
     def _get_twitter_trending(self):
         """Get trending topics from Twitter/X."""

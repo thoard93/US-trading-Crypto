@@ -20,3 +20,4 @@ pynacl
 py-clob-client
 jito-py-rpc
 anthropic
+websocket-client
