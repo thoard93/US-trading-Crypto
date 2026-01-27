@@ -265,16 +265,35 @@ async def auto_snapshot_loop():
     
     # Wait 5 minutes after startup to let data accumulate
     await asyncio.sleep(300)
-    logger.info("📊 Movers Research Loop STARTED (snapshot every 10 min)")
+    
+    # Log total snapshots from DB on startup to confirm persistence
+    total = get_total_snapshots()
+    logger.info(f"📊 Movers Research Loop STARTED - {total} historical snapshots in DB")
     
     while True:
         try:
             logged = await tracker.log_snapshot()
             if logged > 0:
-                logger.info(f"📊 Movers snapshot: {logged} tokens logged")
+                total = get_total_snapshots()
+                logger.info(f"📊 Movers snapshot: {logged} new, {total} total in DB")
         except Exception as e:
             logger.error(f"Snapshot loop error: {e}")
         
         # Wait 10 minutes
         await asyncio.sleep(600)
+
+
+def get_total_snapshots():
+    """Get total mover snapshots stored in database (persists across restarts)."""
+    try:
+        from database import SessionLocal
+        import models
+        
+        db = SessionLocal()
+        count = db.query(models.MoverSnapshot).count()
+        db.close()
+        return count
+    except Exception as e:
+        logger.error(f"Failed to get snapshot count: {e}")
+        return 0
 
