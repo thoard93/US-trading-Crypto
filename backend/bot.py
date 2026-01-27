@@ -9,6 +9,8 @@ from analysis.safety_checker import SafetyChecker
 from alerts import AlertSystem
 from meme_creator import MemeCreator
 from dex_trader import DexTrader
+from engagement_framer import EngagementFramer
+import re
 
 # Load environment variables (Robust pathing)
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -28,6 +30,7 @@ crypto = CryptoCollector()
 safety = SafetyChecker()
 meme_gen = MemeCreator()
 trader = DexTrader()
+engagement_framer = EngagementFramer(trader)
 
 # Initialize bot with standard intents
 intents = discord.Intents.default()
@@ -252,11 +255,13 @@ async def launch(ctx, *, keyword: str):
         
     await ctx.send("⚡ **DEPLOYING TO SOLANA MAINNET**... Hold your breath.")
     
-    # Step 2.1: Generate Placeholder Social Links
-    import re
+    # Step 2.1: Determine social links (Pinned vs Generated)
+    fixed_twitter = os.getenv('AUTO_LAUNCH_X_HANDLE', '')
+    fixed_tg = os.getenv('AUTO_LAUNCH_TG_LINK', '')
+    
     clean_name = re.sub(r'[^a-zA-Z0-9]', '', result['name']).lower()
-    twitter_link = f"https://x.com/{clean_name}_sol"
-    tg_link = f"https://t.me/{clean_name}_portal"
+    twitter_link = fixed_twitter if fixed_twitter else f"https://x.com/{clean_name}_sol"
+    tg_link = fixed_tg if fixed_tg else f"https://t.me/{clean_name}_portal"
     
     # 2. Launch on-chain
     launch_res = await asyncio.to_thread(
@@ -278,6 +283,10 @@ async def launch(ctx, *, keyword: str):
         success_embed.add_field(name="Solscan", value=f"[View Transaction](https://solscan.io/tx/{launch_res['signature']})", inline=False)
         success_embed.add_field(name="Pump.fun", value=f"[View on Pump.fun](https://pump.fun/{launch_res['mint']})", inline=False)
         await ctx.send(embed=success_embed)
+        
+        # Step 3: Trigger Engagement Farming (Phase 55)
+        await ctx.send("📢 **Social Hype Engine** starting... Building community presence.")
+        asyncio.create_task(engagement_framer.farm_engagement(launch_res['mint'], count=3))
         
         # 💾 RECORD TO DATABASE: Ensures manual launches show up in !tokens
         try:
