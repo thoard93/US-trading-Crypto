@@ -912,26 +912,40 @@ class AlertSystem(commands.Cog):
         if not self.ready:
             return
         if not self.auto_launcher or not self.auto_launcher.is_enabled():
+            print("⚠️ Auto-Launch skipped: Not enabled or not initialized")
             return
         
         channel = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
         
         try:
             # 1. Discover and queue trending keywords
+            print("🔍 Auto-Launch: Starting discovery cycle...")
             added = await self.auto_launcher.discover_and_queue()
+            print(f"🔍 Auto-Launch: discover_and_queue returned {added} new keywords")
+            print(f"🔍 Auto-Launch: Current queue size: {len(self.auto_launcher.launch_queue)}")
+            print(f"🔍 Auto-Launch: Queue contents: {self.auto_launcher.launch_queue[:5]}...")
+            
             if added > 0 and channel:
                 await channel.send(f"🔍 Auto-Launcher found **{added}** new trends to queue!")
             
             # 2. Process one item from queue (launch a token)
+            print("🚀 Auto-Launch: Calling process_queue...")
             result = await self.auto_launcher.process_queue(self.bot, self.MEMECOINS_CHANNEL_ID)
+            print(f"🚀 Auto-Launch: process_queue returned: {result}")
+            
             if result and result.get('success') and channel:
                 await channel.send(
                     f"🚀 **AUTO-LAUNCHED**: `{result.get('name', 'Token')}` ({result.get('ticker', '?')})\n"
                     f"Mint: `{result.get('mint', '?')}`\n"
                     f"[View on Pump.fun](https://pump.fun/{result.get('mint', '')})"
                 )
+            elif result and result.get('error'):
+                print(f"⚠️ Auto-Launch blocked: {result.get('error')}")
         except Exception as e:
             print(f"❌ Auto-Launch Loop Error: {e}")
+            import traceback
+            traceback.print_exc()
+
 
     @tasks.loop(minutes=10)  # POSITION TRADER MODE: Was 2 min, now 10 min
     async def discovery_loop(self):
