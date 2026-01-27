@@ -44,7 +44,8 @@ class AutoLauncher:
         self.volume_sim_delay = int(os.getenv('AUTO_LAUNCH_VOLUME_DELAY', '30'))
         
         # Source filter for autopilot (pump, twitter, dex, or None for all)
-        self.source_filter = 'pump'  # MEGA BOT: Only Pump.fun trends
+        # FIXED: Accept all sources since Pump.fun API is unreliable (Cloudflare blocks)
+        self.source_filter = None  # Accept all sources: pump, twitter, dex
         
         # Phase 55: Social Consistency
         self.fixed_twitter = os.getenv('AUTO_LAUNCH_X_HANDLE', '')
