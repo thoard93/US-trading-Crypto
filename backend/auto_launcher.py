@@ -233,6 +233,12 @@ class AutoLauncher:
                     self.launch_queue.append(keyword)
                     added += 1
                     self.logger.info(f"📥 Queued for launch: {keyword}")
+                else:
+                    self.logger.info(f"🚫 AI rejected: {keyword}")
+            
+            # Log queue status
+            if added == 0 and len(keywords_with_source) > 0:
+                self.logger.info(f"📋 Queue empty - all {len(keywords_with_source)} keywords filtered/launched")
             
             return added
             
