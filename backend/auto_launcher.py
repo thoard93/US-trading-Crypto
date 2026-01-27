@@ -7,7 +7,7 @@ import re
 import logging
 import asyncio
 from datetime import datetime, timedelta
-from backend.engagement_framer import EngagementFramer
+from engagement_framer import EngagementFramer
 
 class AutoLauncher:
     """
