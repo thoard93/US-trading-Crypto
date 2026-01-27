@@ -221,6 +221,8 @@ class TrendHunter:
             sig_data = sig_resp.json()
             signatures = [s['signature'] for s in sig_data.get('result', [])[:50]]
             
+            self.logger.debug(f"Helius: Got {len(signatures)} pump.fun signatures")
+            
             if not signatures:
                 self.logger.debug("No pump.fun signatures found")
                 return self._helius_cache
@@ -230,30 +232,46 @@ class TrendHunter:
             
             parse_resp = requests.post(parse_url, json={"transactions": signatures[:20]}, timeout=15)
             if parse_resp.status_code != 200:
-                self.logger.warning(f"Helius parseTransactions returned {parse_resp.status_code}")
+                self.logger.warning(f"Helius parseTransactions returned {parse_resp.status_code}: {parse_resp.text[:200]}")
                 return self._helius_cache
             
             parsed_txs = parse_resp.json()
+            self.logger.debug(f"Helius: Parsed {len(parsed_txs)} transactions")
             
             keywords = []
             for tx in parsed_txs:
                 # Look for token creation events
-                events = tx.get('events', {})
                 token_transfers = tx.get('tokenTransfers', [])
                 
                 # Extract token names from metadata if available
                 for transfer in token_transfers:
-                    name = transfer.get('tokenName', '') or transfer.get('name', '')
+                    # Try multiple fields where token name might be
+                    name = (transfer.get('tokenName', '') or 
+                            transfer.get('name', '') or 
+                            transfer.get('symbol', ''))
                     if name:
                         clean_name = re.sub(r'[^a-zA-Z0-9\s]', '', name).strip()
                         if clean_name and len(clean_name) >= 3 and len(clean_name) <= 30:
                             keywords.append(clean_name.upper())
                 
-                # Also check description for token info
+                # Check description for token creation info (e.g. "X created TOKENNAME")
                 description = tx.get('description', '')
-                if 'created' in description.lower() or 'mint' in description.lower():
-                    words = self._extract_words(description)
-                    keywords.extend(words[:2])  # Take first 2 words from creation tx
+                if description:
+                    # Parse "X created Y" or "X minted Y" patterns
+                    import re as regex
+                    match = regex.search(r'created\s+(\w+)', description, regex.IGNORECASE)
+                    if match:
+                        token_name = match.group(1)
+                        if len(token_name) >= 3 and len(token_name) <= 20:
+                            keywords.append(token_name.upper())
+                
+                # Also check events.nft for NFT-style metadata (pump.fun uses this sometimes)
+                events = tx.get('events', {})
+                nft_events = events.get('nft', {})
+                if isinstance(nft_events, dict):
+                    nft_name = nft_events.get('name', '')
+                    if nft_name and len(nft_name) >= 3:
+                        keywords.append(nft_name.upper()[:20])
             
             # Update cache
             self._last_helius_fetch = now
