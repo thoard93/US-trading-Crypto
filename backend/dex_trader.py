@@ -306,7 +306,19 @@ class DexTrader:
         2. Build create transaction via pumpportal.fun/api/trade-local
         3. Sign and submit (Jito-protected)
         """
-        if not self.keypair:
+        # Resolve Keypair for this operation
+        op_keypair = self.keypair
+        op_wallet = self.wallet_address
+        
+        if payer_key:
+            try:
+                op_keypair = Keypair.from_base58_string(payer_key)
+                op_wallet = str(op_keypair.pubkey())
+                print(f"🔑 Using custom payer for create: {op_wallet[:8]}...")
+            except Exception as e:
+                return {"error": f"Invalid payer_key: {e}"}
+
+        if not op_keypair:
             return {"error": "Wallet not initialized"}
             
         try:
@@ -518,7 +530,19 @@ class DexTrader:
         Posts a comment to a token page on pump.fun.
         Requires signing a message with the wallet to prove ownership/identity.
         """
-        if not self.keypair:
+        # Resolve Keypair for this operation
+        op_keypair = self.keypair
+        op_wallet = self.wallet_address
+        
+        if payer_key:
+            try:
+                op_keypair = Keypair.from_base58_string(payer_key)
+                op_wallet = str(op_keypair.pubkey())
+                print(f"💬 Using custom payer for comment: {op_wallet[:8]}...")
+            except Exception as e:
+                return {"error": f"Invalid payer_key: {e}"}
+
+        if not op_keypair:
             return {"error": "Wallet not initialized"}
             
         try:

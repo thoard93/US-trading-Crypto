@@ -4,6 +4,7 @@ Includes safety controls and Discord integration.
 """
 import os
 import re
+import random
 import logging
 import asyncio
 from datetime import datetime, timedelta
