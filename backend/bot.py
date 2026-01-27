@@ -147,10 +147,47 @@ async def help(ctx):
     embed.add_field(name="`!track [address] [chain]`", value="Monitor a DEX token by contract address (Default: `solana`).", inline=False)
     embed.add_field(name="`!scan`", value="Trigger an immediate market scan summary.", inline=False)
     embed.add_field(name="`!balance`", value="Check your Kraken USDT balance.", inline=False)
+    embed.add_field(name="`!trends`", value="🔥 Show current Pump.fun trending themes for launch ideas.", inline=False)
     embed.add_field(name="`!launch [keyword]`", value="🚀 Launch an AI-generated meme coin on pump.fun (e.g., `!launch Blue Whale`).", inline=False)
+    embed.add_field(name="`!pump [mint] [rounds] [sol] [delay]`", value="📊 Run volume simulation on existing token.", inline=False)
     embed.add_field(name="`!autolaunch [on/off/status]`", value="🤖 Manage the automatic trend-discovery and launch pipeline.", inline=False)
     embed.set_footer(text="Short-term trading assistant | GoPlus & CCXT")
     await ctx.send(embed=embed)
+
+@bot.command()
+async def trends(ctx):
+    """🔥 Show current Pump.fun trending themes for launch ideas."""
+    from trend_hunter import TrendHunter
+    
+    await ctx.send("🔍 Scanning Pump.fun movers for trending themes...")
+    
+    try:
+        hunter = TrendHunter()
+        keywords = await asyncio.to_thread(hunter.get_trending_keywords, 15)
+        
+        if not keywords:
+            await ctx.send("❌ No trending keywords found. Try again later.")
+            return
+        
+        # Format as embed
+        embed = discord.Embed(
+            title="🔥 Pump.fun Trending Themes",
+            description="Keywords extracted from current movers. Launch a variation with `!launch [keyword]`",
+            color=discord.Color.orange()
+        )
+        
+        # Split into two columns
+        col1 = keywords[:8]
+        col2 = keywords[8:15]
+        
+        embed.add_field(name="Top Trends", value="\n".join([f"`{kw}`" for kw in col1]) or "None", inline=True)
+        embed.add_field(name="More Trends", value="\n".join([f"`{kw}`" for kw in col2]) or "None", inline=True)
+        
+        embed.set_footer(text="💡 Tip: Make 'funny unhinged variations' of trending themes!")
+        await ctx.send(embed=embed)
+        
+    except Exception as e:
+        await ctx.send(f"❌ Error scanning trends: {e}")
 
 @bot.command()
 async def launch(ctx, *, keyword: str):

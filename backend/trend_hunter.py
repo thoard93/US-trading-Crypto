@@ -30,6 +30,8 @@ class TrendHunter:
         self._dex_cache = []
         self._last_twitter_fetch = None
         self._twitter_cache = []
+        self._last_pump_fetch = None
+        self._pump_cache = []
         self._cache_duration = 300  # 5 minutes
     
     def get_trending_keywords(self, limit=10):
@@ -39,15 +41,19 @@ class TrendHunter:
         """
         keywords = set()
         
-        # Source 1: DexScreener Trending Tokens
+        # Source 1: Pump.fun Movers (PRIMARY - most relevant for pump.fun launches)
+        pump_keywords = self._get_pumpfun_movers()
+        keywords.update(pump_keywords)
+        
+        # Source 2: DexScreener Trending Tokens
         dex_keywords = self._get_dexscreener_keywords()
         keywords.update(dex_keywords)
         
-        # Source 2: Token Profiles (Paid Boosted Tokens)
+        # Source 3: Token Profiles (Paid Boosted Tokens)
         profile_keywords = self._get_token_profile_keywords()
         keywords.update(profile_keywords)
         
-        # Source 3: Twitter/X Trending (if available)
+        # Source 4: Twitter/X Trending (if available)
         if self.twitter_bearer:
             twitter_keywords = self._get_twitter_trending()
             keywords.update(twitter_keywords)
@@ -57,6 +63,88 @@ class TrendHunter:
         
         self.logger.info(f"🔍 Found {len(filtered)} trending keywords")
         return filtered[:limit]
+    
+    def _get_pumpfun_movers(self):
+        """Extract trending keywords from Pump.fun movers/top-runners."""
+        try:
+            # Use cache if fresh
+            now = time.time()
+            if self._last_pump_fetch and (now - self._last_pump_fetch) < self._cache_duration:
+                return self._pump_cache
+            
+            # Try multiple Pump.fun API endpoints
+            endpoints = [
+                "https://frontend-api.pump.fun/coins/top-runners",
+                "https://frontend-api-v3.pump.fun/coins/top-runners",
+                "https://frontend-api.pump.fun/coins/trending"
+            ]
+            
+            tokens = []
+            for endpoint in endpoints:
+                try:
+                    resp = requests.get(endpoint, timeout=10, headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    })
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        # Handle different response formats
+                        if isinstance(data, list):
+                            tokens = data[:30]
+                        elif isinstance(data, dict):
+                            tokens = data.get('coins', data.get('data', []))[:30]
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Pump.fun endpoint {endpoint} failed: {e}")
+                    continue
+            
+            if not tokens:
+                self.logger.warning("Could not fetch Pump.fun movers from any endpoint")
+                return self._pump_cache  # Return stale cache
+            
+            keywords = []
+            theme_counter = {}  # Track theme frequency
+            
+            for token in tokens:
+                # Extract name and symbol
+                name = token.get('name', '') or token.get('token_name', '')
+                symbol = token.get('symbol', '') or token.get('ticker', '')
+                description = token.get('description', '')
+                
+                # Extract words from name
+                words = self._extract_words(name)
+                keywords.extend(words)
+                
+                # Extract words from description
+                desc_words = self._extract_words(description)
+                keywords.extend(desc_words)
+                
+                # Add symbol if it's a word
+                if len(symbol) >= 3 and symbol.isalpha():
+                    keywords.append(symbol.upper())
+                
+                # Track common themes for pattern detection
+                for word in words:
+                    word_lower = word.lower()
+                    if word_lower in theme_counter:
+                        theme_counter[word_lower] += 1
+                    else:
+                        theme_counter[word_lower] = 1
+            
+            # Log detected themes (words appearing 2+ times = trending theme)
+            trending_themes = [k for k, v in theme_counter.items() if v >= 2]
+            if trending_themes:
+                self.logger.info(f"🔥 Pump.fun trending themes detected: {trending_themes[:5]}")
+            
+            # Update cache
+            self._last_pump_fetch = now
+            self._pump_cache = list(set(keywords))
+            
+            self.logger.info(f"🚀 Pump.fun: Found {len(self._pump_cache)} trending keywords")
+            return self._pump_cache
+            
+        except Exception as e:
+            self.logger.error(f"Error fetching Pump.fun movers: {e}")
+            return self._pump_cache  # Return stale cache
     
     def _get_twitter_trending(self):
         """Get trending topics from Twitter/X."""
