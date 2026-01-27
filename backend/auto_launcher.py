@@ -263,9 +263,10 @@ class AutoLauncher:
             if not self.dex_trader:
                 return {"error": "DexTrader not initialized"}
             
-            # PHASE 47: Apply Boost if active
-            buy_amount = self.boosted_volume if self.boosted_volume is not None else self.volume_seed_sol
-            self.logger.info(f"🔥 Launching with seed: {buy_amount} SOL {'(BOOSTED)' if self.boosted_volume else ''}")
+            # PHASE 48: Add Placeholder Social Links to attract sniper bots
+            clean_name = re.sub(r'[^a-zA-Z0-9]', '', pack['name']).lower()
+            twitter_link = f"https://x.com/{clean_name}_sol"
+            tg_link = f"https://t.me/{clean_name}_portal"
             
             result = self.dex_trader.create_pump_token(
                 name=pack['name'],
@@ -273,7 +274,10 @@ class AutoLauncher:
                 description=pack['description'],
                 image_url=pack['image_url'],
                 sol_buy_amount=buy_amount,
-                use_jito=False  # DISABLED: Jito bundles drop silently. Using standard RPC for now.
+                use_jito=False,  # DISABLED: Jito bundles drop silently. Using standard RPC for now.
+                twitter=twitter_link,
+                telegram=tg_link,
+                website=''
             )
             
             # Reset boost after launch attempt
@@ -330,7 +334,8 @@ class AutoLauncher:
                                 rounds=self.volume_sim_rounds,
                                 sol_per_round=self.volume_sim_amount,
                                 delay_seconds=self.volume_sim_delay,
-                                callback=discord_callback
+                                callback=discord_callback,
+                                moon_bias=0.95  # PHASE 51: Moon Bias for organic chart movement
                             )
                             
                             if sim_result.get('success'):

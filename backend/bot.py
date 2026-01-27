@@ -239,6 +239,12 @@ async def launch(ctx, *, keyword: str):
         
     await ctx.send("⚡ **DEPLOYING TO SOLANA MAINNET**... Hold your breath.")
     
+    # Step 2.1: Generate Placeholder Social Links
+    import re
+    clean_name = re.sub(r'[^a-zA-Z0-9]', '', result['name']).lower()
+    twitter_link = f"https://x.com/{clean_name}_sol"
+    tg_link = f"https://t.me/{clean_name}_portal"
+    
     # 2. Launch on-chain
     launch_res = await asyncio.to_thread(
         trader.create_pump_token,
@@ -246,7 +252,11 @@ async def launch(ctx, *, keyword: str):
         symbol=result['ticker'],
         description=result['description'],
         image_url=result['image_url'],
-        sol_buy_amount=sol_amount
+        sol_buy_amount=sol_amount,
+        use_jito=False,
+        twitter=twitter_link,
+        telegram=tg_link,
+        website=''
     )
     
     if launch_res.get('success'):
@@ -280,8 +290,8 @@ async def launch(ctx, *, keyword: str):
         await ctx.send(f"❌ **LAUNCH FAILED**: {launch_res.get('error', 'Unknown Error')}")
 
 @bot.command()
-async def pump(ctx, mint_address: str, rounds: int = 5, sol_per_round: float = 0.01, delay: int = 30):
-    """🔥 Pump volume on an existing token (e.g., !pump 6XZnFH8... 5 0.02 30)."""
+async def pump(ctx, mint_address: str, rounds: int = 10, sol_per_round: float = 0.01, delay: int = 30, bias: float = 0.95):
+    """📊 Run volume simulation on existing token with Moon Bias (default 0.95). (e.g., !pump 6XZnFH8... 5 0.02 30)."""
     # Validate mint address
     if len(mint_address) < 32 or len(mint_address) > 50:
         await ctx.send("❌ Invalid mint address. Use the full token address from Pump.fun.")
@@ -314,7 +324,8 @@ async def pump(ctx, mint_address: str, rounds: int = 5, sol_per_round: float = 0
             rounds=rounds,
             sol_per_round=sol_per_round,
             delay_seconds=delay,
-            callback=discord_callback
+            callback=discord_callback,
+            moon_bias=bias
         )
         
         if result.get('success'):

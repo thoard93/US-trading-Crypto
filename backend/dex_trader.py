@@ -295,7 +295,7 @@ class DexTrader:
             print(f"❌ Error fetching wallet holdings: {e}")
             return {}
 
-    def create_pump_token(self, name, symbol, description, image_url, sol_buy_amount=0, use_jito=True):
+    def create_pump_token(self, name, symbol, description, image_url, sol_buy_amount=0, use_jito=True, twitter='', telegram='', website=''):
         """
         Launches a token on pump.fun using the NEW pumpportal.fun API (2026 format).
         1. Upload metadata to pump.fun/api/ipfs
@@ -323,9 +323,9 @@ class DexTrader:
                 'name': name,
                 'symbol': symbol,
                 'description': description,
-                'twitter': '',
-                'telegram': '',
-                'website': '',
+                'twitter': twitter,
+                'telegram': telegram,
+                'website': website,
                 'showName': 'true'
             }
             files = {
@@ -435,59 +435,73 @@ class DexTrader:
             
             signed_tx = VersionedTransaction.populate(new_message, signatures)
             
-            # 6. Final Submission
-            # PHASE 47: Jito-Protected Launch (Visibility & Atomic Execution)
-            # Submit to Jito Block Engines for priority inclusion (no frontrunning)
-            signed_tx_b64 = base64.b64encode(bytes(signed_tx)).decode('utf-8')
+            # PHASE 49: MEGA BOT RELIABILITY - Multi-Attempt Launch with Fee Escalation
+            attempts = 3
+            last_error = None
             
-            if use_jito:
-                print(f"🔐 Submitting Launch to Jito Block Engines...")
+            for attempt in range(attempts):
+                current_fee = 0.001 + (attempt * 0.001)  # Escalate fee: 0.001 -> 0.002 -> 0.003
+                print(f"🚀 Launch Attempt {attempt+1}/{attempts} (Fee: {current_fee} SOL)...")
                 
-                tx_signature = None
-                for jito_base in JITO_BLOCK_ENGINES:
+                # Re-build payload with current fee
+                create_payload['priorityFee'] = current_fee
+                
+                # Re-sign if needed (optional, using same tx/signatures for now but updating blockhash on retries)
+                if attempt > 0:
+                    print("🔄 Refreshing blockhash for retry...")
                     try:
-                        jito_url = f"{jito_base}/api/v1/transactions?bundleOnly=true"
-                        payload = {
+                        bh_resp = requests.post(self.rpc_url, json={
                             "jsonrpc": "2.0", "id": 1,
-                            "method": "sendTransaction",
-                            "params": [signed_tx_b64, {"encoding": "base64"}]
-                        }
-                        resp = requests.post(jito_url, json=payload, timeout=10).json()
-                        print(f"📡 Jito {jito_base.split('//')[1].split('.')[0]} response: {resp}")
-                        
-                        if 'error' in resp:
-                            print(f"⚠️ Jito error: {resp['error']}")
-                            continue
-                            
-                        if 'result' in resp:
-                            tx_signature = resp['result']
-                            print(f"✅ Jito Launch Success: {tx_signature}")
-                            break
+                            "method": "getLatestBlockhash",
+                            "params": [{"commitment": "finalized"}]
+                        }, timeout=10).json()
+                        fresh_bh = Hash.from_string(bh_resp['result']['value']['blockhash'])
+                        new_message.recent_blockhash = fresh_bh
+                        msg_bytes = to_bytes_versioned(new_message)
+                        signatures = [self.keypair.sign_message(msg_bytes), mint_keypair.sign_message(msg_bytes)]
+                        signed_tx = VersionedTransaction.populate(new_message, signatures)
                     except Exception as e:
-                        print(f"⚠️ Jito {jito_base} exception: {e}")
-                        continue
-                
-                if tx_signature:
-                    print(f"🎯 Returning Jito success with mint: {mint_pubkey}")
-                    return {"success": True, "mint": mint_pubkey, "signature": tx_signature}
-                else:
-                    print("⚠️ All Jito endpoints failed. Falling back to standard RPC...")
+                        print(f"⚠️ Blockhash refresh failed, trying original: {e}")
 
-            # Fallback/Standard Submission
-            print(f"📡 Sending launch transaction to Solana...")
-            signed_tx_b64 = base64.b64encode(bytes(signed_tx)).decode('utf-8')
-            resp = requests.post(self.rpc_url, json={
-                "jsonrpc": "2.0", "id": 1,
-                "method": "sendTransaction",
-                "params": [signed_tx_b64, {"encoding": "base64", "skipPreflight": True}]
-            }, timeout=15).json()
+                signed_tx_b64 = base64.b64encode(bytes(signed_tx)).decode('utf-8')
+                
+                # Submit
+                resp = requests.post(self.rpc_url, json={
+                    "jsonrpc": "2.0", "id": 1,
+                    "method": "sendTransaction",
+                    "params": [signed_tx_b64, {"encoding": "base64", "skipPreflight": True}]
+                }, timeout=15).json()
+                
+                if 'result' in resp:
+                    sig = resp['result']
+                    print(f"📤 Sent Launch TX: {sig}. Waiting for verification...")
+                    
+                    # PHASE 50: On-chain Verification
+                    # Wait up to 30 seconds for the token to appear
+                    for v in range(10):
+                        time.sleep(3)
+                        try:
+                            v_resp = requests.post(self.rpc_url, json={
+                                "jsonrpc": "2.0", "id": 1,
+                                "method": "getAccountInfo",
+                                "params": [mint_pubkey, {"encoding": "jsonParsed"}]
+                            }, timeout=5).json()
+                            
+                            if v_resp.get('result', {}).get('value'):
+                                print(f"✅ VERIFIED ON-CHAIN! Token {symbol} exists at {mint_pubkey}")
+                                return {"success": True, "mint": mint_pubkey, "signature": sig}
+                        except: continue
+                    
+                    print(f"⚠️ Signature {sig} sent but token not found yet. Retrying...")
+                    last_error = "Verification timeout"
+                else:
+                    last_error = f"Submission Failed: {resp.get('error')}"
+                    print(f"❌ Attempt {attempt+1} failed: {last_error}")
+                
+                if attempt < attempts - 1:
+                    time.sleep(2) # Short gap between retries
             
-            if 'result' in resp:
-                sig = resp['result']
-                print(f"✅ SUCCESS! Created coin: {name} | Mint: {mint_pubkey} | Sig: {sig}")
-                return {"success": True, "mint": mint_pubkey, "signature": sig}
-            else:
-                return {"error": f"Submission Failed: {resp.get('error')}"}
+            return {"error": f"Launch failed after {attempts} attempts. Last error: {last_error}"}
                 
         except Exception as e:
             print(f"❌ Error in create_pump_token: {e}")
@@ -1458,13 +1472,13 @@ class DexTrader:
             traceback.print_exc()
             return {"error": str(e)}
 
-    async def simulate_volume(self, mint_address, rounds=10, sol_per_round=0.01, delay_seconds=30, callback=None):
+    async def simulate_volume(self, mint_address, rounds=10, sol_per_round=0.01, delay_seconds=30, callback=None, moon_bias=0.95):
         """
-        Create organic-looking volume on a Pump.fun token with NET-ZERO strategy.
+        Create organic-looking volume on a Pump.fun token with MOON BIAS strategy.
         Uses PumpPortal API for native bonding curve trades.
         
-        NET-ZERO MODE: Each round buys X SOL worth, then sells those tokens back.
-        This creates chart activity WITHOUT eroding your initial position.
+        MOON BIAS MODE: Each round buys X SOL worth, then sells (X * moon_bias) tokens back.
+        This creates a slightly upward staircase on the chart, looking like organic accumulation.
         """
         import asyncio
         
@@ -1476,7 +1490,7 @@ class DexTrader:
                 except:
                     pass
         
-        await notify(f"Starting NET-ZERO volume simulation on {mint_address[:12]}...")
+        await notify(f"Starting MOON BIAS ({moon_bias*100:.0f}%) volume simulation on {mint_address[:12]}...")
         await notify(f"Config: {rounds} rounds × {sol_per_round} SOL, {delay_seconds}s delay")
         
         total_bought = 0
@@ -1511,18 +1525,20 @@ class DexTrader:
                 post_buy_balance = self.get_token_balance(mint_address).get('ui_amount', 0)
                 tokens_bought = post_buy_balance - pre_buy_balance
                 
-                await notify(f"Tokens received: {tokens_bought:.0f}")
+                # Apply Moon Bias: Sell only a portion of what was bought
+                tokens_to_sell = int(tokens_bought * moon_bias)
+                await notify(f"Tokens received: {tokens_bought:.0f} | Moon Bias Sell: {tokens_to_sell:.0f}")
                 
-                if tokens_bought <= 0:
-                    await notify(f"⚠️ Balance not updated yet, using pump_sell with small %...")
-                    # Fallback: sell 1% of holdings (roughly what we just bought)
-                    sell_result = self.pump_sell(mint_address, token_amount_pct=1)
-                else:
-                    # Use pump_sell with calculated amount as percentage
-                    current_balance = post_buy_balance
-                    sell_pct = (tokens_bought / current_balance) * 100 if current_balance > 0 else 1
-                    await notify(f"Round {i+1}/{rounds}: Selling {sell_pct:.1f}% ({tokens_bought:.0f} tokens)...")
-                    sell_result = self.pump_sell(mint_address, token_amount_pct=min(sell_pct, 100))
+                if tokens_to_sell <= 0:
+                    await notify(f"⚠️ Not enough tokens to sell with {moon_bias*100:.0f}% bias, skipping sell")
+                    await asyncio.sleep(delay_seconds - 5)
+                    continue
+                
+                # Use pump_sell with calculated amount as percentage of CURRENT balance
+                current_balance = post_buy_balance
+                sell_pct = (tokens_to_sell / current_balance) * 100 if current_balance > 0 else 1
+                await notify(f"Round {i+1}/{rounds}: Selling {sell_pct:.1f}% ({tokens_to_sell:.0f} tokens)...")
+                sell_result = self.pump_sell(mint_address, token_amount_pct=min(sell_pct, 100))
                 
                 if sell_result.get('success'):
                     total_sold += 1
@@ -1545,7 +1561,7 @@ class DexTrader:
         position_change = final_balance - initial_balance
         
         await notify(f"✅ Volume simulation complete! {total_bought} buys, {total_sold} sells")
-        await notify(f"📈 Position change: {position_change:+.0f} tokens")
+        await notify(f"📈 Moon Bias Result: {position_change:+.0f} tokens accumulated")
         return {"success": True, "buys": total_bought, "sells": total_sold, "position_change": position_change}
 
 

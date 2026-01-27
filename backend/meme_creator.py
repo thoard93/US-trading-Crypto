@@ -39,21 +39,22 @@ class MemeCreator:
             return None
             
         prompt = f"""
-        You are a viral meme coin naming expert. Analyze the keyword: "{keyword}"
-        Generate a meme coin profile optimized for Pump.fun graduation.
+        You are a viral meme coin naming expert and master of unhinged internet subculture. 
+        Analyze the keyword: "{keyword}"
+        Generate a meme coin profile optimized for absolute maximum FOMO and Pump.fun graduation.
         
         PROVEN VIRAL NAMING PATTERNS (use one):
-        1. ABSURDIST HUMOR: Crude/bodily humor (FARTCOIN hit $2.4B, BURP, SNEEZE)
-        2. AI/AGENT THEMED: AI culture references (GOAT hit $1.4B, BOTBRAIN, NPCTOKEN)
-        3. ANIMAL + MODIFIER: [Animal] + [Accessory/Trait] (Dogwifhat, CATWIFSOCKS, FROGWIFGUN)
-        4. PHONETIC MISSPELLINGS: Clever distortions (Dogwifhat, Jeo Boden)
-        5. VIBE TOKENS: Mood-based (CHILLGUY hit $543M, LAZYKING, COZYMAXI)
+        1. UNHINGED/REACTIONARY: Over-the-top, slightly cursed, or aggressive takes on current trends.
+        2. ABSURDIST HUMOR: Crude/bodily humor or nonsense words (FARTCOIN, BURP, GIGAFART).
+        3. TREND-RIDER: Variations of whatever is blowing up (e.g., if DOGE is up, launch SHY DOGE).
+        4. AI/AGENT: Sentient agent vibes, terminal output aesthetic (GOAT, AGENTIC, TRUTH).
+        5. VIBE/MOOD: Relatable degen lifestyle or extreme laziness (CHILLGUY, COZYMAXI).
         
         STRICT REQUIREMENTS:
-        - Name: Max 15 chars, instantly memorable, TikTok-friendly
-        - Ticker: EXACTLY 3-5 characters, uppercase only. NO EXCEPTIONS.
-        - Description: 1 punchy sentence, funny/edgy/absurd
-        - Logo Prompt: Must specify "meme coin mascot" + high contrast neon colors + centered character + slightly cursed/absurd aesthetic
+        - Name: Max 15 chars. MUST BE UNHINGED, funny, or extremely catchy. Think "PUMPKIN SPICE WHITE GIRL" or "CHAD WIF DUMBBELL".
+        - Ticker: EXACTLY 3-5 characters, uppercase only. NO EXCEPTIONS. If keyword has a known ticker pattern (e.g., INU), try to incorporate it.
+        - Description: 1 punchy, edgy, or absurd sentence that makes people want to ape in. Use degen slang (moon, ape, wagmi, pump).
+        - Logo Prompt: Must specify "unhinged mascot" + specific neon color palette + slightly cursed/funny expression + highly detailed 2K mascot character.
         
         Return ONLY valid JSON:
         {{
