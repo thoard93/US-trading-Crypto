@@ -3,6 +3,7 @@ Auto Launcher - Orchestrates automatic token launches based on trending keywords
 Includes safety controls and Discord integration.
 """
 import os
+import re
 import logging
 import asyncio
 from datetime import datetime, timedelta
