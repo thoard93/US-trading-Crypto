@@ -906,6 +906,33 @@ class AlertSystem(commands.Cog):
                 
                 await asyncio.sleep(0.5)
 
+    @tasks.loop(minutes=20)
+    async def auto_launch_loop(self):
+        """🔥 Auto-Launch Pipeline: Discover trends and launch tokens."""
+        if not self.ready:
+            return
+        if not self.auto_launcher or not self.auto_launcher.is_enabled():
+            return
+        
+        channel = self.bot.get_channel(self.MEMECOINS_CHANNEL_ID)
+        
+        try:
+            # 1. Discover and queue trending keywords
+            added = await self.auto_launcher.discover_and_queue()
+            if added > 0 and channel:
+                await channel.send(f"🔍 Auto-Launcher found **{added}** new trends to queue!")
+            
+            # 2. Process one item from queue (launch a token)
+            result = await self.auto_launcher.process_queue(self.bot, self.MEMECOINS_CHANNEL_ID)
+            if result and result.get('success') and channel:
+                await channel.send(
+                    f"🚀 **AUTO-LAUNCHED**: `{result.get('name', 'Token')}` ({result.get('ticker', '?')})\n"
+                    f"Mint: `{result.get('mint', '?')}`\n"
+                    f"[View on Pump.fun](https://pump.fun/{result.get('mint', '')})"
+                )
+        except Exception as e:
+            print(f"❌ Auto-Launch Loop Error: {e}")
+
     @tasks.loop(minutes=10)  # POSITION TRADER MODE: Was 2 min, now 10 min
     async def discovery_loop(self):
         """Find new trending DEX gems automatically - SNIPER MODE."""
