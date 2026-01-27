@@ -7,6 +7,7 @@ import re
 import logging
 import asyncio
 from datetime import datetime, timedelta
+from backend.engagement_framer import EngagementFramer
 
 class AutoLauncher:
     """
@@ -18,6 +19,7 @@ class AutoLauncher:
         self.dex_trader = dex_trader
         self.meme_creator = meme_creator
         self.trend_hunter = trend_hunter
+        self.engagement_framer = EngagementFramer(dex_trader)
         
         # Configuration (can be overridden via Discord commands)
         self.enabled = os.getenv('AUTO_LAUNCH_ENABLED', 'true').lower() == 'true'  # 🚀 Auto-enabled on startup
@@ -43,6 +45,10 @@ class AutoLauncher:
         
         # Source filter for autopilot (pump, twitter, dex, or None for all)
         self.source_filter = 'pump'  # MEGA BOT: Only Pump.fun trends
+        
+        # Phase 55: Social Consistency
+        self.fixed_twitter = os.getenv('AUTO_LAUNCH_X_HANDLE', '')
+        self.fixed_telegram = os.getenv('AUTO_LAUNCH_TG_LINK', '')
     
     def set_boost(self, amount):
         """Set a temporary boost for the next launch."""
@@ -279,8 +285,12 @@ class AutoLauncher:
             
             # PHASE 48: Add Placeholder Social Links to attract sniper bots
             clean_name = re.sub(r'[^a-zA-Z0-9]', '', pack['name']).lower()
-            twitter_link = f"https://x.com/{clean_name}_sol"
-            tg_link = f"https://t.me/{clean_name}_portal"
+            # Determine social links (Fixed vs Generated)
+            twitter_link = self.fixed_twitter if self.fixed_twitter else f"https://x.com/{clean_name}_sol"
+            tg_link = self.fixed_telegram if self.fixed_telegram else f"https://t.me/{clean_name}_portal"
+            
+            # Determine buy amount (apply boost if set)
+            buy_amount = self.boosted_volume if self.boosted_volume else self.volume_seed_sol
             
             result = self.dex_trader.create_pump_token(
                 name=pack['name'],
@@ -309,6 +319,11 @@ class AutoLauncher:
             })
             self._set_cooldown(keyword)
             self._save_launch(keyword, mint_address, name=pack['name'], symbol=pack['ticker'])
+            
+            # Phase 55: Engagement Farming (Social Proof)
+            # Post unhinged comments in background to build immediate hype
+            if self.engagement_framer:
+                asyncio.create_task(self.engagement_framer.farm_engagement(mint_address, count=3))
             
             # Step 4: Notify Discord
             if bot and channel_id:

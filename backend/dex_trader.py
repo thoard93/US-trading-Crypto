@@ -509,6 +509,66 @@ class DexTrader:
             traceback.print_exc()
             return {"error": str(e)}
 
+    def post_pump_comment(self, mint_address, text):
+        """
+        Posts a comment to a token page on pump.fun.
+        Requires signing a message with the wallet to prove ownership/identity.
+        """
+        if not self.keypair:
+            return {"error": "Wallet not initialized"}
+            
+        try:
+            import json
+            import base64
+            import time
+            from solders.signature import Signature
+            
+            # 1. Prepare the message to sign
+            # For Pump.fun, the signature is often for a 'Login' or specific action
+            # Experimental: Many Pump-related APIs use a signature of the mint + text + timestamp
+            timestamp = int(time.time() * 1000)
+            message = f"Post comment on {mint_address}: {text} ({timestamp})"
+            message_bytes = message.encode('utf-8')
+            
+            # 2. Sign the message
+            signature = self.keypair.sign_message(message_bytes)
+            signature_base58 = str(signature)
+            
+            # 3. Submit to the frontend API
+            # Note: This endpoint is reverse-engineered from frontend behavior
+            url = "https://frontend-api-v3.pump.fun/replies"
+            payload = {
+                "mint": mint_address,
+                "text": text,
+                "address": self.wallet_address,
+                "signature": signature_base58,
+                "timestamp": timestamp
+            }
+            
+            headers = {
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Origin': 'https://pump.fun',
+                'Referer': f'https://pump.fun/coin/{mint_address}'
+            }
+            
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            
+            if response.status_code == 200 or response.status_code == 201:
+                return {"success": True, "signature": signature_base58}
+            else:
+                # FALLBACK: Try the legacy API if v3 fails
+                url_legacy = "https://frontend-api.pump.fun/replies"
+                response = requests.post(url_legacy, json=payload, headers=headers, timeout=10)
+                if response.status_code == 200 or response.status_code == 201:
+                    return {"success": True, "signature": signature_base58}
+                
+                return {"error": f"API Error ({response.status_code}): {response.text}"}
+                
+        except Exception as e:
+            print(f"❌ Error in post_pump_comment: {e}")
+            return {"error": str(e)}
+
 
     def execute_swap(self, input_mint, output_mint, amount_lamports, override_slippage=None, use_jito=False, priority=False, is_pump=False, attempt=0):
         """Execute a swap via Jupiter with optional Jito bundle support.
