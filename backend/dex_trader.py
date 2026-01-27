@@ -160,6 +160,25 @@ class DexTrader:
             }
         return session
     
+    def _get_cffi_session(self):
+        """
+        Get a curl_cffi session with Chrome TLS fingerprint impersonation.
+        This makes requests indistinguishable from a real Chrome browser at the TLS level.
+        Used for all pump.fun frontend API calls to bypass Cloudflare.
+        """
+        try:
+            from curl_cffi.requests import Session
+            session = Session(impersonate="chrome121")
+            if self.proxy_url:
+                session.proxies = {
+                    'http': self.proxy_url,
+                    'https': self.proxy_url
+                }
+            return session
+        except ImportError:
+            print("⚠️ curl_cffi not installed, falling back to standard requests. Run: pip install curl_cffi")
+            return self._get_proxy_session()
+    
     def get_sol_balance(self):
         """Get SOL balance of wallet."""
         if not self.wallet_address:
@@ -392,7 +411,9 @@ class DexTrader:
                 'file': ('logo.png', img_data, 'image/png')
             }
             
-            ipfs_response = requests.post(
+            # Use curl_cffi for Chrome TLS fingerprint (Phase 63: Anti-Cloudflare)
+            cffi_session = self._get_cffi_session()
+            ipfs_response = cffi_session.post(
                 "https://pump.fun/api/ipfs",
                 data=form_data,
                 files=files,
@@ -640,8 +661,8 @@ class DexTrader:
                 'sec-fetch-site': 'same-site'
             }
             
-            # Use proxy session for Cloudflare bypass (Phase 57)
-            session = self._get_proxy_session()
+            # Use curl_cffi for Chrome TLS fingerprint (Phase 63: Anti-Cloudflare)
+            session = self._get_cffi_session()
             response = session.post(url, json=payload, headers=headers, timeout=15)
             
             if response.status_code == 200 or response.status_code == 201:
