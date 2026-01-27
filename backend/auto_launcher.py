@@ -408,13 +408,17 @@ class AutoLauncher:
                                                     pass
                                             return cb
                                         
+                                        # Randomize moon_bias per wallet for organic look (88-96%)
+                                        wallet_moon_bias = round(random.uniform(0.88, 0.96), 2)
+                                        print(f"📊 [{pack['ticker']}] {wallet_label} moon_bias: {wallet_moon_bias*100:.0f}%")
+                                        
                                         sim_task = asyncio.create_task(self.dex_trader.simulate_volume(
                                             mint_address,
                                             rounds=self.volume_sim_rounds,
                                             sol_per_round=self.volume_sim_amount,
                                             delay_seconds=self.volume_sim_delay,
                                             callback=make_callback(wallet_label),
-                                            moon_bias=0.95,
+                                            moon_bias=wallet_moon_bias,  # Randomized per wallet!
                                             ticker=f"{pack['ticker']}-{wallet_label}",
                                             payer_key=wallet_key
                                         ))
