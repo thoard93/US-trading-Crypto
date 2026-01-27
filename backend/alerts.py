@@ -1149,7 +1149,7 @@ class AlertSystem(commands.Cog):
         except Exception as e:
             print(f"❌ Error in dex_sync_loop: {e}")
 
-    @tasks.loop(minutes=30)
+    @tasks.loop(minutes=20)  # MEGA BOT: Scan for trends every 20 minutes
     async def auto_launch_loop(self):
         """Automatically discover trending keywords and launch tokens."""
         import random

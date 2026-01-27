@@ -20,7 +20,7 @@ class AutoLauncher:
         
         # Configuration (can be overridden via Discord commands)
         self.enabled = os.getenv('AUTO_LAUNCH_ENABLED', 'true').lower() == 'true'  # 🚀 Auto-enabled on startup
-        self.max_daily_launches = int(os.getenv('AUTO_LAUNCH_MAX_DAILY', '5'))
+        self.max_daily_launches = int(os.getenv('AUTO_LAUNCH_MAX_DAILY', '10'))  # MEGA BOT: 10 launches/day
         self.min_sol_balance = float(os.getenv('AUTO_LAUNCH_MIN_SOL', '0.1'))
         self.volume_seed_sol = float(os.getenv('AUTO_LAUNCH_VOLUME_SEED', '0.5'))  # 0.5 SOL for ~5% bonding curve
         
@@ -34,11 +34,14 @@ class AutoLauncher:
         self.cooldown_hours = 24
         self.boosted_volume = None  # Temporary boost for the next launch
         
-        # Volume simulation settings
-        self.volume_sim_enabled = os.getenv('AUTO_LAUNCH_VOLUME_SIM', 'false').lower() == 'true'
+        # Volume simulation settings - ENABLED BY DEFAULT FOR AUTOPILOT
+        self.volume_sim_enabled = os.getenv('AUTO_LAUNCH_VOLUME_SIM', 'true').lower() == 'true'
         self.volume_sim_rounds = int(os.getenv('AUTO_LAUNCH_VOLUME_ROUNDS', '10'))
         self.volume_sim_amount = float(os.getenv('AUTO_LAUNCH_VOLUME_AMOUNT', '0.01'))
         self.volume_sim_delay = int(os.getenv('AUTO_LAUNCH_VOLUME_DELAY', '30'))
+        
+        # Source filter for autopilot (pump, twitter, dex, or None for all)
+        self.source_filter = 'pump'  # MEGA BOT: Only Pump.fun trends
     
     def set_boost(self, amount):
         """Set a temporary boost for the next launch."""
@@ -181,6 +184,7 @@ class AutoLauncher:
         """
         Discover trending keywords and add to launch queue.
         Called periodically by the background loop.
+        MEGA BOT: Filters for Pump.fun-only trends by default.
         """
         if not self.enabled:
             return 0
@@ -191,10 +195,19 @@ class AutoLauncher:
         
         try:
             # 🛡️ CRITICAL: Run in thread to prevent Discord heartbeat timeout
-            keywords = await asyncio.to_thread(self.trend_hunter.get_trending_keywords, 5)
+            # Get keywords WITH SOURCE to filter by Pump.fun
+            keywords_with_source = await asyncio.to_thread(self.trend_hunter.get_trending_keywords, 10, True)
             added = 0
             
-            for keyword in keywords:
+            for item in keywords_with_source:
+                keyword = item['keyword']
+                source = item['source']
+                
+                # MEGA BOT: Filter by source if configured
+                if self.source_filter and source != self.source_filter:
+                    self.logger.debug(f"Skipping {keyword} (source: {source}, filter: {self.source_filter})")
+                    continue
+                
                 # Skip if already launched or queued
                 if self.is_keyword_launched(keyword):
                     continue
