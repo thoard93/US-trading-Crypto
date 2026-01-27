@@ -349,9 +349,12 @@ class AutoLauncher:
             
             # Determine buy amount (apply boost if set)
             buy_amount = self.boosted_volume if self.boosted_volume else self.volume_seed_sol
-            print(f"💰 AUTO-LAUNCH: Buying {buy_amount} SOL of {pack['name']}...")
+            self.logger.info(f"💰 AUTO-LAUNCH: Creating token {pack['name']} by {creator_label} with {buy_amount} SOL...")
             
-            result = self.dex_trader.create_pump_token(
+            # 🛡️ CRITICAL: Run in thread to prevent Discord heartbeat timeout
+            # create_pump_token is synchronous and can block on network calls
+            result = await asyncio.to_thread(
+                self.dex_trader.create_pump_token,
                 name=pack['name'],
                 symbol=pack['ticker'],
                 description=pack['description'],
