@@ -72,8 +72,8 @@ class EngagementFramer:
     async def farm_engagement(self, mint_address, count=3, delay_range=(10, 60)):
         """
         Post multiple comments over time.
-        NOTE: Currently uses the main creator wallet. 
-        In future versions, this could use a pool of 'shill' wallets.
+        PHASE 56: Distributed Social Proof.
+        Each comment comes from a DIFFERENT support wallet.
         """
         if not self.dex_trader:
             self.logger.warning("DexTrader not provided to EngagementFramer")
@@ -83,14 +83,35 @@ class EngagementFramer:
         print(f"🌾 Starting engagement farming for {mint_address} ({count} comments)")
         self.logger.info(f"🌾 Starting engagement farming for {mint_address} ({count} comments)")
         
+        # Determine wallets to use
+        wallets_to_use = []
+        if hasattr(self.dex_trader, 'wallet_manager'):
+            wm = self.dex_trader.wallet_manager
+            # Gather all support keys
+            support_keys = wm.get_all_support_keys()
+            if support_keys:
+                # Randomize order and take 'count' (cycling if needed)
+                random.shuffle(support_keys)
+                for i in range(count):
+                    wallets_to_use.append(support_keys[i % len(support_keys)])
+            else:
+                # Fallback to main only
+                wallets_to_use = [wm.get_main_key()] * count
+        else:
+            # Legacy fallback
+            wallets_to_use = [None] * count
+
         for i in range(count):
             comment = self.generate_random_comment()
-            print(f"💬 Posting comment {i+1}/{count}: '{comment}'")
-            self.logger.info(f"💬 Posting comment {i+1}/{count}: '{comment}'")
+            payer_key = wallets_to_use[i]
+            payer_addr = "main" if not payer_key else f"{payer_key[:6]}..."
+            
+            print(f"💬 Posting comment {i+1}/{count} from {payer_addr}: '{comment}'")
+            self.logger.info(f"💬 Posting comment {i+1}/{count} from {payer_addr}: '{comment}'")
             
             try:
                 # Post via DexTrader
-                result = await asyncio.to_thread(self.dex_trader.post_pump_comment, mint_address, comment)
+                result = await asyncio.to_thread(self.dex_trader.post_pump_comment, mint_address, comment, payer_key=payer_key)
                 
                 if result.get('success'):
                     print(f"✅ Comment {i+1} posted successfully!")

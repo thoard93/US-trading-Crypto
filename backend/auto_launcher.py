@@ -50,6 +50,10 @@ class AutoLauncher:
         # Phase 55: Social Consistency
         self.fixed_twitter = os.getenv('AUTO_LAUNCH_X_HANDLE', '')
         self.fixed_telegram = os.getenv('AUTO_LAUNCH_TG_LINK', '')
+        
+        # Phase 56: Parallel Token Support
+        self.active_simulations = {}  # mint -> Task object
+        self.max_parallel_sims = 3    # To prevent VPS overload
     
     def set_boost(self, amount):
         """Set a temporary boost for the next launch."""
@@ -348,31 +352,60 @@ class AutoLauncher:
                             
                         await channel.send(embed=embed)
                         
-                        # Step 5: Volume Simulation (if enabled)
+                        # Phase 56: Bundled Support Buys & Background Simulation
+                        
+                        # 1. Bundled Support Buys (Holder Diversification)
+                        if hasattr(self.dex_trader, 'wallet_manager'):
+                            support_keys = self.dex_trader.wallet_manager.get_all_support_keys()
+                            if support_keys:
+                                print(f"🛡️ BUNDLING: Triggering {min(len(support_keys), 2)} support buys...")
+                                for i in range(min(len(support_keys), 2)):
+                                    # Very small buys to create holder "bubbles"
+                                    support_buy_amount = round(random.uniform(0.005, 0.008), 4)
+                                    asyncio.create_task(asyncio.to_thread(
+                                        self.dex_trader.pump_buy, 
+                                        mint_address, 
+                                        sol_amount=support_buy_amount,
+                                        payer_key=support_keys[i]
+                                    ))
+                        
+                        # 2. Parallel Volume Simulation
                         if self.volume_sim_enabled and self.dex_trader:
-                            await channel.send(f"📊 **Volume Simulation** starting in 30s on `{pack['name']}`...")
-                            await asyncio.sleep(30)  # Wait before starting simulation
-                            
-                            # Callback to send status updates to Discord
-                            async def discord_callback(msg):
-                                try:
-                                    await channel.send(f"📊 {msg}")
-                                except:
-                                    pass
-                            
-                            sim_result = await self.dex_trader.simulate_volume(
-                                mint_address,
-                                rounds=self.volume_sim_rounds,
-                                sol_per_round=self.volume_sim_amount,
-                                delay_seconds=self.volume_sim_delay,
-                                callback=discord_callback,
-                                moon_bias=0.95  # PHASE 51: Moon Bias for organic chart movement
-                            )
-                            
-                            if sim_result.get('success'):
-                                await channel.send(f"✅ Volume simulation complete! {sim_result['buys']} buys, {sim_result['sells']} sells")
+                            # Check concurrency guard
+                            if len(self.active_simulations) >= self.max_parallel_sims:
+                                await channel.send(f"⚠️ **Parallel Limit reached** ({self.max_parallel_sims}). Skipping volume sim for `{pack['name']}`.")
+                                self.logger.warning(f"Skipping volume sim for {mint_address} - already {len(self.active_simulations)} active.")
                             else:
-                                await channel.send(f"⚠️ Volume simulation had issues. Check logs.")
+                                await channel.send(f"📊 **Volume Simulation** starting (Background) on `{pack['name']}`...")
+                                
+                                # Callback to send status updates to Discord
+                                async def discord_callback(msg):
+                                    try:
+                                        await channel.send(f"📊 {msg}")
+                                    except:
+                                        pass
+                                
+                                # Start simulation in background
+                                sim_task = asyncio.create_task(self.dex_trader.simulate_volume(
+                                    mint_address,
+                                    rounds=self.volume_sim_rounds,
+                                    sol_per_round=self.volume_sim_amount,
+                                    delay_seconds=self.volume_sim_delay,
+                                    callback=discord_callback,
+                                    moon_bias=0.95,
+                                    ticker=pack['ticker']
+                                ))
+                                
+                                # Add to tracking
+                                self.active_simulations[mint_address] = sim_task
+                                
+                                # Cleanup task when done
+                                def cleanup(t):
+                                    if mint_address in self.active_simulations:
+                                        del self.active_simulations[mint_address]
+                                        print(f"🧹 VolSim finished for {pack['ticker']} ({mint_address[:8]}). Active: {len(self.active_simulations)}")
+                                
+                                sim_task.add_done_callback(cleanup)
                                 
                 except Exception as e:
                     self.logger.error(f"Discord notification error: {e}")

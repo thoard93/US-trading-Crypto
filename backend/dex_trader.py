@@ -57,6 +57,10 @@ class DexTrader:
         private_key = private_key or os.getenv('SOLANA_PRIVATE_KEY')
         if private_key: private_key = private_key.strip()
 
+        # PHASE 56: Multi-Wallet Support
+        from wallet_manager import WalletManager
+        self.wallet_manager = WalletManager()
+        
         # RPC Auto-Configuration
         # Priority: TRADING_RPC_URL > SOLANA_RPC_URL > Auto-Helius > Public (slow)
         trading_rpc = os.getenv('TRADING_RPC_URL')  # Dedicated trading RPC (optional)
@@ -295,7 +299,7 @@ class DexTrader:
             print(f"❌ Error fetching wallet holdings: {e}")
             return {}
 
-    def create_pump_token(self, name, symbol, description, image_url, sol_buy_amount=0, use_jito=True, twitter='', telegram='', website=''):
+    def create_pump_token(self, name, symbol, description, image_url, sol_buy_amount=0, use_jito=True, twitter='', telegram='', website='', payer_key=None):
         """
         Launches a token on pump.fun using the NEW pumpportal.fun API (2026 format).
         1. Upload metadata to pump.fun/api/ipfs
@@ -358,7 +362,7 @@ class DexTrader:
             }
             
             create_payload = {
-                'publicKey': self.wallet_address,
+                'publicKey': op_wallet,
                 'action': 'create',
                 'tokenMetadata': token_metadata,
                 'mint': mint_pubkey,
@@ -424,8 +428,8 @@ class DexTrader:
             
             signatures = []
             for key in signer_keys:
-                if str(key) == str(self.wallet_address):
-                    signatures.append(self.keypair.sign_message(msg_bytes))
+                if str(key) == str(op_wallet):
+                    signatures.append(op_keypair.sign_message(msg_bytes))
                 elif str(key) == str(mint_pubkey):
                     signatures.append(mint_keypair.sign_message(msg_bytes))
                 else:
@@ -509,7 +513,7 @@ class DexTrader:
             traceback.print_exc()
             return {"error": str(e)}
 
-    def post_pump_comment(self, mint_address, text):
+    def post_pump_comment(self, mint_address, text, payer_key=None):
         """
         Posts a comment to a token page on pump.fun.
         Requires signing a message with the wallet to prove ownership/identity.
@@ -531,7 +535,7 @@ class DexTrader:
             message_bytes = message.encode('utf-8')
             
             # 2. Sign the message
-            signature = self.keypair.sign_message(message_bytes)
+            signature = op_keypair.sign_message(message_bytes)
             signature_base58 = str(signature)
             
             # 3. Submit to the frontend API
@@ -540,7 +544,7 @@ class DexTrader:
             payload = {
                 "mint": mint_address,
                 "text": text,
-                "address": self.wallet_address,
+                "address": op_wallet,
                 "signature": signature_base58,
                 "timestamp": timestamp
             }
@@ -1331,19 +1335,32 @@ class DexTrader:
         
         return result
     
-    def pump_buy(self, mint_address, sol_amount=0.01):
+    def pump_buy(self, mint_address, sol_amount=0.01, payer_key=None):
         """
         Buy a Pump.fun token using the PumpPortal API (bonding curve native).
         Works for tokens that haven't graduated to Raydium yet.
         """
-        if not self.keypair:
+        # Resolve Keypair for this operation
+        op_keypair = self.keypair
+        op_wallet = self.wallet_address
+        
+        if payer_key:
+            try:
+                from solders.keypair import Keypair
+                op_keypair = Keypair.from_base58_string(payer_key)
+                op_wallet = str(op_keypair.pubkey())
+                print(f"💰 Using custom payer for buy: {op_wallet}")
+            except Exception as e:
+                return {"error": f"Invalid payer_key: {e}"}
+
+        if not op_keypair:
             return {"error": "Wallet not initialized"}
         
         import json
         
         try:
             payload = {
-                'publicKey': self.wallet_address,
+                'publicKey': op_wallet,
                 'action': 'buy',
                 'mint': mint_address,
                 'denominatedInSol': 'true',
@@ -1353,7 +1370,7 @@ class DexTrader:
                 'pool': 'pump'
             }
             
-            print(f"🛒 PumpPortal BUY: {sol_amount} SOL → {mint_address[:12]}...")
+            print(f"🛒 PumpPortal BUY: {sol_amount} SOL -> {mint_address[:12]}...")
             
             response = requests.post(
                 "https://pumpportal.fun/api/trade-local",
@@ -1400,8 +1417,8 @@ class DexTrader:
             signatures = []
             
             for key in signers:
-                if str(key) == self.wallet_address:
-                    signatures.append(self.keypair.sign_message(msg_bytes))
+                if str(key) == op_wallet:
+                    signatures.append(op_keypair.sign_message(msg_bytes))
                 else:
                     signatures.append(Signature.default())
             
@@ -1427,28 +1444,45 @@ class DexTrader:
             traceback.print_exc()
             return {"error": str(e)}
     
-    def pump_sell(self, mint_address, token_amount_pct=100):
+    def pump_sell(self, mint_address, token_amount_pct=100, payer_key=None):
         """
         Sell a Pump.fun token using the PumpPortal API.
         token_amount_pct: Percentage of holdings to sell (default 100%)
         """
-        if not self.keypair:
+        # Resolve Keypair for this operation
+        op_keypair = self.keypair
+        op_wallet = self.wallet_address
+        
+        if payer_key:
+            try:
+                from solders.keypair import Keypair
+                op_keypair = Keypair.from_base58_string(payer_key)
+                op_wallet = str(op_keypair.pubkey())
+                print(f"📉 Using custom payer for sell: {op_wallet}")
+            except Exception as e:
+                return {"error": f"Invalid payer_key: {e}"}
+
+        if not op_keypair:
             return {"error": "Wallet not initialized"}
         
         import json
         
         try:
             # Get current token balance
-            bal_info = self.get_token_balance(mint_address)
+            # IMPORTANT: get_token_balance uses self.wallet_address (main wallet) by default.
+            # We need to make sure we check the balance of the correct payer.
+            from solders.pubkey import Pubkey
+            bal_info = self._get_wallet_token_balance(op_wallet, mint_address)
             token_balance = bal_info.get('ui_amount', 0)
             
             if token_balance <= 0:
+                print(f"⚠️ No tokens to sell in wallet {op_wallet[:8]}")
                 return {"error": "No tokens to sell"}
             
             sell_amount = token_balance * (token_amount_pct / 100)
             
             payload = {
-                'publicKey': self.wallet_address,
+                'publicKey': op_wallet,
                 'action': 'sell',
                 'mint': mint_address,
                 'denominatedInSol': 'false',  # Amount in tokens
@@ -1505,8 +1539,8 @@ class DexTrader:
             signatures = []
             
             for key in signers:
-                if str(key) == self.wallet_address:
-                    signatures.append(self.keypair.sign_message(msg_bytes))
+                if str(key) == op_wallet:
+                    signatures.append(op_keypair.sign_message(msg_bytes))
                 else:
                     signatures.append(Signature.default())
             
@@ -1532,7 +1566,7 @@ class DexTrader:
             traceback.print_exc()
             return {"error": str(e)}
 
-    async def simulate_volume(self, mint_address, rounds=10, sol_per_round=0.01, delay_seconds=30, callback=None, moon_bias=0.95):
+    async def simulate_volume(self, mint_address, rounds=10, sol_per_round=0.01, delay_seconds=30, callback=None, moon_bias=0.95, ticker=None):
         """
         Create organic-looking volume on a Pump.fun token with MOON BIAS strategy.
         Uses PumpPortal API for native bonding curve trades.
@@ -1542,8 +1576,10 @@ class DexTrader:
         """
         import asyncio
         
+        prefix = f"[{ticker}] " if ticker else ""
+
         async def notify(msg):
-            print(f"📊 VolSim: {msg}")
+            print(f"📊 {prefix}VolSim: {msg}")
             if callback:
                 try:
                     await callback(msg)
