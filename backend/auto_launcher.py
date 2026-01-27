@@ -57,24 +57,42 @@ class AutoLauncher:
         self.max_parallel_sims = 10   # Increased: 2 wallets × 5 tokens = 10 max concurrent
         
         # Phase 59: Multi-Wallet Token Creation (Organic Bot Farm)
-        # Rotate token creation across all wallets for authentic trading history
+        # Rotate token creation across wallets for authentic trading history
         self._creation_wallet_index = 0
+        self._wallet_creation_counts = {}  # key -> creation count
+        self.support_wallet_creation_limit = 2  # Support wallets create max 2 tokens (for organic look)
     
     def _get_next_creation_wallet(self):
         """
-        Round-robin through all wallets (main + support) for token creation.
-        Each wallet builds its own token creation history for organic appearance.
+        Smart wallet selection for token creation:
+        - Main wallets: Unlimited creation
+        - Support wallets: Limited to self.support_wallet_creation_limit tokens for organic appearance
         """
         if not self.dex_trader or not hasattr(self.dex_trader, 'wallet_manager'):
             return None
         
-        all_keys = self.dex_trader.wallet_manager.get_all_keys()
-        if not all_keys:
+        wm = self.dex_trader.wallet_manager
+        main_keys = wm.get_all_main_keys() or []
+        support_keys = wm.get_all_support_keys() or []
+        
+        # Build candidate list: all main wallets + support wallets under limit
+        candidates = list(main_keys)  # Main wallets are always candidates
+        
+        for sk in support_keys:
+            count = self._wallet_creation_counts.get(sk, 0)
+            if count < self.support_wallet_creation_limit:
+                candidates.append(sk)
+        
+        if not candidates:
             return None
         
-        # Round-robin selection
-        key = all_keys[self._creation_wallet_index % len(all_keys)]
+        # Round-robin through eligible candidates
+        key = candidates[self._creation_wallet_index % len(candidates)]
         self._creation_wallet_index += 1
+        
+        # Track creation count
+        self._wallet_creation_counts[key] = self._wallet_creation_counts.get(key, 0) + 1
+        
         return key
     
     def set_boost(self, amount):
