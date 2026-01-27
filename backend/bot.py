@@ -156,34 +156,47 @@ async def help(ctx):
 
 @bot.command()
 async def trends(ctx):
-    """🔥 Show current Pump.fun trending themes for launch ideas."""
+    """🔥 Show current trending themes with sources (Pump.fun, Twitter, DexScreener)."""
     from trend_hunter import TrendHunter
     
-    await ctx.send("🔍 Scanning Pump.fun movers for trending themes...")
+    await ctx.send("🔍 Scanning all sources for trending themes...")
     
     try:
         hunter = TrendHunter()
-        keywords = await asyncio.to_thread(hunter.get_trending_keywords, 15)
+        keywords = await asyncio.to_thread(hunter.get_trending_keywords, 15, True)  # with_source=True
         
         if not keywords:
             await ctx.send("❌ No trending keywords found. Try again later.")
             return
         
+        # Source icons
+        source_icons = {
+            'pump': '🚀',      # Pump.fun
+            'twitter': '🐦',   # Twitter/X
+            'dex': '📊'        # DexScreener
+        }
+        
         # Format as embed
         embed = discord.Embed(
-            title="🔥 Pump.fun Trending Themes",
-            description="Keywords extracted from current movers. Launch a variation with `!launch [keyword]`",
+            title="🔥 Trending Themes by Source",
+            description="Keywords from Pump.fun 🚀, Twitter 🐦, and DexScreener 📊\nLaunch a variation with `!launch [keyword]`",
             color=discord.Color.orange()
         )
         
+        # Format keywords with source icons
+        formatted = []
+        for item in keywords:
+            icon = source_icons.get(item['source'], '❓')
+            formatted.append(f"{icon} `{item['keyword']}`")
+        
         # Split into two columns
-        col1 = keywords[:8]
-        col2 = keywords[8:15]
+        col1 = formatted[:8]
+        col2 = formatted[8:15]
         
-        embed.add_field(name="Top Trends", value="\n".join([f"`{kw}`" for kw in col1]) or "None", inline=True)
-        embed.add_field(name="More Trends", value="\n".join([f"`{kw}`" for kw in col2]) or "None", inline=True)
+        embed.add_field(name="Top Trends", value="\n".join(col1) or "None", inline=True)
+        embed.add_field(name="More Trends", value="\n".join(col2) or "None", inline=True)
         
-        embed.set_footer(text="💡 Tip: Make 'funny unhinged variations' of trending themes!")
+        embed.set_footer(text="🚀 = Pump.fun | 🐦 = Twitter | 📊 = DexScreener")
         await ctx.send(embed=embed)
         
     except Exception as e:

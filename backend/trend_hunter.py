@@ -34,35 +34,64 @@ class TrendHunter:
         self._pump_cache = []
         self._cache_duration = 300  # 5 minutes
     
-    def get_trending_keywords(self, limit=10):
+    def get_trending_keywords(self, limit=10, with_source=False):
         """
         Main entry point: Get trending keywords from all sources.
         Returns list of unique, filtered keywords.
+        If with_source=True, returns list of dicts: [{'keyword': 'X', 'source': 'pump'}, ...]
         """
-        keywords = set()
+        keywords_with_source = []  # List of (keyword, source) tuples
         
         # Source 1: Pump.fun Movers (PRIMARY - most relevant for pump.fun launches)
         pump_keywords = self._get_pumpfun_movers()
-        keywords.update(pump_keywords)
+        for kw in pump_keywords:
+            keywords_with_source.append((kw, 'pump'))
         
         # Source 2: DexScreener Trending Tokens
         dex_keywords = self._get_dexscreener_keywords()
-        keywords.update(dex_keywords)
+        for kw in dex_keywords:
+            keywords_with_source.append((kw, 'dex'))
         
         # Source 3: Token Profiles (Paid Boosted Tokens)
         profile_keywords = self._get_token_profile_keywords()
-        keywords.update(profile_keywords)
+        for kw in profile_keywords:
+            keywords_with_source.append((kw, 'dex'))
         
         # Source 4: Twitter/X Trending (if available)
         if self.twitter_bearer:
             twitter_keywords = self._get_twitter_trending()
-            keywords.update(twitter_keywords)
+            for kw in twitter_keywords:
+                keywords_with_source.append((kw, 'twitter'))
         
-        # Filter and rank
-        filtered = self._filter_keywords(list(keywords))
+        # Deduplicate by keyword (keep first source encountered)
+        seen = set()
+        unique_keywords = []
+        for kw, source in keywords_with_source:
+            if kw not in seen:
+                seen.add(kw)
+                unique_keywords.append({'keyword': kw, 'source': source})
         
-        self.logger.info(f"🔍 Found {len(filtered)} trending keywords")
-        return filtered[:limit]
+        # Filter and rank (uses just the keyword strings for filtering)
+        keyword_strings = [item['keyword'] for item in unique_keywords]
+        filtered_strings = self._filter_keywords(keyword_strings)
+        
+        # Rebuild with sources, preserving filter order
+        filtered_with_source = []
+        source_map = {item['keyword']: item['source'] for item in unique_keywords}
+        for kw in filtered_strings:
+            if kw in source_map:
+                filtered_with_source.append({'keyword': kw, 'source': source_map[kw]})
+        
+        self.logger.info(f"🔍 Found {len(filtered_with_source)} trending keywords")
+        
+        result = filtered_with_source[:limit]
+        
+        # Return format based on with_source flag
+        if with_source:
+            return result
+        else:
+            # Backwards compatible: return just keyword strings
+            return [item['keyword'] for item in result]
     
     def _get_pumpfun_movers(self):
         """Extract trending keywords from Pump.fun movers/top-runners."""
