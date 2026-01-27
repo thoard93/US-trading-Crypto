@@ -165,35 +165,57 @@ def scrape_pump_advanced():
             title = soup.find('title')
             print(f"Page Title: {title.text if title else 'None'}")
             
-            # Look for __NEXT_DATA__
-            for script in soup.find_all('script'):
-                if script.get('id') == '__NEXT_DATA__':
-                    print("✅ Found __NEXT_DATA__!")
-                    data = json.loads(script.text)
+            # Diagnostic: Show first few scripts
+            scripts = soup.find_all('script')
+            print(f"\n📋 SCRIPT DIAGNOSTIC ({len(scripts)} total)")
+            
+            for idx, script in enumerate(scripts[:20]):
+                src = script.get('src', '')
+                content = (script.string or '')[:200]
+                
+                if src:
+                    print(f"\n  #{idx}: SRC={src[:80]}")
+                elif content:
+                    # Show preview of inline scripts
+                    preview = content.replace('\n', ' ').strip()
+                    print(f"\n  #{idx}: INLINE ({len(script.string or '')} chars)")
+                    print(f"       Preview: {preview[:100]}...")
                     
-                    # Pretty print structure
-                    def explore(obj, prefix=""):
-                        if isinstance(obj, dict):
-                            for k, v in obj.items():
-                                if isinstance(v, (dict, list)):
-                                    print(f"{prefix}{k}: {type(v).__name__}")
-                                    if len(prefix) < 10:  # Limit depth
-                                        explore(v, prefix + "  ")
-                                else:
-                                    val_str = str(v)[:50]
-                                    print(f"{prefix}{k}: {val_str}")
-                        elif isinstance(obj, list) and obj:
-                            print(f"{prefix}[0]: {type(obj[0]).__name__} (len={len(obj)})")
-                            if isinstance(obj[0], dict):
-                                explore(obj[0], prefix + "  ")
+                    # Look for API/WebSocket URLs
+                    if 'wss://' in (script.string or ''):
+                        ws_matches = re.findall(r'wss://[^\s"\']+', script.string)
+                        print(f"       🔌 WebSocket URLs: {ws_matches}")
                     
-                    explore(data)
-                    break
+                    if 'api' in (script.string or '').lower():
+                        api_matches = re.findall(r'https://[^\s"\']*api[^\s"\']*', script.string, re.I)
+                        if api_matches:
+                            print(f"       🌐 API URLs: {api_matches[:3]}")
                     
     except ImportError:
         print("\n⚠️ curl_cffi not installed. Run: pip3 install curl_cffi")
     except Exception as e:
         print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def search_for_tokens(data, source=""):
+    """Recursively search for token arrays in nested data."""
+    if isinstance(data, list):
+        if len(data) > 0 and isinstance(data[0], dict):
+            if any(k in data[0] for k in ['mint', 'symbol', 'market_cap', 'usd_market_cap']):
+                print(f"\n🎯 Found {len(data)} tokens in {source}!")
+                for i, t in enumerate(data[:8]):
+                    symbol = t.get('symbol', t.get('name', '?'))
+                    mc = t.get('usd_market_cap', t.get('market_cap', 0))
+                    mint = t.get('mint', '?')[:16]
+                    print(f"    {i+1}. {symbol:12} | MC: ${mc:>12,.0f} | {mint}...")
+                return True
+    elif isinstance(data, dict):
+        for key, value in data.items():
+            if search_for_tokens(value, f"{source}.{key}"):
+                return True
+    return False
 
 
 if __name__ == "__main__":
