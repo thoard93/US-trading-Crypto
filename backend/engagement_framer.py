@@ -77,27 +77,37 @@ class EngagementFramer:
         """
         if not self.dex_trader:
             self.logger.warning("DexTrader not provided to EngagementFramer")
+            print("⚠️ Engagement Farming: DexTrader not provided!")
             return
             
+        print(f"🌾 Starting engagement farming for {mint_address} ({count} comments)")
         self.logger.info(f"🌾 Starting engagement farming for {mint_address} ({count} comments)")
         
         for i in range(count):
             comment = self.generate_random_comment()
+            print(f"💬 Posting comment {i+1}/{count}: '{comment}'")
             self.logger.info(f"💬 Posting comment {i+1}/{count}: '{comment}'")
             
-            # Post via DexTrader
-            result = await asyncio.to_thread(self.dex_trader.post_pump_comment, mint_address, comment)
-            
-            if result.get('success'):
-                self.logger.info(f"✅ Comment posted successfully: {result.get('signature')}")
-            else:
-                self.logger.error(f"❌ Failed to post comment: {result.get('error')}")
+            try:
+                # Post via DexTrader
+                result = await asyncio.to_thread(self.dex_trader.post_pump_comment, mint_address, comment)
+                
+                if result.get('success'):
+                    print(f"✅ Comment {i+1} posted successfully!")
+                    self.logger.info(f"✅ Comment posted successfully: {result.get('signature')}")
+                else:
+                    print(f"❌ Comment {i+1} failed: {result.get('error')}")
+                    self.logger.error(f"❌ Failed to post comment: {result.get('error')}")
+            except Exception as e:
+                print(f"❌ Comment {i+1} exception: {e}")
+                self.logger.error(f"Exception posting comment: {e}")
                 
             # Random delay between comments
             if i < count - 1:
                 wait_time = random.randint(*delay_range)
                 self.logger.debug(f"⏳ Waiting {wait_time}s before next comment...")
                 await asyncio.sleep(wait_time)
+
 
 if __name__ == "__main__":
     # Test generation
