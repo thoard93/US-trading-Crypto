@@ -131,44 +131,24 @@ class TrendHunter:
                 return self._pump_cache  # Return stale cache
             
             keywords = []
-            theme_counter = {}  # Track theme frequency
             
             for token in tokens:
-                # Extract name and symbol
+                # Extract FULL name only - symbols are just abbreviations
                 name = token.get('name', '') or token.get('token_name', '')
-                symbol = token.get('symbol', '') or token.get('ticker', '')
-                description = token.get('description', '')
                 
-                # Extract words from name
-                words = self._extract_words(name)
-                keywords.extend(words)
-                
-                # Extract words from description
-                desc_words = self._extract_words(description)
-                keywords.extend(desc_words)
-                
-                # Add symbol if it's a word
-                if len(symbol) >= 3 and symbol.isalpha():
-                    keywords.append(symbol.upper())
-                
-                # Track common themes for pattern detection
-                for word in words:
-                    word_lower = word.lower()
-                    if word_lower in theme_counter:
-                        theme_counter[word_lower] += 1
-                    else:
-                        theme_counter[word_lower] = 1
+                # Use FULL name as keyword (e.g., "Fartcoin", "Baby Doge", "Shiba Inu")
+                if name:
+                    clean_name = re.sub(r'[^a-zA-Z0-9\s]', '', name).strip()
+                    if clean_name and len(clean_name) >= 3 and len(clean_name) <= 30:
+                        keywords.append(clean_name.upper())
             
-            # Log detected themes (words appearing 2+ times = trending theme)
-            trending_themes = [k for k, v in theme_counter.items() if v >= 2]
-            if trending_themes:
-                self.logger.info(f"🔥 Pump.fun trending themes detected: {trending_themes[:5]}")
-            
-            # Update cache
+            # Dedupe and update cache
             self._last_pump_fetch = now
             self._pump_cache = list(set(keywords))
             
             self.logger.info(f"🚀 Pump.fun: Found {len(self._pump_cache)} trending keywords")
+            if self._pump_cache:
+                self.logger.info(f"🔥 Sample keywords: {self._pump_cache[:5]}")
             return self._pump_cache
             
         except Exception as e:
@@ -242,15 +222,12 @@ class TrendHunter:
             for pair in pairs:
                 base = pair.get('baseToken', {})
                 name = base.get('name', '')
-                symbol = base.get('symbol', '')
                 
-                # Extract words from name
-                words = self._extract_words(name)
-                keywords.extend(words)
-                
-                # Add symbol if it looks like a word
-                if len(symbol) >= 3 and symbol.isalpha():
-                    keywords.append(symbol.upper())
+                # Use FULL name as keyword only
+                if name:
+                    clean_name = re.sub(r'[^a-zA-Z0-9\s]', '', name).strip()
+                    if clean_name and len(clean_name) >= 3 and len(clean_name) <= 30:
+                        keywords.append(clean_name.upper())
             
             # Update cache
             self._last_dex_fetch = now
@@ -278,12 +255,9 @@ class TrendHunter:
             
             keywords = []
             for profile in solana_profiles:
-                # Token profiles don't always have name, use description or header
-                desc = profile.get('description', '')
-                header = profile.get('header', '')
-                
-                words = self._extract_words(desc) + self._extract_words(header)
-                keywords.extend(words)
+                # Use token address to look up name if available
+                # For now just skip profiles - they don't reliably have names
+                pass
             
             return list(set(keywords))
             
