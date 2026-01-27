@@ -197,6 +197,35 @@ class DexTrader:
             print(f"Error getting token balance: {e}")
             return {"amount": 0, "ui_amount": 0}
     
+    def _get_wallet_token_balance(self, wallet_address, token_mint):
+        """Get SPL token balance for a specific wallet. Used by multi-wallet operations."""
+        if not wallet_address:
+            return {"amount": 0, "ui_amount": 0}
+        
+        try:
+            response = requests.post(self.rpc_url, json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTokenAccountsByOwner",
+                "params": [
+                    wallet_address,
+                    {"mint": token_mint},
+                    {"encoding": "jsonParsed"}
+                ]
+            })
+            result = response.json()
+            accounts = result.get('result', {}).get('value', [])
+            if accounts:
+                info = accounts[0]['account']['data']['parsed']['info']['tokenAmount']
+                return {
+                    "amount": int(info['amount'] or 0),
+                    "ui_amount": float(info['uiAmount'] or 0)
+                }
+            return {"amount": 0, "ui_amount": 0}
+        except Exception as e:
+            print(f"Error getting token balance for {wallet_address[:8]}: {e}")
+            return {"amount": 0, "ui_amount": 0}
+    
     def get_token_decimals(self, token_mint):
         """Fetch token decimals from Solana RPC mint info. Returns 9 as default if fetch fails."""
         try:
