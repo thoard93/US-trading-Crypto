@@ -323,6 +323,30 @@ async def get_whale_activity():
         "whale_count": len(getattr(copy_trader, 'qualified_wallets', [])) // 2
     }
 
+@app.get("/movers")
+async def get_movers():
+    """
+    Get trending low MC movers based on Helius transaction data.
+    Returns tokens with sudden increased buying activity.
+    """
+    try:
+        from movers_tracker import get_movers_tracker
+        tracker = get_movers_tracker()
+        
+        # Get summary stats
+        summary = tracker.get_activity_summary()
+        
+        # Get top movers
+        movers = await tracker.get_movers(limit=15, min_buyers=2, min_sol_volume=0.3)
+        
+        return {
+            "movers": movers,
+            "stats": summary
+        }
+    except Exception as e:
+        logger.error(f"Error getting movers: {e}")
+        return {"movers": [], "stats": {}, "error": str(e)}
+
 # ============================================
 # HELIUS WEBHOOK (Keep original)
 # ============================================
@@ -369,6 +393,14 @@ async def process_helius_data(transactions):
 
         # 1. Update activity cache in CopyTrader (for BUYs)
         added = alert_system.copy_trader.process_transactions(transactions)
+        
+        # 1b. Feed data to MoversTracker for momentum detection
+        try:
+            from movers_tracker import get_movers_tracker
+            tracker = get_movers_tracker()
+            tracker.process_transactions(transactions)
+        except Exception as e:
+            pass  # Non-critical, don't log every time
         
         # 1c. SELF-BUY DETECTION: Trigger instant sync if we see our own wallet trading
         my_wallets = {t.wallet_address for t in alert_system.dex_traders if hasattr(t, 'wallet_address')}
