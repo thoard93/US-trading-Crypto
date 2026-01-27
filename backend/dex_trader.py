@@ -143,6 +143,22 @@ class DexTrader:
         
         # Active positions
         self.positions = {}
+        
+        # Residential Proxy (Phase 57: Bot Farm - Cloudflare Bypass)
+        self.proxy_url = os.getenv('RESIDENTIAL_PROXY')
+        if self.proxy_url:
+            self.proxy_url = self.proxy_url.strip()
+            print(f"🌐 Residential Proxy configured for pump.fun requests")
+    
+    def _get_proxy_session(self):
+        """Get a requests session with residential proxy for pump.fun (Cloudflare bypass)."""
+        session = requests.Session()
+        if self.proxy_url:
+            session.proxies = {
+                'http': self.proxy_url,
+                'https': self.proxy_url
+            }
+        return session
     
     def get_sol_balance(self):
         """Get SOL balance of wallet."""
@@ -609,7 +625,9 @@ class DexTrader:
                 'Referer': f'https://pump.fun/coin/{mint_address}'
             }
             
-            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            # Use proxy session for Cloudflare bypass (Phase 57)
+            session = self._get_proxy_session()
+            response = session.post(url, json=payload, headers=headers, timeout=15)
             
             if response.status_code == 200 or response.status_code == 201:
                 return {"success": True, "signature": signature_base58}

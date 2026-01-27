@@ -36,6 +36,32 @@ class WalletManager:
         if support_str:
             self.support_keys = [k.strip() for k in support_str.split(',') if k.strip()]
         
+        # Wallet Labels (Phase 57: Bot Farm)
+        # Format: WALLET_LABELS=HiTW:Your Wallet,ABC:Dylan
+        self.wallet_labels = {}
+        self._key_to_address = {}  # Cache: private_key -> public_address
+        labels_str = os.getenv('WALLET_LABELS', '')
+        if labels_str:
+            for pair in labels_str.split(','):
+                if ':' in pair:
+                    prefix, label = pair.split(':', 1)
+                    self.wallet_labels[prefix.strip()] = label.strip()
+        
+        # Build address cache for all wallets
+        for idx, key in enumerate(self.main_keys):
+            try:
+                addr = str(Keypair.from_base58_string(key).pubkey())
+                self._key_to_address[key] = addr
+            except:
+                pass
+        
+        for key in self.support_keys:
+            try:
+                addr = str(Keypair.from_base58_string(key).pubkey())
+                self._key_to_address[key] = addr
+            except:
+                pass
+        
         print(f"💼 WalletManager: {len(self.main_keys)} main + {len(self.support_keys)} support wallets loaded.")
 
     # === Main Wallet Methods ===
@@ -91,3 +117,34 @@ class WalletManager:
             return str(kp.pubkey())
         except Exception:
             return "unknown"
+
+    def get_wallet_label(self, address_or_key: str) -> str:
+        """
+        Get human-readable label for a wallet (address or private key).
+        Returns custom label from WALLET_LABELS or auto-generated 'Main 1', 'Main 2', etc.
+        """
+        # Resolve to address if private key was passed
+        address = address_or_key
+        if address_or_key in self._key_to_address:
+            address = self._key_to_address[address_or_key]
+        
+        # Try to match with custom labels (prefix matching)
+        for prefix, label in self.wallet_labels.items():
+            if address.startswith(prefix):
+                return label
+        
+        # Auto-generate based on position
+        for idx, key in enumerate(self.main_keys):
+            cached_addr = self._key_to_address.get(key)
+            if cached_addr == address or key == address_or_key:
+                if idx == 0:
+                    return "Main"
+                return f"Main {idx + 1}"
+        
+        for idx, key in enumerate(self.support_keys):
+            cached_addr = self._key_to_address.get(key)
+            if cached_addr == address or key == address_or_key:
+                return f"Support {idx + 1}"
+        
+        # Fallback: show shortened address
+        return f"{address[:4]}...{address[-4:]}"
