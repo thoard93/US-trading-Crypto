@@ -185,106 +185,26 @@ class TrendHunter:
     
     def _get_helius_pump_tokens(self):
         """
-        Fetch recent pump.fun token names using Helius Enhanced Transactions API.
-        Gets recent transactions from pump.fun program and extracts token names.
+        Fetch recent pump.fun token names using Helius API.
+        
+        NOTE: Helius parseTransactions doesn't return token names for pump.fun transactions.
+        This method is a placeholder for future implementation using Helius gRPC streams or
+        DAS getAsset API to fetch token metadata from mints.
+        
+        For now, trend discovery relies on:
+        - Direct pump.fun API (when not blocked)
+        - Twitter trending
+        - DexScreener trending
         """
         if not self.helius_key:
             return []
         
-        try:
-            # Use cache if fresh
-            now = time.time()
-            if self._last_helius_fetch and (now - self._last_helius_fetch) < self._cache_duration:
-                return self._helius_cache
-            
-            # Pump.fun Program ID
-            PUMP_PROGRAM = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
-            
-            # Step 1: Get recent signatures from pump.fun program
-            rpc_url = f"https://mainnet.helius-rpc.com/?api-key={self.helius_key}"
-            
-            sig_payload = {
-                "jsonrpc": "2.0",
-                "id": "pump-sigs",
-                "method": "getSignaturesForAddress",
-                "params": [
-                    PUMP_PROGRAM,
-                    {"limit": 100}  # Get last 100 transactions
-                ]
-            }
-            
-            sig_resp = requests.post(rpc_url, json=sig_payload, timeout=10)
-            if sig_resp.status_code != 200:
-                self.logger.warning(f"Helius getSignatures returned {sig_resp.status_code}")
-                return self._helius_cache
-            
-            sig_data = sig_resp.json()
-            signatures = [s['signature'] for s in sig_data.get('result', [])[:50]]
-            
-            self.logger.debug(f"Helius: Got {len(signatures)} pump.fun signatures")
-            
-            if not signatures:
-                self.logger.debug("No pump.fun signatures found")
-                return self._helius_cache
-            
-            # Step 2: Parse transactions to get token metadata
-            parse_url = f"https://api.helius.xyz/v0/transactions?api-key={self.helius_key}"
-            
-            parse_resp = requests.post(parse_url, json={"transactions": signatures[:20]}, timeout=15)
-            if parse_resp.status_code != 200:
-                self.logger.warning(f"Helius parseTransactions returned {parse_resp.status_code}: {parse_resp.text[:200]}")
-                return self._helius_cache
-            
-            parsed_txs = parse_resp.json()
-            self.logger.debug(f"Helius: Parsed {len(parsed_txs)} transactions")
-            
-            keywords = []
-            for tx in parsed_txs:
-                # Look for token creation events
-                token_transfers = tx.get('tokenTransfers', [])
-                
-                # Extract token names from metadata if available
-                for transfer in token_transfers:
-                    # Try multiple fields where token name might be
-                    name = (transfer.get('tokenName', '') or 
-                            transfer.get('name', '') or 
-                            transfer.get('symbol', ''))
-                    if name:
-                        clean_name = re.sub(r'[^a-zA-Z0-9\s]', '', name).strip()
-                        if clean_name and len(clean_name) >= 3 and len(clean_name) <= 30:
-                            keywords.append(clean_name.upper())
-                
-                # Check description for token creation info (e.g. "X created TOKENNAME")
-                description = tx.get('description', '')
-                if description:
-                    # Parse "X created Y" or "X minted Y" patterns
-                    import re as regex
-                    match = regex.search(r'created\s+(\w+)', description, regex.IGNORECASE)
-                    if match:
-                        token_name = match.group(1)
-                        if len(token_name) >= 3 and len(token_name) <= 20:
-                            keywords.append(token_name.upper())
-                
-                # Also check events.nft for NFT-style metadata (pump.fun uses this sometimes)
-                events = tx.get('events', {})
-                nft_events = events.get('nft', {})
-                if isinstance(nft_events, dict):
-                    nft_name = nft_events.get('name', '')
-                    if nft_name and len(nft_name) >= 3:
-                        keywords.append(nft_name.upper()[:20])
-            
-            # Update cache
-            self._last_helius_fetch = now
-            self._helius_cache = list(set(keywords))[:20]  # Limit to 20 unique
-            
-            self.logger.info(f"🔗 Helius: Found {len(self._helius_cache)} pump.fun token names")
-            if self._helius_cache:
-                self.logger.info(f"🔥 Helius samples: {self._helius_cache[:5]}")
-            return self._helius_cache
-            
-        except Exception as e:
-            self.logger.error(f"Error fetching Helius pump tokens: {e}")
-            return self._helius_cache  # Return stale cache
+        # TODO: Implement using Helius gRPC/Websockets for real-time pump.fun monitoring
+        # The current parseTransactions approach doesn't return token metadata
+        # See: https://docs.helius.xyz/compression-and-das-api/digital-asset-standard-das-api
+        
+        self.logger.debug("🔗 Helius pump.fun discovery: Not implemented (parseTransactions doesn't return token names)")
+        return []
     
     def _get_twitter_trending(self):
         """Get trending topics from Twitter/X."""

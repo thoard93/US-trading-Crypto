@@ -453,25 +453,32 @@ class AutoLauncher:
                                         wallet_short = wallet_key[:8]
                                         print(f"📊 [{pack['ticker']}] VolSim {wallet_label} starting: {wallet_short}...")
                                         
-                                        # Create callback with wallet label for clarity
-                                        def make_callback(label):
-                                            async def cb(msg):
-                                                try:
-                                                    await channel.send(f"📊 [{label}] {msg}")
-                                                except:
-                                                    pass
-                                            return cb
+                                        # Create callback - ONLY W1 sends to Discord to avoid rate limiting
+                                        # Other wallets just log to console
+                                        def make_callback(label, send_to_discord):
+                                            if send_to_discord:
+                                                async def cb(msg):
+                                                    try:
+                                                        await channel.send(f"📊 [{label}] {msg}")
+                                                    except:
+                                                        pass
+                                                return cb
+                                            else:
+                                                return None  # Console only (no Discord spam)
                                         
                                         # Randomize moon_bias per wallet for organic look (88-96%)
                                         wallet_moon_bias = round(random.uniform(0.88, 0.96), 2)
                                         print(f"📊 [{pack['ticker']}] {wallet_label} moon_bias: {wallet_moon_bias*100:.0f}%")
+                                        
+                                        # Only first wallet (W1) sends Discord updates
+                                        send_discord = (wallet_idx == 0)
                                         
                                         sim_task = asyncio.create_task(self.dex_trader.simulate_volume(
                                             mint_address,
                                             rounds=self.volume_sim_rounds,
                                             sol_per_round=self.volume_sim_amount,
                                             delay_seconds=self.volume_sim_delay,
-                                            callback=make_callback(wallet_label),
+                                            callback=make_callback(wallet_label, send_discord),
                                             moon_bias=wallet_moon_bias,  # Randomized per wallet!
                                             ticker=f"{pack['ticker']}-{wallet_label}",
                                             payer_key=wallet_key
