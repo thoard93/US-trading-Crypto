@@ -18,6 +18,9 @@ class TrendHunter:
         self.anthropic_key = os.getenv('ANTHROPIC_API_KEY', '').strip()
         self.twitter_bearer = os.getenv('TWITTER_BEARER_TOKEN', '').strip()
         
+        # Residential proxy for Cloudflare bypass (Phase 57)
+        self.proxy_url = os.getenv('RESIDENTIAL_PROXY', '').strip()
+        
         # Blacklist of terms to never launch (safety)
         self.blacklist = {
             'nsfw', 'porn', 'xxx', 'hate', 'nazi', 'racist', 'terror',
@@ -33,6 +36,16 @@ class TrendHunter:
         self._last_pump_fetch = None
         self._pump_cache = []
         self._cache_duration = 300  # 5 minutes
+    
+    def _get_proxy_session(self):
+        """Get a requests session with residential proxy for Cloudflare bypass."""
+        session = requests.Session()
+        if self.proxy_url:
+            session.proxies = {
+                'http': self.proxy_url,
+                'https': self.proxy_url
+            }
+        return session
     
     def get_trending_keywords(self, limit=10, with_source=False):
         """
@@ -109,10 +122,12 @@ class TrendHunter:
             ]
             
             tokens = []
+            session = self._get_proxy_session()  # Use proxy for Cloudflare bypass
+            
             for endpoint in endpoints:
                 try:
-                    resp = requests.get(endpoint, timeout=10, headers={
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    resp = session.get(endpoint, timeout=15, headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
                     })
                     if resp.status_code == 200:
                         data = resp.json()
@@ -121,7 +136,10 @@ class TrendHunter:
                             tokens = data[:30]
                         elif isinstance(data, dict):
                             tokens = data.get('coins', data.get('data', []))[:30]
+                        self.logger.info(f"✅ Pump.fun endpoint {endpoint} returned {len(tokens)} tokens")
                         break
+                    else:
+                        self.logger.debug(f"Pump.fun {endpoint} returned {resp.status_code}")
                 except Exception as e:
                     self.logger.debug(f"Pump.fun endpoint {endpoint} failed: {e}")
                     continue
@@ -176,14 +194,21 @@ class TrendHunter:
                 keywords = []
                 for trend in trends[:20]:
                     name = trend.get('trend_name', '')
-                    # Remove # from hashtags
-                    name = name.lstrip('#')
-                    words = self._extract_words(name)
-                    keywords.extend(words)
+                    # Remove # from hashtags and use FULL name
+                    name = name.lstrip('#').strip()
+                    # Use FULL trending topic name, not split words
+                    if name and len(name) >= 3 and len(name) <= 30:
+                        # Filter out common non-meme topics
+                        name_lower = name.lower()
+                        skip_words = {'nfl', 'nba', 'mlb', 'nhl', 'espn', 'breaking', 'news', 'report'}
+                        if not any(sw in name_lower for sw in skip_words):
+                            keywords.append(name.upper())
                 
                 self._last_twitter_fetch = now
                 self._twitter_cache = list(set(keywords))
                 self.logger.info(f"🐦 Twitter: Found {len(self._twitter_cache)} trending keywords")
+                if self._twitter_cache:
+                    self.logger.info(f"🔥 Twitter samples: {self._twitter_cache[:5]}")
                 return self._twitter_cache
                 
             elif resp.status_code == 429:

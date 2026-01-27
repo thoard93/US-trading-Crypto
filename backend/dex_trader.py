@@ -519,7 +519,7 @@ class DexTrader:
                         fresh_bh = Hash.from_string(bh_resp['result']['value']['blockhash'])
                         new_message.recent_blockhash = fresh_bh
                         msg_bytes = to_bytes_versioned(new_message)
-                        signatures = [self.keypair.sign_message(msg_bytes), mint_keypair.sign_message(msg_bytes)]
+                        signatures = [op_keypair.sign_message(msg_bytes), mint_keypair.sign_message(msg_bytes)]  # FIX: Use op_keypair not self.keypair
                         signed_tx = VersionedTransaction.populate(new_message, signatures)
                     except Exception as e:
                         print(f"⚠️ Blockhash refresh failed, trying original: {e}")
