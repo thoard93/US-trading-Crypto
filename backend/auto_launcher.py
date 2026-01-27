@@ -392,7 +392,15 @@ class AutoLauncher:
                                     except:
                                         pass
                                 
-                                # Start simulation in background
+                                # Start simulation in background USING SUPPORT WALLET (not dev!)
+                                # This avoids (dev) label on trades
+                                vol_sim_key = None
+                                if hasattr(self.dex_trader, 'wallet_manager'):
+                                    support_keys = self.dex_trader.wallet_manager.get_all_support_keys()
+                                    if support_keys:
+                                        vol_sim_key = support_keys[0]  # Use first support wallet for volume sim
+                                        print(f"📊 VolSim using support wallet: {vol_sim_key[:8]}...")
+                                
                                 sim_task = asyncio.create_task(self.dex_trader.simulate_volume(
                                     mint_address,
                                     rounds=self.volume_sim_rounds,
@@ -400,7 +408,8 @@ class AutoLauncher:
                                     delay_seconds=self.volume_sim_delay,
                                     callback=discord_callback,
                                     moon_bias=0.95,
-                                    ticker=pack['ticker']
+                                    ticker=pack['ticker'],
+                                    payer_key=vol_sim_key  # Use support wallet, not dev!
                                 ))
                                 
                                 # Add to tracking

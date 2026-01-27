@@ -1637,7 +1637,7 @@ class DexTrader:
             traceback.print_exc()
             return {"error": str(e)}
 
-    async def simulate_volume(self, mint_address, rounds=10, sol_per_round=0.01, delay_seconds=30, callback=None, moon_bias=0.95, ticker=None):
+    async def simulate_volume(self, mint_address, rounds=10, sol_per_round=0.01, delay_seconds=30, callback=None, moon_bias=0.95, ticker=None, payer_key=None):
         """
         Create organic-looking volume on a Pump.fun token with MOON BIAS strategy.
         Uses PumpPortal API for native bonding curve trades.
@@ -1674,8 +1674,8 @@ class DexTrader:
                 
                 await notify(f"Round {i+1}/{rounds}: Buying {sol_per_round} SOL...")
                 
-                # BUY using PumpPortal
-                buy_result = self.pump_buy(mint_address, sol_amount=sol_per_round)
+                # BUY using PumpPortal (with support wallet if provided)
+                buy_result = self.pump_buy(mint_address, sol_amount=sol_per_round, payer_key=payer_key)
                 
                 if buy_result.get('success'):
                     total_bought += 1
@@ -1704,13 +1704,13 @@ class DexTrader:
                     # Use a small percentage sell as fallback to still create chart movement
                     fallback_pct = 1.0  # Sell 1% of holdings
                     await notify(f"⚠️ Balance not updated, using fallback: selling {fallback_pct}% of holdings...")
-                    sell_result = self.pump_sell(mint_address, token_amount_pct=fallback_pct)
+                    sell_result = self.pump_sell(mint_address, token_amount_pct=fallback_pct, payer_key=payer_key)
                 else:
                     # Use pump_sell with calculated amount as percentage of CURRENT balance
                     current_balance = post_buy_balance
                     sell_pct = (tokens_to_sell / current_balance) * 100 if current_balance > 0 else 1
                     await notify(f"Round {i+1}/{rounds}: Selling {sell_pct:.1f}% ({tokens_to_sell:.0f} tokens)...")
-                    sell_result = self.pump_sell(mint_address, token_amount_pct=min(sell_pct, 100))
+                    sell_result = self.pump_sell(mint_address, token_amount_pct=min(sell_pct, 100), payer_key=payer_key)
                 
                 if sell_result.get('success'):
                     total_sold += 1
