@@ -27,6 +27,14 @@ JITO_BLOCK_ENGINES = [
     "https://frankfurt.mainnet.block-engine.jito.wtf",
     "https://tokyo.mainnet.block-engine.jito.wtf",
 ]
+JITO_TIP_ACCOUNTS = [
+    "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
+    "HFqU5x63VTqvQss8hp11i4bVmLuSDZTRVyixBY22zQxD",
+    "Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMzpKw6QNghXLvLkY",
+    "ADaUMid9yfUytqMBgopwjb2DTLSfertyPaXpK3hqT3dW",
+    "DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh",
+    "ADuUkR4vqLUMWXxW9gh6D6L8pMSawimctcNZ5pGwDcEt",
+    "DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL",
     "3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT"
 ]
 JITO_TIP_PERCENTILES = "https://bundles.jito.wtf/api/v1/bundles/tip_floor"
