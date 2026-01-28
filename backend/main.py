@@ -36,6 +36,12 @@ async def main():
     hunter = TrendHunter()
     logger.info("✅ TrendHunter initialized")
     
+    # Initialize MoversTracker (Phase 69: Historical mover data collection)
+    from movers_tracker import get_movers_tracker, start_movers_tracking
+    movers_tracker = get_movers_tracker()
+    asyncio.create_task(start_movers_tracking())
+    logger.info("✅ MoversTracker initialized (background collection active)")
+    
     # Initialize AutoLauncher
     from auto_launcher import AutoLauncher
     launcher = AutoLauncher(trader, hunter)
