@@ -28,10 +28,11 @@ class AutoLauncher:
         self.min_sol_balance = float(os.getenv('AUTO_LAUNCH_MIN_SOL', '0.02'))  # Lowered for lean operation
         self.volume_seed_sol = float(os.getenv('AUTO_LAUNCH_VOLUME_SEED', '0.01'))  # MOON BIAS: Default to 0.01 SOL
         
-        # State tracking
-        self.launched_today = []  # List of {keyword, mint, timestamp}
+        # State tracking - Phase 66: Per-Wallet Daily Limits
+        self.launched_today = {}  # Dict of wallet_key -> [launches]
         self.launch_queue = []    # Keywords waiting to be launched
         self._last_reset = datetime.utcnow().date()
+        self._next_creator_key = None  # Track which wallet will create next token
         
         # Cooldown tracking (keyword -> last launch timestamp)
         self._keyword_cooldowns = {}
@@ -114,10 +115,13 @@ class AutoLauncher:
     
     def get_status(self):
         """Get current auto-launch status for Discord display."""
+        total_launches = sum(len(v) for v in self.launched_today.values())
+        wallet_count = len(self.launched_today) if self.launched_today else 0
         return {
             "enabled": self.enabled,
-            "launches_today": len(self.launched_today),
-            "max_daily": self.max_daily_launches,
+            "launches_today": total_launches,
+            "wallets_active": wallet_count,
+            "max_daily_per_wallet": self.max_daily_launches,
             "queue_size": len(self.launch_queue),
             "min_sol": self.min_sol_balance,
             "volume_seed": self.volume_seed_sol,
@@ -135,12 +139,13 @@ class AutoLauncher:
         return self.get_status()
     
     def _reset_daily_counter(self):
-        """Reset daily launch counter at midnight."""
+        """Reset daily launch counters at midnight (per-wallet)."""
         today = datetime.utcnow().date()
         if today > self._last_reset:
-            self.launched_today = []
+            self.launched_today = {}  # Reset all wallet counters
+            self._wallet_creation_counts = {}  # Also reset support wallet creation limits
             self._last_reset = today
-            self.logger.info("🔄 Daily launch counter reset")
+            self.logger.info("🔄 Daily launch counters reset (all wallets)")
     
     def _check_cooldown(self, keyword):
         """Check if keyword is on cooldown."""
@@ -168,12 +173,30 @@ class AutoLauncher:
         """
         Check all safety limits before launching.
         Returns (can_launch: bool, reason: str)
+        Phase 66: Now checks PER-WALLET daily limits, not global.
         """
         self._reset_daily_counter()
         
-        # Check daily limit
-        if len(self.launched_today) >= self.max_daily_launches:
-            return False, f"Daily limit reached ({self.max_daily_launches})"
+        # Pre-select which wallet will create the next token
+        self._next_creator_key = self._get_next_creation_wallet()
+        
+        if not self._next_creator_key:
+            return False, "No wallets available (all at daily/creation limit)"
+        
+        # Check per-wallet daily limit
+        wallet_launches = len(self.launched_today.get(self._next_creator_key, []))
+        if wallet_launches >= self.max_daily_launches:
+            # Try to find another wallet with remaining capacity
+            wm = self.dex_trader.wallet_manager if hasattr(self.dex_trader, 'wallet_manager') else None
+            if wm:
+                all_keys = wm.get_all_keys() or []
+                for key in all_keys:
+                    if len(self.launched_today.get(key, [])) < self.max_daily_launches:
+                        self._next_creator_key = key
+                        break
+                else:
+                    total = sum(len(v) for v in self.launched_today.values())
+                    return False, f"All wallets at daily limit ({total} total launches)"
         
         # Check SOL balance
         if self.dex_trader:
@@ -340,8 +363,8 @@ class AutoLauncher:
             twitter_link = self.fixed_twitter if self.fixed_twitter else f"https://x.com/{clean_name}_sol"
             tg_link = self.fixed_telegram if self.fixed_telegram else f"https://t.me/{clean_name}_portal"
             
-            # Phase 59: Select which wallet creates this token (round-robin all wallets)
-            creator_key = self._get_next_creation_wallet()
+            # Phase 66: Use wallet pre-selected by check_safety_limits
+            creator_key = self._next_creator_key or self._get_next_creation_wallet()
             creator_label = "Main"
             if creator_key and hasattr(self.dex_trader, 'wallet_manager'):
                 creator_label = self.dex_trader.wallet_manager.get_wallet_label(creator_key)
@@ -373,13 +396,18 @@ class AutoLauncher:
             if result.get('error'):
                 return result
             
-            # Step 3: Record the launch
+            # Step 3: Record the launch (per-wallet)
             mint_address = result.get('mint', 'unknown')
-            self.launched_today.append({
+            if creator_key not in self.launched_today:
+                self.launched_today[creator_key] = []
+            self.launched_today[creator_key].append({
                 "keyword": keyword,
                 "mint": mint_address,
                 "timestamp": datetime.utcnow()
             })
+            wallet_count = len(self.launched_today[creator_key])
+            total_count = sum(len(v) for v in self.launched_today.values())
+            self.logger.info(f"📊 Launch recorded: {creator_label} now at {wallet_count}/{self.max_daily_launches} (total: {total_count})")
             self._set_cooldown(keyword)
             self._save_launch(keyword, mint_address, name=pack['name'], symbol=pack['ticker'])
             
