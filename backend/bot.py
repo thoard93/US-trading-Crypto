@@ -246,6 +246,24 @@ async def launch(ctx, *, keyword: str):
         await ctx.send("📢 **Social Hype Engine** starting... Building community presence.")
         asyncio.create_task(engagement_framer.farm_engagement(launch_res['mint'], count=3))
         
+        # Trigger Volume Simulation (same as auto-launcher)
+        await ctx.send("📊 **Volume Simulation** starting... 10 rounds × 0.01 SOL")
+        
+        async def discord_vol_callback(msg):
+            try:
+                await ctx.send(f"📊 {msg}")
+            except:
+                pass
+        
+        asyncio.create_task(trader.simulate_volume(
+            launch_res['mint'],
+            rounds=10,
+            sol_per_round=0.01,
+            delay_seconds=30,
+            callback=discord_vol_callback,
+            moon_bias=0.95
+        ))
+        
         # Record to database
         try:
             from database import SessionLocal
