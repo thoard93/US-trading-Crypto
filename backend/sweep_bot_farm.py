@@ -30,7 +30,7 @@ async def sell_all_tokens(trader: DexTrader, wallet_key: str):
     label = trader.wallet_manager.get_wallet_label(wallet_key)
     addr = trader.wallet_manager.get_public_address(wallet_key)
     
-    logger.info(f"🔍 [{label}] Scanning for tokens to sell...")
+    logger.info(f"🔍 [{label}] Scanning wallet {addr} for tokens...")
     
     # Temporarily switch trader to this wallet
     original_kp = trader.keypair
@@ -90,8 +90,12 @@ async def clean_slate_sweep():
     support_keys = manager.get_all_support_keys()
     secondary_mains = manager.get_secondary_main_keys() # These are Dylan/Partner wallets
     
+    if not support_keys and not secondary_mains:
+        logger.warning("⚠️ No secondary or support wallets found! Check your .env file.")
+    
     logger.info(f"🛡️ PROTECTION: Dylan/Partner wallets will NOT be swept: {[manager.get_public_address(k)[:8] for k in secondary_mains]}")
     logger.info(f"🎯 DESTINATION: Primary wallet {primary_addr[:8]}...")
+    logger.info(f"📱 Found {len(support_keys)} support wallets to sweep.")
 
     # 2. SELL PHASE (Main + Supports)
     logger.info("\n=== PHASE 1: SELLING ALL TOKENS (CLEAN SLATE) ===")
@@ -126,15 +130,18 @@ async def clean_slate_sweep():
             resp = await client.get_balance(src_pubkey)
             balance = resp.value
             
-            if balance < 10000: # Less than 0.00001 SOL
+            # RENT EXEMPTION: We MUST leave enough SOL for the account to exist (~0.002 to 0.003 SOL)
+            # If we sweep everything, we get UiTransactionError(InsufficientFundsForRent)
+            rent_reserve = 3000000 # 0.003 SOL safe reserve
+            fee = 10000 # 0.00001 SOL fee
+            
+            sweep_amount = balance - rent_reserve - fee
+            
+            if sweep_amount <= 0:
+                logger.info(f"  [{label}] Balance too low to sweep (needs > 0.003 SOL). Found: {balance/1e9:.6f}")
                 continue
                 
-            fee = 10000 # Higher fee for guaranteed landing
-            sweep_amount = balance - fee
-            
-            if sweep_amount <= 0: continue
-            
-            logger.info(f"  [{label}] Sweeping {sweep_amount/1e9:.6f} SOL...")
+            logger.info(f"  [{label}] Sweeping {sweep_amount/1e9:.6f} SOL (Leaving 0.003 for rent)...")
             
             recent_blockhash = (await client.get_latest_blockhash()).value.blockhash
             
@@ -157,7 +164,10 @@ async def clean_slate_sweep():
 
     logger.info(f"\n🎉 CLEAN SLATE COMPLETE!")
     logger.info(f"💰 Total SOL Swept to Primary: {total_swept/1e9:.6f} SOL")
-    logger.info(f"🏠 Primary Wallet Balance: {await client.get_balance(dest_pubkey).value if hasattr(client.get_balance(dest_pubkey), 'value') else 'Check Solscan'} lamports")
+    
+    # Correctly await the balance call
+    final_resp = await client.get_balance(dest_pubkey)
+    logger.info(f"🏠 Primary Wallet Balance: {final_resp.value/1e9:.6f} SOL")
     
     await client.close()
 

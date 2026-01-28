@@ -351,40 +351,55 @@ class DexTrader:
             print(f"❌ Error in get_jupiter_quote: {e}")
             return None
     
-    def get_all_tokens(self):
-        """Fetch all SPL tokens held by the wallet."""
+    def get_all_tokens(self) -> Dict[str, float]:
+        """Fetch all SPL tokens (Standard and Token-2022) held by the wallet."""
         if not self.keypair: return {}
-        try:
-            headers = {"Content-Type": "application/json"}
-            payload = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "getTokenAccountsByOwner",
-                "params": [
-                    str(self.wallet_address),
-                    {"programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"},
-                    {"encoding": "jsonParsed"}
-                ]
-            }
-            resp = requests.post(self.rpc_url, json=payload, headers=headers, timeout=10)
-            data = resp.json()
-            
-            holdings = {}
-            if 'result' in data and 'value' in data['result']:
-                for item in data['result']['value']:
-                    info = item['account']['data']['parsed']['info']
-                    mint = info['mint']
-                    amount = float(info['tokenAmount']['uiAmount'])
-                    
-                    # Filter out tiny amounts (Dust) and SOL wrappers if strictly meme trading
-                    if amount > 0.00001 and mint != self.SOL_MINT:
-                        holdings[mint] = amount
-            
-            print(f"💰 Found {len(holdings)} existing tokens in wallet.")
-            return holdings
-        except Exception as e:
-            print(f"❌ Error fetching wallet holdings: {e}")
-            return {}
+        
+        programs = [
+            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA", # Standard SPL
+            "TokenzQdBNb9W18K1itX94TfC6jV09z9V696VR"        # Token-2022
+        ]
+        
+        holdings = {}
+        headers = {"Content-Type": "application/json"}
+        
+        for program_id in programs:
+            try:
+                payload = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "getTokenAccountsByOwner",
+                    "params": [
+                        str(self.wallet_address),
+                        {"programId": program_id},
+                        {"encoding": "jsonParsed"}
+                    ]
+                }
+                resp = requests.post(self.rpc_url, json=payload, headers=headers, timeout=10)
+                data = resp.json()
+                
+                if 'result' in data and 'value' in data['result']:
+                    found_in_prog = 0
+                    for item in data['result']['value']:
+                        try:
+                            info = item['account']['data']['parsed']['info']
+                            mint = info['mint']
+                            amount_info = info.get('tokenAmount', {})
+                            amount = float(amount_info.get('uiAmount', 0))
+                            
+                            # Filter out SOL wrappers (already handled by sweep)
+                            if amount > 0 and mint != self.SOL_MINT:
+                                holdings[mint] = holdings.get(mint, 0) + amount
+                                found_in_prog += 1
+                        except Exception:
+                            continue
+                    if found_in_prog > 0:
+                        prog_name = "SPL" if "Tokenkeg" in program_id else "Token-2022"
+                        print(f"💰 [{self.wallet_address[:8]}] Found {found_in_prog} tokens in {prog_name} program.")
+            except Exception as e:
+                print(f"⚠️ Error fetching {program_id[:8]} holdings for {self.wallet_address[:8]}: {e}")
+        
+        return holdings
 
     def create_pump_token(self, name, symbol, description, image_url, sol_buy_amount=0, use_jito=True, twitter='', telegram='', website='', payer_key=None):
         """
