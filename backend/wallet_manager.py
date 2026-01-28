@@ -1,3 +1,5 @@
+import os
+import random
 from typing import List, Optional
 from solders.keypair import Keypair
 from dotenv import load_dotenv
