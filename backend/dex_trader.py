@@ -192,19 +192,23 @@ class DexTrader:
             print("⚠️ curl_cffi not installed, falling back to standard requests. Run: pip install curl_cffi")
             return self._get_proxy_session()
     
-    def get_sol_balance(self):
-        """Get SOL balance of wallet."""
-        if not self.wallet_address:
+    # Phase 66: SOL Reserve Safety - Keep minimum for swap fees
+    SOL_RESERVE = 0.025  # Always keep at least 0.025 SOL for fees
+    
+    def get_sol_balance(self, wallet_address=None):
+        """Get SOL balance of a wallet. Uses main wallet if none specified."""
+        target_wallet = wallet_address or self.wallet_address
+        if not target_wallet:
             print(f"⚠️ DEBUG: get_sol_balance called with no wallet_address!")
             return 0
         
         try:
-            print(f"🔍 DEBUG: Checking balance for wallet {self.wallet_address[:8]}... via RPC {self.rpc_url[:40]}...")
+            print(f"🔍 DEBUG: Checking balance for wallet {target_wallet[:8]}... via RPC {self.rpc_url[:40]}...")
             response = requests.post(self.rpc_url, json={
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "getBalance",
-                "params": [self.wallet_address]
+                "params": [target_wallet]
             }, timeout=10)
             result = response.json()
             print(f"🔍 DEBUG: RPC response: {result}")
@@ -215,6 +219,12 @@ class DexTrader:
         except Exception as e:
             print(f"❌ Error getting balance: {e}")
             return 0
+    
+    def get_available_sol(self, wallet_address=None):
+        """Get spendable SOL after reserving for fees."""
+        balance = self.get_sol_balance(wallet_address)
+        available = max(0, balance - self.SOL_RESERVE)
+        return available
     
     def get_token_balance(self, token_mint):
         """Get SPL token balance. Returns dict with 'amount' (raw) and 'ui_amount' (normalized)."""
@@ -397,6 +407,15 @@ class DexTrader:
 
         if not op_keypair:
             return {"error": "Wallet not initialized"}
+        
+        # Phase 66: SOL Reserve Safety Check
+        # Token creation needs ~0.02 SOL for account creation + priority fee
+        creation_fee = 0.025
+        required_sol = creation_fee + sol_buy_amount + self.SOL_RESERVE
+        available_sol = self.get_available_sol(op_wallet) + self.SOL_RESERVE  # Add reserve back since we're calculating total
+        if available_sol < required_sol:
+            print(f"⚠️ Wallet {op_wallet[:8]}... has only {available_sol:.4f} SOL (need {required_sol:.4f} for create)")
+            return {"error": f"Insufficient SOL for token creation: {available_sol:.4f} available, need {required_sol:.4f}"}
             
         try:
             import json
@@ -1476,6 +1495,13 @@ class DexTrader:
 
         if not op_keypair:
             return {"error": "Wallet not initialized"}
+        
+        # Phase 66: SOL Reserve Safety Check
+        available_sol = self.get_available_sol(op_wallet)
+        required_sol = sol_amount + 0.001  # Buy amount + estimated fees
+        if available_sol < sol_amount:
+            print(f"⚠️ Wallet {op_wallet[:8]}... has only {available_sol:.4f} SOL available (need {required_sol:.4f})")
+            return {"error": f"Insufficient SOL: {available_sol:.4f} available, need {required_sol:.4f} (reserve: {self.SOL_RESERVE})"}
         
         import json
         
