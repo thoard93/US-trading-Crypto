@@ -246,23 +246,65 @@ async def launch(ctx, *, keyword: str):
         await ctx.send("📢 **Social Hype Engine** starting... Building community presence.")
         asyncio.create_task(engagement_framer.farm_engagement(launch_res['mint'], count=3))
         
-        # Trigger Volume Simulation (same as auto-launcher)
-        await ctx.send("📊 **Volume Simulation** starting... 10 rounds × 0.01 SOL")
+        # Trigger Volume Simulation (multi-wallet, same as auto-launcher)
+        # Get all wallets except the creator (main wallet for manual launches)
+        import random
         
-        async def discord_vol_callback(msg):
-            try:
-                await ctx.send(f"📊 {msg}")
-            except:
-                pass
+        all_keys = []
+        if hasattr(trader, 'wallet_manager') and trader.wallet_manager:
+            all_keys = trader.wallet_manager.get_all_keys() or []
         
-        asyncio.create_task(trader.simulate_volume(
-            launch_res['mint'],
-            rounds=10,
-            sol_per_round=0.01,
-            delay_seconds=30,
-            callback=discord_vol_callback,
-            moon_bias=0.95
-        ))
+        # For manual launches, creator is the main wallet - filter it out
+        main_key = trader.wallet_manager.get_main_key() if hasattr(trader, 'wallet_manager') and trader.wallet_manager else None
+        sim_wallets = [k for k in all_keys if k != main_key] if main_key else all_keys
+        
+        if not sim_wallets:
+            # Fallback: at least use one wallet
+            await ctx.send("📊 **Volume Simulation** starting with 1 wallet...")
+            async def discord_vol_callback(msg):
+                try:
+                    await ctx.send(f"📊 {msg}")
+                except:
+                    pass
+            asyncio.create_task(trader.simulate_volume(
+                launch_res['mint'],
+                rounds=10,
+                sol_per_round=0.01,
+                delay_seconds=30,
+                callback=discord_vol_callback,
+                moon_bias=0.95
+            ))
+        else:
+            await ctx.send(f"📊 **Volume Simulation** starting with {len(sim_wallets)} wallets...")
+            
+            for wallet_idx, wallet_key in enumerate(sim_wallets):
+                wallet_label = f"W{wallet_idx+1}"
+                
+                # Only W1 sends Discord updates to avoid spam
+                def make_callback(label, send_to_discord):
+                    if send_to_discord:
+                        async def cb(msg):
+                            try:
+                                await ctx.send(f"📊 [{label}] {msg}")
+                            except:
+                                pass
+                        return cb
+                    return None
+                
+                # Randomize moon_bias per wallet for organic look (88-96%)
+                wallet_moon_bias = round(random.uniform(0.88, 0.96), 2)
+                send_discord = (wallet_idx == 0)
+                
+                asyncio.create_task(trader.simulate_volume(
+                    launch_res['mint'],
+                    rounds=10,
+                    sol_per_round=0.01,
+                    delay_seconds=30,
+                    callback=make_callback(wallet_label, send_discord),
+                    moon_bias=wallet_moon_bias,
+                    ticker=f"{result['ticker']}-{wallet_label}",
+                    payer_key=wallet_key
+                ))
         
         # Record to database
         try:
