@@ -1713,14 +1713,23 @@ class DexTrader:
         total_bought = 0
         total_sold = 0
         
-        # Get initial balance
-        initial_balance = self.get_token_balance(mint_address).get('ui_amount', 0)
+        # Resolve payer wallet for balance checks
+        payer_wallet = self.wallet_address
+        if payer_key:
+            try:
+                from solders.keypair import Keypair
+                payer_wallet = str(Keypair.from_base58_string(payer_key).pubkey())
+            except:
+                pass
+        
+        # Get initial balance (for the correct payer wallet)
+        initial_balance = self._get_wallet_token_balance(payer_wallet, mint_address).get('ui_amount', 0)
         await notify(f"Initial balance: {initial_balance:.0f} tokens")
         
         for i in range(rounds):
             try:
-                # Get balance BEFORE buy
-                pre_buy_balance = self.get_token_balance(mint_address).get('ui_amount', 0)
+                # Get balance BEFORE buy (for the correct payer wallet)
+                pre_buy_balance = self._get_wallet_token_balance(payer_wallet, mint_address).get('ui_amount', 0)
                 
                 await notify(f"Round {i+1}/{rounds}: Buying {sol_per_round} SOL...")
                 
@@ -1735,16 +1744,16 @@ class DexTrader:
                     await asyncio.sleep(delay_seconds)
                     continue
                 
-                # Wait longer for balance to update with retries (Phase 62 Update)
+                # Wait longer for balance to update with retries (increased to 60 seconds)
                 tokens_bought = 0
-                for balance_check in range(15):  # Try up to 15 times (45 seconds total)
+                for balance_check in range(20):  # Try up to 20 times (60 seconds total)
                     await asyncio.sleep(3)  # Wait 3 seconds between checks
-                    post_buy_balance = self.get_token_balance(mint_address).get('ui_amount', 0)
+                    post_buy_balance = self._get_wallet_token_balance(payer_wallet, mint_address).get('ui_amount', 0)
                     tokens_bought = post_buy_balance - pre_buy_balance
                     if tokens_bought > 0:
                         break
-                    if (balance_check + 1) % 3 == 0:
-                        await notify(f"⏳ Still waiting for balance update... ({balance_check+1}/15)")
+                    if (balance_check + 1) % 4 == 0:
+                        await notify(f"⏳ Still waiting for balance update... ({balance_check+1}/20)")
                 
                 # Apply Moon Bias: Sell only a portion of what was bought
                 tokens_to_sell = int(tokens_bought * moon_bias)
@@ -1754,7 +1763,7 @@ class DexTrader:
                 if tokens_to_sell <= 0:
                     # Increase fallback to 25% to prevent 'big bag' accumulation (Phase 62)
                     fallback_pct = 25.0  
-                    await notify(f"⚠️ Balance not updated after 45s, using safety fallback: selling {fallback_pct}% of holdings...")
+                    await notify(f"⚠️ Balance not updated after 60s, using safety fallback: selling {fallback_pct}% of holdings...")
                     sell_result = self.pump_sell(mint_address, token_amount_pct=fallback_pct, payer_key=payer_key)
                 else:
                     # Use pump_sell with calculated amount as percentage of CURRENT balance
@@ -1780,7 +1789,7 @@ class DexTrader:
                 continue
         
         # Report final balance vs initial
-        final_balance = self.get_token_balance(mint_address).get('ui_amount', 0)
+        final_balance = self._get_wallet_token_balance(payer_wallet, mint_address).get('ui_amount', 0)
         position_change = final_balance - initial_balance
         
         await notify(f"✅ Volume simulation complete! {total_bought} buys, {total_sold} sells")
