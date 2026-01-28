@@ -369,7 +369,7 @@ async def helius_webhook(request: Request, background_tasks: BackgroundTasks):
         return {"status": "error", "message": str(e)}
 
 async def process_helius_data(transactions):
-    """Bridge the data to the AlertSystem/CopyTrader."""
+    """Bridge the data to the AlertSystem for self-buy detection only."""
     if bot_instance is None:
         logger.warning("⚠️ Bot instance not linked. Data dropped.")
         return
@@ -391,41 +391,16 @@ async def process_helius_data(transactions):
             logger.warning("⚠️ AlertSystem found but NOT READY after 30s. Data dropped.")
             return
 
-        # 1. Update activity cache in CopyTrader (for BUYs)
-        added = alert_system.copy_trader.process_transactions(transactions)
+        # Whale tracking disabled - copy_trader removed
+        # Only keep self-buy detection for token creation monitoring
         
-        # 1b. Feed data to MoversTracker for momentum detection
-        try:
-            from movers_tracker import get_movers_tracker
-            tracker = get_movers_tracker()
-            tracker.process_transactions(transactions)
-        except Exception as e:
-            pass  # Non-critical, don't log every time
-        
-        # 1c. SELF-BUY DETECTION: Trigger instant sync if we see our own wallet trading
+        # SELF-BUY DETECTION: Trigger instant sync if we see our own wallet trading
         my_wallets = {t.wallet_address for t in alert_system.dex_traders if hasattr(t, 'wallet_address')}
         for tx in transactions:
             if tx.get('feePayer') in my_wallets:
                 logger.info(f"💎 SELF-BUY DETECTED: Triggering immediate sync for {tx.get('feePayer')[:8]}...")
                 asyncio.create_task(alert_system.sync_all_dex_positions())
-                break # One sync is enough per batch
-        
-        # 1d. Track whale activity (Offloaded to thread to avoid blocking heartbeat)
-        for tx in transactions:
-            wallet = tx.get('feePayer')
-            if wallet and wallet in alert_system.copy_trader.qualified_wallets:
-                asyncio.create_task(alert_system.run_sync(alert_system.copy_trader.update_whale_activity, wallet))
-        
-        # 2. INSTANT EXIT DETECTION
-        held_tokens = set()
-        for trader in alert_system.dex_traders:
-            held_tokens.update(trader.positions.keys())
-            
-        if held_tokens:
-            sell_signals = alert_system.copy_trader.detect_whale_sells(transactions, held_tokens)
-            for mint in sell_signals:
-                logger.warning(f"🚨 INSTANT EXIT TRIGGERED FOR: {mint[:16]}...")
-                await alert_system.trigger_instant_exit(mint)
+                break  # One sync is enough per batch
         
     except Exception as e:
         logger.error(f"❌ Error processing webhook data: {e}")
