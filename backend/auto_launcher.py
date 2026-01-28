@@ -41,7 +41,7 @@ class AutoLauncher:
         
         # Volume simulation settings - ENABLED BY DEFAULT FOR AUTOPILOT
         self.volume_sim_enabled = os.getenv('AUTO_LAUNCH_VOLUME_SIM', 'true').lower() == 'true'
-        self.volume_sim_rounds = int(os.getenv('AUTO_LAUNCH_VOLUME_ROUNDS', '10'))
+        self.volume_sim_rounds = int(os.getenv('AUTO_LAUNCH_VOLUME_ROUNDS', '5'))  # Phase 66: Lowered to 5 for cost savings
         self.volume_sim_amount = float(os.getenv('AUTO_LAUNCH_VOLUME_AMOUNT', '0.01'))
         self.volume_sim_delay = int(os.getenv('AUTO_LAUNCH_VOLUME_DELAY', '30'))
         
@@ -61,24 +61,45 @@ class AutoLauncher:
         # Rotate token creation across wallets for authentic trading history
         self._creation_wallet_index = 0
         self._wallet_creation_counts = {}  # key -> creation count
-        self.support_wallet_creation_limit = 2  # Support wallets create max 2 tokens (for organic look)
+        
+        # Phase 66: Per-Wallet-Type Creation Limits
+        # Primary main (SOLANA_PRIVATE_KEY): Uses max_daily_launches (10)
+        # Secondary mains (SOLANA_MAIN_KEYS): Lower limit to share costs
+        # Support wallets: Minimal creation for organic appearance
+        self.secondary_main_limit = int(os.getenv('SECONDARY_MAIN_LIMIT', '5'))  # Dylan's wallet limit
+        self.support_wallet_creation_limit = int(os.getenv('SUPPORT_WALLET_LIMIT', '2'))
     
     def _get_next_creation_wallet(self):
         """
-        Smart wallet selection for token creation:
-        - Main wallets: Unlimited creation
-        - Support wallets: Limited to self.support_wallet_creation_limit tokens for organic appearance
+        Smart wallet selection for token creation with differentiated limits:
+        - Primary main (first SOLANA_PRIVATE_KEY): max_daily_launches (10)
+        - Secondary mains (SOLANA_MAIN_KEYS): secondary_main_limit (5)
+        - Support wallets: support_wallet_creation_limit (2)
         """
         if not self.dex_trader or not hasattr(self.dex_trader, 'wallet_manager'):
             return None
         
         wm = self.dex_trader.wallet_manager
-        main_keys = wm.get_all_main_keys() or []
+        primary_key = wm.primary_key  # Your main wallet
+        secondary_keys = wm.get_secondary_main_keys() or []  # Dylan's wallet(s)
         support_keys = wm.get_all_support_keys() or []
         
-        # Build candidate list: all main wallets + support wallets under limit
-        candidates = list(main_keys)  # Main wallets are always candidates
+        # Build candidate list with per-wallet-type limits
+        candidates = []
         
+        # Primary main: max_daily_launches (10)
+        if primary_key:
+            count = self._wallet_creation_counts.get(primary_key, 0)
+            if count < self.max_daily_launches:
+                candidates.append(primary_key)
+        
+        # Secondary mains: secondary_main_limit (5)
+        for sk in secondary_keys:
+            count = self._wallet_creation_counts.get(sk, 0)
+            if count < self.secondary_main_limit:
+                candidates.append(sk)
+        
+        # Support wallets: support_wallet_creation_limit (2)
         for sk in support_keys:
             count = self._wallet_creation_counts.get(sk, 0)
             if count < self.support_wallet_creation_limit:
@@ -139,13 +160,27 @@ class AutoLauncher:
         return self.get_status()
     
     def _reset_daily_counter(self):
-        """Reset daily launch counters at midnight (per-wallet)."""
+        """Reset daily launch counters at midnight.
+        Note: Support wallet creation counts are LIFETIME, not daily - they never reset.
+        """
         today = datetime.utcnow().date()
         if today > self._last_reset:
-            self.launched_today = {}  # Reset all wallet counters
-            self._wallet_creation_counts = {}  # Also reset support wallet creation limits
+            self.launched_today = {}  # Reset daily launch tracking
+            
+            # Only reset MAIN wallet creation counts, keep support wallet counts
+            # Support wallets have a LIFETIME limit (e.g., 2 total ever)
+            if hasattr(self, 'dex_trader') and hasattr(self.dex_trader, 'wallet_manager'):
+                wm = self.dex_trader.wallet_manager
+                support_keys = set(wm.get_all_support_keys() or [])
+                # Preserve support wallet counts, reset main wallet counts
+                preserved = {k: v for k, v in self._wallet_creation_counts.items() if k in support_keys}
+                self._wallet_creation_counts = preserved
+            else:
+                # No wallet manager yet, just reset (will be populated on first use)
+                self._wallet_creation_counts = {}
+            
             self._last_reset = today
-            self.logger.info("🔄 Daily launch counters reset (all wallets)")
+            self.logger.info("🔄 Daily launch counters reset (main wallets only, support limits preserved)")
     
     def _check_cooldown(self, keyword):
         """Check if keyword is on cooldown."""

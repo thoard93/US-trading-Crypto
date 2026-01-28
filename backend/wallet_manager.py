@@ -80,6 +80,11 @@ class WalletManager:
             return None
         return random.choice(self.main_keys)
 
+    def get_secondary_main_keys(self) -> List[str]:
+        """Return secondary main wallets (SOLANA_MAIN_KEYS, excluding primary).
+        Used for differentiated limits - e.g., Dylan's wallet gets lower daily limit."""
+        return self.main_keys[1:] if len(self.main_keys) > 1 else []
+
     # === Support Wallet Methods ===
     
     def get_random_support_key(self) -> Optional[str]:
