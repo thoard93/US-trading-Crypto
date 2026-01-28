@@ -6,15 +6,10 @@ import asyncio
 import datetime
 import logging
 
-from collectors.crypto_collector import CryptoCollector
-# from collectors.stock_collector import StockCollector  # Disabled: alpaca not used
-# from analysis.technical_engine import TechnicalAnalysis  # Disabled: pandas_ta incompatible with Python 3.11
-from trading_executive import TradingExecutive
 from collectors.dex_scout import DexScout
 from analysis.safety_checker import SafetyChecker
 from database import SessionLocal
 import models
-from analysis.copy_trader import SmartCopyTrader
 
 # Auto-Launch Pipeline (Phase 7)
 try:
@@ -26,14 +21,8 @@ except ImportError as e:
     print(f"⚠️ Auto-Launch modules not available: {e}")
     AUTO_LAUNCH_AVAILABLE = False
 
-# Import Polymarket modules (optional - may not be installed)
-try:
-    from collectors.polymarket_collector import get_polymarket_collector
-    from analysis.polymarket_trader import get_polymarket_trader
-    POLYMARKET_ENABLED = True
-except ImportError as e:
-    print(f"⚠️ Polymarket disabled: {e}")
-    POLYMARKET_ENABLED = False
+# Polymarket disabled - modules removed
+POLYMARKET_ENABLED = False
 
 # Import DEX trader for automated Solana trading
 try:
@@ -55,25 +44,15 @@ logger = logging.getLogger(__name__)
 class AlertSystem(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        from collectors.crypto_collector import CryptoCollector
-        # Initialize collectors as None to safely defer loading
-        self.crypto = None 
-        self.stocks = None
-        self.analyzer = None  # TechnicalAnalysis() disabled - pandas_ta incompatible with Python 3.11
-        self.trader = None # Critical fix: Defer TradingExecutive which hangs
         self.dex_scout = DexScout()
         self.safety = SafetyChecker()
-        self.copy_trader = SmartCopyTrader()
-        self.processed_swarms = set() # Track processed swarm signals (mint + window_id)
-        self.active_swarm_locks = set() # EMERGENCY: Prevent parallel buy loops for same token
+        self.copy_trader = None  # Removed - whale tracking disabled
+        self.processed_swarms = set()
+        self.active_swarm_locks = set()
         
-        # Initialize Polymarket (Paper Mode by default)
+        # Polymarket removed
         self.polymarket_collector = None
         self.polymarket_trader = None
-        if POLYMARKET_ENABLED:
-            self.polymarket_collector = get_polymarket_collector()
-            self.polymarket_trader = get_polymarket_trader()
-            print(f"🎲 Polymarket Copy-Trader initialized (PAPER MODE)")
         
         # =========== TRADER INITIALIZATION (Deferred to cog_load) ===========
         self.ready = False # STATUS FLAG: Cog is registered but data is loading in background
@@ -310,13 +289,8 @@ class AlertSystem(commands.Cog):
             self.auto_launch_loop.start()
             print("🔥 Auto-Launch Pipeline Loop STARTED (every 20 min)")
 
-        # 📊 MOVERS RESEARCH LOOP (Phase 57) - Passive data collection
-        try:
-            from movers_tracker import auto_snapshot_loop
-            asyncio.create_task(auto_snapshot_loop())
-            print("📊 Movers Research Loop STARTED (snapshots every 10 min)")
-        except Exception as e:
-            print(f"⚠️ Movers research loop failed: {e}")
+        # Movers research removed
+        pass
 
         # ⚡ IMMEDIATE SYNC: Sync current positions on startup
         asyncio.create_task(self.sync_all_dex_positions())
