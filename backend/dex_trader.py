@@ -150,8 +150,7 @@ class DexTrader:
         if self.proxy_url:
             self.proxy_url = self.proxy_url.strip()
             print(f"🌐 Residential Proxy configured for pump.fun requests")
-    
-        return session
+
 
     def _simulate_transaction(self, signed_tx_base64: str) -> dict:
         """Simulate a transaction on-chain before submission."""
