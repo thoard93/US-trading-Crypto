@@ -9,6 +9,10 @@ from solders.system_program import transfer, TransferParams
 from solana.rpc.async_api import AsyncClient
 from solders.transaction import Transaction
 from solders.message import Message
+from dotenv import load_dotenv
+
+# Ensure .env is loaded
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 # Add parent dir to path for imports
 import sys
@@ -33,8 +37,15 @@ async def sell_all_tokens(trader: DexTrader, wallet_key: str):
     original_addr = trader.wallet_address
     
     try:
-        trader.keypair = Keypair.from_base58_string(wallet_key)
-        trader.wallet_address = str(trader.keypair.pubkey())
+        if not wallet_key:
+            return
+            
+        try:
+            trader.keypair = Keypair.from_base58_string(wallet_key)
+            trader.wallet_address = str(trader.keypair.pubkey())
+        except Exception as e:
+            logger.error(f"  ❌ [{label}] Invalid private key: {e}")
+            return
         
         holdings = trader.get_all_tokens()
         if not holdings:
@@ -44,7 +55,7 @@ async def sell_all_tokens(trader: DexTrader, wallet_key: str):
         for mint, amount in holdings.items():
             logger.info(f"  [{label}] Selling {amount} of {mint[:8]}...")
             # Use pump_sell for our created tokens
-            result = trader.pump_sell(mint, percentage=100, payer_key=wallet_key)
+            result = trader.pump_sell(mint, token_amount_pct=100, payer_key=wallet_key)
             if result and result.get('success'):
                 logger.info(f"  ✅ [{label}] Sold {mint[:8]}")
             else:
@@ -69,6 +80,10 @@ async def clean_slate_sweep():
     trader = DexTrader()
     
     primary_key = manager.get_main_key()
+    if not primary_key:
+        logger.error("❌ CRITICAL: SOLANA_PRIVATE_KEY not found in .env! Cannot sweep without a destination.")
+        return
+        
     primary_addr = manager.get_public_address(primary_key)
     
     # 1. IDENTIFY TARGETS

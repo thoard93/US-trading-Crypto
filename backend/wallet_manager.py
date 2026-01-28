@@ -1,7 +1,9 @@
-import os
-import random
 from typing import List, Optional
 from solders.keypair import Keypair
+from dotenv import load_dotenv
+
+# Ensure .env is loaded from the backend directory
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 class WalletManager:
     """
@@ -151,5 +153,10 @@ class WalletManager:
             if cached_addr == address or key == address_or_key:
                 return f"Support {idx + 1}"
         
-        # Fallback: show shortened address
+        # Fallback: show shortened address or placeholder
+        if not address or address == "unknown":
+            return "Unknown"
+        if len(address) < 8:
+            return address
+            
         return f"{address[:4]}...{address[-4:]}"
