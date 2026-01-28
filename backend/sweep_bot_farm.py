@@ -7,7 +7,8 @@ from typing import List, Dict
 from solders.keypair import Keypair
 from solders.system_program import transfer, TransferParams
 from solana.rpc.async_api import AsyncClient
-from solana.transaction import Transaction
+from solders.transaction import Transaction
+from solders.message import Message
 
 # Add parent dir to path for imports
 import sys
@@ -121,15 +122,18 @@ async def clean_slate_sweep():
             logger.info(f"  [{label}] Sweeping {sweep_amount/1e9:.6f} SOL...")
             
             recent_blockhash = (await client.get_latest_blockhash()).value.blockhash
-            txn = Transaction(recent_blockhash=recent_blockhash)
-            txn.add(transfer(TransferParams(
+            
+            # Use solders-style transaction building for better compatibility
+            instruction = transfer(TransferParams(
                 from_pubkey=src_pubkey,
                 to_pubkey=dest_pubkey,
                 lamports=sweep_amount
-            )))
+            ))
             
-            txn.sign(kp)
-            send_resp = await client.send_raw_transaction(txn.serialize())
+            message = Message([instruction], src_pubkey)
+            txn = Transaction([kp], message, recent_blockhash)
+            
+            send_resp = await client.send_raw_transaction(bytes(txn))
             logger.info(f"  ✅ Swept! TX: {send_resp.value[:12]}...")
             total_swept += sweep_amount
             
