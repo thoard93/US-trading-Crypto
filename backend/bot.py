@@ -1,10 +1,12 @@
+"""
+DEGEN DEX Discord Bot - Meme Token Creation Commands
+Focused on launching tokens on Pump.fun with AI-generated concepts.
+"""
 import os
 import discord
 import asyncio
 from discord.ext import commands
 from dotenv import load_dotenv
-from collectors.crypto_collector import CryptoCollector
-# from analysis.technical_engine import TechnicalAnalysis  # Disabled: pandas_ta not compatible with Python 3.11
 from analysis.safety_checker import SafetyChecker
 from alerts import AlertSystem
 from meme_creator import MemeCreator
@@ -12,21 +14,18 @@ from dex_trader import DexTrader
 from engagement_framer import EngagementFramer
 import re
 
-# Load environment variables (Robust pathing)
+# Load environment variables
 script_dir = os.path.dirname(os.path.abspath(__file__))
 env_path = os.path.join(script_dir, '.env')
 load_dotenv(env_path)
 TOKEN = os.getenv('DISCORD_TOKEN', '').strip()
 
-# DEBUG: Print token info (Safe)
 if TOKEN:
     print(f"🔑 Discord Token Loaded: {TOKEN[:4]}...{TOKEN[-4:]} (Length: {len(TOKEN)})")
 else:
     print("❌ Critical: DISCORD_TOKEN is missing or empty!")
 
 # Initialize components
-crypto = CryptoCollector()
-# analyzer = TechnicalAnalysis()  # Disabled: pandas_ta not compatible with Python 3.11
 safety = SafetyChecker()
 meme_gen = MemeCreator()
 trader = DexTrader()
@@ -37,34 +36,45 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix='!', intents=intents, help_command=None)
 
+
+class DegenBot(commands.Cog):
+    """Cog wrapper for the bot to allow dependency injection."""
+    
+    def __init__(self, trader_instance, launcher_instance=None, hunter_instance=None):
+        self.trader = trader_instance
+        self.launcher = launcher_instance
+        self.hunter = hunter_instance
+    
+    async def start(self, token):
+        """Start the bot with the given token."""
+        await bot.start(token)
+
+
 @bot.event
 async def on_ready():
-    # Ensure DB is initialized before anything else
     from database import init_db
     init_db()
     
     print(f'Logged in as {bot.user.name} (ID: {bot.user.id})')
-    print('US trading Crypto bot is online!')
-    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="the markets 📈"))
+    print('🚀 DEGEN DEX Token Creation Bot is online!')
+    await bot.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="the charts 📈"))
+    
     # Load the AlertSystem cog
     if not bot.get_cog('AlertSystem'):
-        # Instantiate FIRST, then add. 
-        # Since AlertSystem now has a non-blocking cog_load, this is safe.
         await bot.add_cog(AlertSystem(bot))
         print("✅ Alert system registered.")
-        # Diagnostic: List all loaded cogs to verify registration
-        cogs = list(bot.cogs.keys())
-        print(f"📦 Loaded Cogs: {cogs}")
+
 
 @bot.command()
 async def ping(ctx):
     """Check if the bot is alive."""
     await ctx.send(f'🏓 Pong! Latency: {round(bot.latency * 1000)}ms')
 
+
 @bot.command()
-async def check(ctx, address: str, chain: str = "ETH"):
-    """Check token safety/rugpull risk (e.g., !check 0x... ETH)."""
-    chain_id = safety.chain_map.get(chain.upper(), "1")
+async def check(ctx, address: str, chain: str = "SOL"):
+    """Check token safety/rugpull risk (e.g., !check 0x... SOL)."""
+    chain_id = safety.chain_map.get(chain.upper(), "solana")
     await ctx.send(f"🛡️ Auditing token safety on **{chain.upper()}**... please wait.")
     
     result = await safety.check_token(address, chain_id)
@@ -90,72 +100,24 @@ async def check(ctx, address: str, chain: str = "ETH"):
     embed.set_footer(text="Data provided by GoPlus Security API")
     await ctx.send(embed=embed)
 
-@bot.command()
-async def analyze(ctx, symbol: str):
-    """Analyze a crypto pair (e.g., !analyze BTC/USDT)."""
-    # Auto-format to uppercase and ensure /USDT if not provided
-    symbol = symbol.strip()
-    
-    # Check if this is a contract address (long string)
-    if len(symbol) > 30:
-        await ctx.send(f"⚠️ `{symbol}` looks like a contract address. For DEX tokens, please use **`!track {symbol}`** instead!")
-        return
-
-    symbol = symbol.upper()
-    if '/' not in symbol:
-        symbol = f"{symbol}/USDT"
-
-    await ctx.send(f"🔍 Analyzing **{symbol}**... please wait.")
-    # TechnicalAnalysis disabled due to pandas_ta incompatibility with Python 3.11
-    await ctx.send(f"⚠️ The `!analyze` command is temporarily disabled on the VPS. Use DEX tracking instead!")
-    return
-    
-    # Original code commented out:
-    # data = crypto.fetch_ohlcv(symbol, timeframe='1h', limit=100)
-    # if data is None:
-    #     await ctx.send(f"❌ Error: Could not find data for `{symbol}`. Make sure it's a valid pair on Binance.")
-    #     return
-    #
-    # result = analyzer.analyze_trend(data)
-    # 
-    # color = discord.Color.blue()
-    # if result['signal'] == "BUY": color = discord.Color.green()
-    # elif result['signal'] == "SELL": color = discord.Color.red()
-    #
-    # embed = discord.Embed(title=f"📊 Market Analysis: {symbol}", color=color)
-    # embed.add_field(name="Current Price", value=f"${result['price']:.8f}", inline=True)
-    # embed.add_field(name="RSI (14)", value=result['rsi'], inline=True)
-    # embed.add_field(name="Signal", value=f"**{result['signal']}**", inline=False)
-    # embed.add_field(name="Reasoning", value=result['reason'], inline=False)
-    # embed.set_footer(text="Analysis based on 1h timeframe")
-    # 
-    # await ctx.send(embed=embed)
 
 @bot.command()
 async def help(ctx):
     """Custom help command."""
-    # Only respond in trading channels
-    TRADING_CHANNEL_IDS = [1456078814567202960, 1456078864684945531, 1456439911896060028]
-    if ctx.channel.id not in TRADING_CHANNEL_IDS:
-        return  # Silently ignore in non-trading channels
-    
     embed = discord.Embed(
-        title="🤖 US trading Crypto Bot Help",
-        description="Here are the available commands:",
-        color=discord.Color.blue()
+        title="🚀 DEGEN DEX - Token Creation Bot",
+        description="Commands for launching meme tokens on Pump.fun",
+        color=discord.Color.purple()
     )
     embed.add_field(name="`!ping`", value="Check bot latency.", inline=False)
-    embed.add_field(name="`!analyze [symbol]`", value="Get a technical analysis report (e.g., `!analyze BTC`).", inline=False)
-    embed.add_field(name="`!check [address] [chain]`", value="Scan a token for rugpull risks (Chains: `ETH`, `BSC`, `ARB`, `BASE`).", inline=False)
-    embed.add_field(name="`!track [address] [chain]`", value="Monitor a DEX token by contract address (Default: `solana`).", inline=False)
-    embed.add_field(name="`!scan`", value="Trigger an immediate market scan summary.", inline=False)
-    embed.add_field(name="`!balance`", value="Check your Kraken USDT balance.", inline=False)
-    embed.add_field(name="`!trends`", value="🔥 Show current Pump.fun trending themes for launch ideas.", inline=False)
-    embed.add_field(name="`!launch [keyword]`", value="🚀 Launch an AI-generated meme coin on pump.fun (e.g., `!launch Blue Whale`).", inline=False)
-    embed.add_field(name="`!pump [mint] [rounds] [sol] [delay]`", value="📊 Run volume simulation on existing token.", inline=False)
-    embed.add_field(name="`!autolaunch [on/off/status]`", value="🤖 Manage the automatic trend-discovery and launch pipeline.", inline=False)
-    embed.set_footer(text="Short-term trading assistant | GoPlus & CCXT")
+    embed.add_field(name="`!check [address] [chain]`", value="Scan a token for rugpull risks.", inline=False)
+    embed.add_field(name="`!trends`", value="🔥 Show current trending themes for launch ideas.", inline=False)
+    embed.add_field(name="`!launch [keyword]`", value="🚀 Launch an AI-generated meme coin on pump.fun.", inline=False)
+    embed.add_field(name="`!pump [mint] [rounds] [sol] [delay]`", value="📊 Run volume simulation on a token.", inline=False)
+    embed.add_field(name="`!autolaunch [on/off/status]`", value="🤖 Manage the automatic trend-discovery pipeline.", inline=False)
+    embed.set_footer(text="DEGEN DEX | Pump.fun Token Launcher")
     await ctx.send(embed=embed)
+
 
 @bot.command()
 async def trends(ctx):
@@ -166,33 +128,29 @@ async def trends(ctx):
     
     try:
         hunter = TrendHunter()
-        keywords = await asyncio.to_thread(hunter.get_trending_keywords, 15, True)  # with_source=True
+        keywords = await asyncio.to_thread(hunter.get_trending_keywords, 15, True)
         
         if not keywords:
             await ctx.send("❌ No trending keywords found. Try again later.")
             return
         
-        # Source icons
         source_icons = {
-            'pump': '🚀',      # Pump.fun
-            'twitter': '🐦',   # Twitter/X
-            'dex': '📊'        # DexScreener
+            'pump': '🚀',
+            'twitter': '🐦',
+            'dex': '📊'
         }
         
-        # Format as embed
         embed = discord.Embed(
             title="🔥 Trending Themes by Source",
             description="Keywords from Pump.fun 🚀, Twitter 🐦, and DexScreener 📊\nLaunch a variation with `!launch [keyword]`",
             color=discord.Color.orange()
         )
         
-        # Format keywords with source icons
         formatted = []
         for item in keywords:
             icon = source_icons.get(item['source'], '❓')
             formatted.append(f"{icon} `{item['keyword']}`")
         
-        # Split into two columns
         col1 = formatted[:8]
         col2 = formatted[8:15]
         
@@ -205,28 +163,28 @@ async def trends(ctx):
     except Exception as e:
         await ctx.send(f"❌ Error scanning trends: {e}")
 
+
 @bot.command()
 async def launch(ctx, *, keyword: str):
     """🚀 Launch an AI-generated meme coin on pump.fun (e.g., !launch Blue Whale)."""
-    # Log channel ID for debugging
     print(f"🚀 Launch command called in channel ID: {ctx.channel.id}")
         
-    # Parse optional SOL amount from end of keyword (e.g. !launch MyCoin 0.05)
-    sol_amount = 0.01  # Default
+    # Parse optional SOL amount from end of keyword
+    sol_amount = 0.01
     parts = keyword.rsplit(' ', 1)
     if len(parts) > 1:
         try:
             potential_amount = float(parts[1])
-            if 0.001 <= potential_amount <= 2.0: # Cap at 2 SOL for safety
+            if 0.001 <= potential_amount <= 2.0:
                 sol_amount = potential_amount
                 keyword = parts[0]
                 print(f"🚀 BUNDLE: Using manual volume: {sol_amount} SOL")
         except ValueError:
-            pass # Keep original keyword and default amount
+            pass
 
     await ctx.send(f"🧠 **AI Strategist**: Analyzing '{keyword}' for viral potential (Volume: {sol_amount} SOL)... 🧊")
     
-    # 1. Generate Meme Concept & Logo
+    # Generate Meme Concept & Logo
     result = await asyncio.to_thread(meme_gen.create_full_meme, keyword)
     
     if not result:
@@ -255,7 +213,7 @@ async def launch(ctx, *, keyword: str):
         
     await ctx.send("⚡ **DEPLOYING TO SOLANA MAINNET**... Hold your breath.")
     
-    # Step 2.1: Determine social links (Pinned vs Generated)
+    # Determine social links
     fixed_twitter = os.getenv('AUTO_LAUNCH_X_HANDLE', '')
     fixed_tg = os.getenv('AUTO_LAUNCH_TG_LINK', '')
     
@@ -263,7 +221,7 @@ async def launch(ctx, *, keyword: str):
     twitter_link = fixed_twitter if fixed_twitter else f"https://x.com/{clean_name}_sol"
     tg_link = fixed_tg if fixed_tg else f"https://t.me/{clean_name}_portal"
     
-    # 2. Launch on-chain
+    # Launch on-chain
     launch_res = await asyncio.to_thread(
         trader.create_pump_token,
         name=result['name'],
@@ -284,11 +242,11 @@ async def launch(ctx, *, keyword: str):
         success_embed.add_field(name="Pump.fun", value=f"[View on Pump.fun](https://pump.fun/{launch_res['mint']})", inline=False)
         await ctx.send(embed=success_embed)
         
-        # Step 3: Trigger Engagement Farming (Phase 55)
+        # Trigger Engagement Farming
         await ctx.send("📢 **Social Hype Engine** starting... Building community presence.")
         asyncio.create_task(engagement_framer.farm_engagement(launch_res['mint'], count=3))
         
-        # 💾 RECORD TO DATABASE: Ensures manual launches show up in !tokens
+        # Record to database
         try:
             from database import SessionLocal
             from models import LaunchedKeyword
@@ -311,15 +269,14 @@ async def launch(ctx, *, keyword: str):
     else:
         await ctx.send(f"❌ **LAUNCH FAILED**: {launch_res.get('error', 'Unknown Error')}")
 
+
 @bot.command()
 async def pump(ctx, mint_address: str, rounds: int = 10, sol_per_round: float = 0.01, delay: int = 30, bias: float = 0.95):
-    """📊 Run volume simulation on existing token with Moon Bias (default 0.95). (e.g., !pump 6XZnFH8... 5 0.02 30)."""
-    # Validate mint address
+    """📊 Run volume simulation on existing token with Moon Bias."""
     if len(mint_address) < 32 or len(mint_address) > 50:
         await ctx.send("❌ Invalid mint address. Use the full token address from Pump.fun.")
         return
     
-    # Validate parameters
     if rounds < 1 or rounds > 20:
         await ctx.send("❌ Rounds must be between 1 and 20.")
         return
@@ -335,11 +292,9 @@ async def pump(ctx, mint_address: str, rounds: int = 10, sol_per_round: float = 
         f"_Watch the logs for real-time updates..._"
     )
     
-    # Discord callback for live updates
     async def discord_callback(msg):
         await ctx.send(f"📊 {msg}")
     
-    # Run simulation in background
     try:
         result = await trader.simulate_volume(
             mint_address,
@@ -361,32 +316,29 @@ async def pump(ctx, mint_address: str, rounds: int = 10, sol_per_round: float = 
     except Exception as e:
         await ctx.send(f"❌ Simulation error: {e}")
 
+
 async def start_services():
-    # 1. Start Webhook Listener (FastAPI)
+    """Start the Discord bot and Webhook Listener together."""
     import uvicorn
     from webhook_listener import app, set_bot_instance
     
-    # Link bot to listener for signal dispatch
     set_bot_instance(bot)
     
-    # Configure Server
-    # Render provides PORT environment variable
     port = int(os.getenv("PORT", 8000))
     config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
     server = uvicorn.Server(config)
     
     print(f"📡 Webhook Listener starting on port {port}...")
     
-    # 2. Run both
     await asyncio.gather(
         bot.start(TOKEN),
         server.serve()
     )
 
+
 if __name__ == '__main__':
     if TOKEN:
         try:
-            import asyncio
             asyncio.run(start_services())
         except KeyboardInterrupt:
             pass
