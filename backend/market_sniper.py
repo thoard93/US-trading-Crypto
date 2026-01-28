@@ -3,6 +3,7 @@ import os
 import logging
 import json
 import time
+import requests
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -131,7 +132,7 @@ class MarketSniper:
         # B. Advanced Safety Checks
         # 1. Holder Concentration Check
         top_holders_share = await self._get_holder_concentration(mint)
-        if top_holders_share > 0.30: # >30% in top 10 is risky
+        if top_holders_share > 0.25: # >25% in top 10 is risky (Grok Opt)
             logger.warning(f"🛡️ [SKIP] {token_data.get('symbol')} - High concentration: {top_holders_share*100:.1f}%")
             return False
             
@@ -269,9 +270,9 @@ class MarketSniper:
     async def _audit_held_positions(self):
         """CRITICAL FIX: Ensure every token we own is actively monitored for exit."""
         try:
-            # Only audit every 60 seconds to save RPC credits
+            # Faster audit (30s) for Elite Mode
             now = time.time()
-            if hasattr(self, '_last_audit_time') and now - self._last_audit_time < 60:
+            if hasattr(self, '_last_audit_time') and now - self._last_audit_time < 30:
                 return
             self._last_audit_time = now
 

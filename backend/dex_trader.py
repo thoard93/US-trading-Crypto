@@ -186,14 +186,19 @@ class DexTrader:
         except Exception as e:
             return {"error": f"Jito submission failed: {e}"}
 
-    def get_jito_tip_amount_lamports(self) -> int:
-        """Fetch real-time Jito tip floors and return a competitive value."""
+    def get_jito_tip_amount_lamports(self, priority: str = "standard") -> int:
+        """Fetch real-time Jito tip floors and return a value based on priority level."""
         try:
             resp = requests.get(JITO_TIP_PERCENTILES, timeout=5).json()
-            # We target the 50th percentile (land-able) for entry
-            # But add a small buffer to be sure
-            p50 = resp[0].get('ema_landed_tip_50p', 0.0001) if resp else 0.0001
-            tip_sol = max(0.0001, p50 * 1.1) 
+            if not resp: return 1000000 # 0.001 SOL fallback
+            
+            # Select percentile based on priority (Grok Opt)
+            if priority == "high":
+                target_tip = resp[0].get('ema_landed_tip_75p', 0.0005)
+            else:
+                target_tip = resp[0].get('ema_landed_tip_50p', 0.0001)
+                
+            tip_sol = max(0.0001, target_tip * 1.1) 
             return int(tip_sol * 1e9)
         except Exception:
             return 1000000 # 0.001 SOL fallback
@@ -1135,23 +1140,7 @@ class DexTrader:
             print(f"❌ Swap execution error: {e}")
             return {"error": str(e)}
     
-    def get_jito_tip_amount_lamports(self):
-        """Fetch dynamic tip amount from Jito API (returned in lamports)."""
-        try:
-            response = requests.get(JITO_TIP_FLOOR_URL, timeout=5)
-            if response.status_code == 200:
-                data = response.json()
-                if data and len(data) > 0:
-                    # Use 99th percentile for MAXIMUM priority (last attempt for pump.fun)
-                    tip_sol = data[0].get('landed_tips_99th_percentile', 0.005)
-                    # SAFE HARBOR V1: Lower minimum for cost preservation
-                    # Minimum 0.001 SOL (~$0.24) to stop the bleed
-                    # Max 0.008 SOL to cap standard costs
-                    tip_sol = max(0.001, min(0.008, tip_sol))
-                    return int(tip_sol * 1e9)
-        except Exception as e:
-            print(f"⚠️ Failed to fetch Jito tip floor: {e}")
-        return 1000000  # Default fallback: 0.001 SOL (1M lamports) - SAFE HARBOR
+    # Removed duplicate get_jito_tip_amount_lamports (Use definition at line 189)
     
     def execute_jito_bundle(self, token_mint, sol_amount):
         """
@@ -1538,7 +1527,7 @@ class DexTrader:
         
         return result
     
-    def pump_buy(self, mint_address, sol_amount=0.01, payer_key=None, use_jito=True, simulate=True):
+    def pump_buy(self, mint_address, sol_amount=0.01, payer_key=None, use_jito=True, simulate=True, slippage=25):
         """
         Buy a Pump.fun token with optional Jito Support and Simulation.
         """
@@ -1583,8 +1572,8 @@ class DexTrader:
                 'mint': mint_address,
                 'denominatedInSol': 'true',
                 'amount': sol_amount,
-                'slippage': 25,  # 25% slippage for volatile pump tokens
-                'priorityFee': 0.0001 if use_jito else 0.001, # Lower priority fee if using Jito bundles
+                'slippage': slippage,  # Use passed slippage
+                'priorityFee': 0.0001 if use_jito else 0.001, 
                 'pool': 'pump'
             }
             
@@ -1626,7 +1615,7 @@ class DexTrader:
             
             if use_jito:
                 tip_account = Pubkey.from_string(random.choice(JITO_TIP_ACCOUNTS))
-                tip_amount = 500000 # 0.0005 SOL tip
+                tip_amount = self.get_jito_tip_amount_lamports(priority="standard")
                 tip_instruction = transfer(TransferParams(
                     from_pubkey=Pubkey.from_string(op_wallet),
                     to_pubkey=tip_account,
@@ -1701,7 +1690,7 @@ class DexTrader:
             traceback.print_exc()
             return {"error": str(e)}
     
-    def pump_sell(self, mint_address, token_amount_pct=100, payer_key=None, use_jito=True, simulate=True):
+    def pump_sell(self, mint_address, token_amount_pct=100, payer_key=None, use_jito=True, simulate=True, slippage=25):
         """
         Sell a Pump.fun token with Jito Support and Simulation.
         token_amount_pct: Percentage of holdings to sell (default 100%)
@@ -1753,8 +1742,8 @@ class DexTrader:
                 'mint': mint_address,
                 'denominatedInSol': 'false',  # Amount in tokens
                 'amount': sell_amount,
-                'slippage': 50,  # 50% slippage for exit
-                'priorityFee': 0.0001 if use_jito else 0.005, # Higher for non-jito sells
+                'slippage': slippage,  # Use passed slippage
+                'priorityFee': 0.0001 if use_jito else 0.005, 
                 'pool': 'pump'
             }
             
@@ -1796,7 +1785,8 @@ class DexTrader:
             
             if use_jito:
                 tip_account = Pubkey.from_string(random.choice(JITO_TIP_ACCOUNTS))
-                tip_amount = 400000 
+                # Use high priority for sells to ensure we beat the crowd on the way out
+                tip_amount = self.get_jito_tip_amount_lamports(priority="high")
                 tip_instruction = transfer(TransferParams(
                     from_pubkey=Pubkey.from_string(op_wallet),
                     to_pubkey=tip_account,
@@ -1957,9 +1947,11 @@ class DexTrader:
                 else:
                     await notify(f"⚠️ Sell {i+1} failed: {sell_result.get('error', 'Unknown')}")
                 
-                # Wait before next round
+                # Wait before next round with randomized jitter (Grok Opt)
                 if i < rounds - 1:
-                    await asyncio.sleep(delay_seconds - 5)  # Account for the 5s we already waited
+                    jitter = random.uniform(0.8, 1.2)
+                    actual_delay = max(5, (delay_seconds * jitter) - 5)
+                    await asyncio.sleep(actual_delay)
                     
             except Exception as e:
                 await notify(f"❌ Round {i+1} error: {e}")

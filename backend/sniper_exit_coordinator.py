@@ -68,11 +68,22 @@ class SniperExitCoordinator:
                 if current_tier_idx < len(self.tiers):
                     target_mult, sell_pct = self.tiers[current_tier_idx]
                     if multiplier >= target_mult:
-                        logger.info(f"💰 TIER {current_tier_idx+1} HIT! ({multiplier:.2f}x >= {target_mult}x)")
-                        await self._execute_sell(mint, wallet_key, int(sell_pct * 100))
-                        current_tier_idx += 1
-                        if current_tier_idx >= len(self.tiers):
-                            return # Fully exited
+                        # Grok Opt: Momentum Check. If vertical growth, wait.
+                        if hasattr(self, '_last_mc') and (mc > self._last_mc * 1.1):
+                            logger.info(f"🚀 ROCKET DETECTED! Delaying sell to capture overshoot... (+10% in 5s)")
+                        else:
+                            logger.info(f"💰 TIER {current_tier_idx+1} HIT! ({multiplier:.2f}x >= {target_mult}x)")
+                            # Elite Mode: Adaptive Slippage based on MC
+                            current_slippage = 25
+                            if mc < 30000: current_slippage = 40
+                            elif mc < 60000: current_slippage = 30
+                            
+                            await self._execute_sell(mint, wallet_key, int(sell_pct * 100), slippage=current_slippage)
+                            current_tier_idx += 1
+                            if current_tier_idx >= len(self.tiers):
+                                return # Fully exited
+                
+                self._last_mc = mc
 
                 # 2. Check Initial Stop-Loss
                 if multiplier < (1 - self.stop_loss_pct):
@@ -119,7 +130,8 @@ class SniperExitCoordinator:
                 self.dex_trader.pump_sell,
                 mint,
                 token_amount_pct=percentage,
-                payer_key=wallet_key
+                payer_key=wallet_key,
+                slippage=slippage
             )
             if result and result.get('success'):
                 logger.info(f"✅ SELL SUCCESS: {percentage}% of {mint[:8]}")
