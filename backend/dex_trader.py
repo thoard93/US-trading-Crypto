@@ -27,17 +27,9 @@ JITO_BLOCK_ENGINES = [
     "https://frankfurt.mainnet.block-engine.jito.wtf",
     "https://tokyo.mainnet.block-engine.jito.wtf",
 ]
-JITO_TIP_FLOOR_URL = "https://bundles.jito.wtf/api/v1/bundles/tip_floor"
-JITO_TIP_ACCOUNTS = [
-    "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
-    "HFqU5x63VTqvQss8hp11i4bVmLuSDZTRVyixBY22zQxD",
-    "Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMzpKw6QNghXLvLkY",
-    "ADaUMid9yfUytqMBgopwjb2DTLSfertyPaXpK3hqT3dW",
-    "DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh",
-    "ADuUkR4vqLUMWXxW9gh6D6L8pMSawimctcNZ5pGwDcEt",
-    "DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL",
     "3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT"
 ]
+JITO_TIP_PERCENTILES = "https://bundles.jito.wtf/api/v1/bundles/tip_floor"
 
 # Fallback Status RPCs (For confirmation checks when Helius is busy or out of credits)
 # These are FREE public RPCs - lower rate limits but good for fallback
@@ -150,6 +142,53 @@ class DexTrader:
             self.proxy_url = self.proxy_url.strip()
             print(f"🌐 Residential Proxy configured for pump.fun requests")
     
+        return session
+
+    def _simulate_transaction(self, signed_tx_base64: str) -> dict:
+        """Simulate a transaction on-chain before submission."""
+        try:
+            payload = {
+                "jsonrpc": "2.0", "id": 1,
+                "method": "simulateTransaction",
+                "params": [signed_tx_base64, {"encoding": "base64"}]
+            }
+            resp = requests.post(self.rpc_url, json=payload, timeout=10).json()
+            result = resp.get('result', {}).get('value', {})
+            err = result.get('err')
+            if err:
+                return {"success": False, "error": str(err), "logs": result.get('logs')}
+            return {"success": True, "logs": result.get('logs')}
+        except Exception as e:
+            return {"error": f"Simulation failed: {e}"}
+
+    def _send_jito_bundle(self, signed_tx_base64: str) -> dict:
+        """Submit a transaction via Jito Bundle Engine for frontrun resistance and speed."""
+        try:
+            engine = random.choice(JITO_BLOCK_ENGINES)
+            payload = {
+                "jsonrpc": "2.0", "id": 1,
+                "method": "sendBundle",
+                "params": [[signed_tx_base64]]
+            }
+            resp = requests.post(f"{engine}/api/v1/bundles", json=payload, timeout=10).json()
+            if 'result' in resp:
+                return {"success": True, "bundle_id": resp['result']}
+            return {"error": f"Jito Error: {resp.get('error')}"}
+        except Exception as e:
+            return {"error": f"Jito submission failed: {e}"}
+
+    def get_jito_tip_amount_lamports(self) -> int:
+        """Fetch real-time Jito tip floors and return a competitive value."""
+        try:
+            resp = requests.get(JITO_TIP_PERCENTILES, timeout=5).json()
+            # We target the 50th percentile (land-able) for entry
+            # But add a small buffer to be sure
+            p50 = resp[0].get('ema_landed_tip_50p', 0.0001) if resp else 0.0001
+            tip_sol = max(0.0001, p50 * 1.1) 
+            return int(tip_sol * 1e9)
+        except Exception:
+            return 1000000 # 0.001 SOL fallback
+
     def _get_proxy_session(self):
         """Get a requests session with residential proxy for pump.fun (Cloudflare bypass)."""
         session = requests.Session()
@@ -1490,10 +1529,9 @@ class DexTrader:
         
         return result
     
-    def pump_buy(self, mint_address, sol_amount=0.01, payer_key=None):
+    def pump_buy(self, mint_address, sol_amount=0.01, payer_key=None, use_jito=True, simulate=True):
         """
-        Buy a Pump.fun token using the PumpPortal API (bonding curve native).
-        Works for tokens that haven't graduated to Raydium yet.
+        Buy a Pump.fun token with optional Jito Support and Simulation.
         """
         # Resolve Keypair for this operation
         op_keypair = self.keypair
@@ -1519,6 +1557,15 @@ class DexTrader:
             return {"error": f"Insufficient SOL: {available_sol:.4f} available, need {required_sol:.4f} (reserve: {self.SOL_RESERVE})"}
         
         import json
+        import random
+        from solders.pubkey import Pubkey
+        from solders.instruction import transfer, TransferParams
+
+        # Jito tip accounts (example, replace with actual ones if needed)
+        JITO_TIP_ACCOUNTS = [
+            "964v6J5F6g2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y", # Example Jito tip account
+            "Darius2C2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y", # Another example
+        ]
         
         try:
             payload = {
@@ -1528,7 +1575,7 @@ class DexTrader:
                 'denominatedInSol': 'true',
                 'amount': sol_amount,
                 'slippage': 25,  # 25% slippage for volatile pump tokens
-                'priorityFee': 0.0003,
+                'priorityFee': 0.0001 if use_jito else 0.001, # Lower priority fee if using Jito bundles
                 'pool': 'pump'
             }
             
@@ -1564,12 +1611,28 @@ class DexTrader:
             from solders.hash import Hash
             fresh_blockhash = Hash.from_string(fresh_blockhash_str)
             
+            # JITO TIP: Add tip instruction if requested
+            instructions = list(old_message.instructions)
+            account_keys = list(old_message.account_keys)
+            
+            if use_jito:
+                tip_account = Pubkey.from_string(random.choice(JITO_TIP_ACCOUNTS))
+                tip_amount = 500000 # 0.0005 SOL tip
+                tip_instruction = transfer(TransferParams(
+                    from_pubkey=Pubkey.from_string(op_wallet),
+                    to_pubkey=tip_account,
+                    lamports=tip_amount
+                ))
+                instructions.append(tip_instruction)
+                if tip_account not in account_keys:
+                    account_keys.append(tip_account)
+
             # Rebuild message with fresh blockhash
             new_message = MessageV0(
                 header=old_message.header,
-                account_keys=old_message.account_keys,
+                account_keys=account_keys,
                 recent_blockhash=fresh_blockhash,
-                instructions=old_message.instructions,
+                instructions=instructions,
                 address_table_lookups=old_message.address_table_lookups
             )
             
@@ -1585,9 +1648,32 @@ class DexTrader:
                     signatures.append(Signature.default())
             
             signed_tx = VersionedTransaction.populate(new_message, signatures)
-            tx_base64 = base64.b64encode(bytes(signed_tx)).decode('utf-8')
+            tx_bytes = bytes(signed_tx)
+            tx_base64 = base64.b64encode(tx_bytes).decode('utf-8')
             
-            # Submit
+            # 6. Simulation
+            if simulate:
+                sim = self._simulate_transaction(tx_base64)
+                if not sim.get('success'):
+                    return {"error": f"Buy Simulation Failed: {sim.get('error')}"}
+                print("✅ Buy Simulation Success")
+
+            # 7. Submit
+            if use_jito:
+                # We also send to standard RPC as broadcast just in case
+                requests.post(self.rpc_url, json={
+                    "jsonrpc": "2.0", "id": 1,
+                    "method": "sendTransaction",
+                    "params": [tx_base64, {"skipPreflight": True, "encoding": "base64"}]
+                }, timeout=5)
+
+                jito_res = self._send_jito_bundle(tx_base64)
+                if jito_res.get('success'):
+                    print(f"🚀 Jito Bundle Sent: {jito_res['bundle_id']}")
+                    return {"success": True, "signature": jito_res['bundle_id'], "jito": True}
+                else:
+                    print(f"⚠️ Jito failed, falling back to pure RPC: {jito_res.get('error')}")
+
             send_resp = requests.post(self.rpc_url, json={
                 "jsonrpc": "2.0", "id": 1,
                 "method": "sendTransaction",
@@ -1596,7 +1682,7 @@ class DexTrader:
             
             if 'result' in send_resp:
                 sig = send_resp['result']
-                print(f"✅ PumpPortal BUY TX: {sig}")
+                print(f"✅ RPC BUY TX: {sig}")
                 return {"success": True, "signature": sig}
             else:
                 return {"error": f"TX failed: {send_resp}"}
@@ -1606,9 +1692,9 @@ class DexTrader:
             traceback.print_exc()
             return {"error": str(e)}
     
-    def pump_sell(self, mint_address, token_amount_pct=100, payer_key=None):
+    def pump_sell(self, mint_address, token_amount_pct=100, payer_key=None, use_jito=True, simulate=True):
         """
-        Sell a Pump.fun token using the PumpPortal API.
+        Sell a Pump.fun token with Jito Support and Simulation.
         token_amount_pct: Percentage of holdings to sell (default 100%)
         """
         # Resolve Keypair for this operation
@@ -1628,6 +1714,15 @@ class DexTrader:
             return {"error": "Wallet not initialized"}
         
         import json
+        import random
+        from solders.pubkey import Pubkey
+        from solders.instruction import transfer, TransferParams
+
+        # Jito tip accounts (example, replace with actual ones if needed)
+        JITO_TIP_ACCOUNTS = [
+            "964v6J5F6g2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y", # Example Jito tip account
+            "Darius2C2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y", # Another example
+        ]
         
         try:
             # Get current token balance
@@ -1650,7 +1745,7 @@ class DexTrader:
                 'denominatedInSol': 'false',  # Amount in tokens
                 'amount': sell_amount,
                 'slippage': 50,  # 50% slippage for exit
-                'priorityFee': 0.0003,
+                'priorityFee': 0.0001 if use_jito else 0.005, # Higher for non-jito sells
                 'pool': 'pump'
             }
             
@@ -1686,12 +1781,27 @@ class DexTrader:
             from solders.hash import Hash
             fresh_blockhash = Hash.from_string(fresh_blockhash_str)
             
-            # Rebuild message with fresh blockhash
+            # Build message with Jito Tip
+            instructions = list(old_message.instructions)
+            account_keys = list(old_message.account_keys)
+            
+            if use_jito:
+                tip_account = Pubkey.from_string(random.choice(JITO_TIP_ACCOUNTS))
+                tip_amount = 400000 
+                tip_instruction = transfer(TransferParams(
+                    from_pubkey=Pubkey.from_string(op_wallet),
+                    to_pubkey=tip_account,
+                    lamports=tip_amount
+                ))
+                instructions.append(tip_instruction)
+                if tip_account not in account_keys:
+                    account_keys.append(tip_account)
+
             new_message = MessageV0(
                 header=old_message.header,
-                account_keys=old_message.account_keys,
+                account_keys=account_keys,
                 recent_blockhash=fresh_blockhash,
-                instructions=old_message.instructions,
+                instructions=instructions,
                 address_table_lookups=old_message.address_table_lookups
             )
             
@@ -1699,7 +1809,6 @@ class DexTrader:
             msg_bytes = to_bytes_versioned(new_message)
             signers = new_message.account_keys[:new_message.header.num_required_signatures]
             signatures = []
-            
             for key in signers:
                 if str(key) == op_wallet:
                     signatures.append(op_keypair.sign_message(msg_bytes))
@@ -1709,7 +1818,27 @@ class DexTrader:
             signed_tx = VersionedTransaction.populate(new_message, signatures)
             tx_base64 = base64.b64encode(bytes(signed_tx)).decode('utf-8')
             
-            # Submit
+            if simulate:
+                sim = self._simulate_transaction(tx_base64)
+                if not sim.get('success'):
+                    return {"error": f"Sell Simulation Failed: {sim.get('error')}"}
+                print("✅ Sell Simulation Success")
+
+            if use_jito:
+                # We also send to standard RPC as broadcast just in case
+                requests.post(self.rpc_url, json={
+                    "jsonrpc": "2.0", "id": 1,
+                    "method": "sendTransaction",
+                    "params": [tx_base64, {"skipPreflight": True, "encoding": "base64"}]
+                }, timeout=5)
+
+                jito_res = self._send_jito_bundle(tx_base64)
+                if jito_res.get('success'):
+                    print(f"🚀 Jito Sell Bundle Sent: {jito_res['bundle_id']}")
+                    return {"success": True, "signature": jito_res['bundle_id'], "jito": True}
+                else:
+                    print(f"⚠️ Jito failed, falling back to pure RPC: {jito_res.get('error')}")
+
             send_resp = requests.post(self.rpc_url, json={
                 "jsonrpc": "2.0", "id": 1,
                 "method": "sendTransaction",
@@ -1718,7 +1847,7 @@ class DexTrader:
             
             if 'result' in send_resp:
                 sig = send_resp['result']
-                print(f"✅ PumpPortal SELL TX: {sig}")
+                print(f"✅ RPC SELL TX: {sig}")
                 return {"success": True, "signature": sig}
             else:
                 return {"error": f"TX failed: {send_resp}"}

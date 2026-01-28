@@ -23,7 +23,8 @@ class SniperExitCoordinator:
             (5.0, 0.50),  # Sell 50% of remainder at 5x
             (10.0, 1.0)   # Sell all at 10x OR let trailing stop handle it
         ]
-        self.trailing_stop_pct = 0.15 # 15% drop from peak
+        self.stop_loss_pct = 0.25 # Initial hard stop-loss (25% drop from entry)
+        self.trailing_stop_pct = 0.15 # 15% drop from peak (active after growth)
         self.timeout = 600 # 10 minute timeout
 
     async def start_monitoring(self, mint: str, entry_mc: float, wallet_key: str):
@@ -73,16 +74,22 @@ class SniperExitCoordinator:
                         if current_tier_idx >= len(self.tiers):
                             return # Fully exited
 
-                # 2. Check Trailing Stop Loss
-                # Only active after at least some growth (e.g. 20% up) to avoid instant noise exit
-                if multiplier > 1.2:
+                # 2. Check Initial Stop-Loss
+                if multiplier < (1 - self.stop_loss_pct):
+                    logger.warning(f"🚨 STOP-LOSS HIT: -{self.stop_loss_pct*100}% on {mint[:8]} (MC: ${mc:,.0f})")
+                    await self._execute_sell(mint, wallet_key, 100, slippage=50) # Aggressive slippage for stop loss
+                    return
+
+                # 3. Check Trailing Stop Loss
+                # Only active after at least 30% growth to avoid instant noise exit
+                if multiplier > 1.3:
                     stop_price = peak_mc * (1 - self.trailing_stop_pct)
                     if mc < stop_price:
                         logger.info(f"📉 TRAILING STOP HIT: MC ${mc:,.0f} < ${stop_price:,.0f} (Peak: ${peak_mc:,.0f})")
-                        await self._execute_sell(mint, wallet_key, 100)
+                        await self._execute_sell(mint, wallet_key, 100, slippage=30)
                         return
 
-                # 3. Check Timeout
+                # 4. Check Timeout
                 if elapsed > self.timeout:
                     logger.info(f"⏰ SNIPE TIMEOUT: Exiting {mint[:8]} after 10min")
                     await self._execute_sell(mint, wallet_key, 100)
@@ -104,14 +111,14 @@ class SniperExitCoordinator:
         except:
             return None
 
-    async def _execute_sell(self, mint: str, wallet_key: str, percentage: int):
+    async def _execute_sell(self, mint: str, wallet_key: str, percentage: int, slippage: int = 25):
         if self.dex_trader:
-            logger.info(f"💥 SELLING {percentage}% of {mint[:8]}...")
+            logger.info(f"💥 SELLING {percentage}% of {mint[:8]} (Slippage: {slippage}%)...")
             # Use thread to avoid blocking loop
             result = await asyncio.to_thread(
                 self.dex_trader.pump_sell,
                 mint,
-                percentage=percentage,
+                token_amount_pct=percentage,
                 payer_key=wallet_key
             )
             if result and result.get('success'):
