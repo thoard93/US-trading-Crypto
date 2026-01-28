@@ -400,20 +400,20 @@ class DexTrader:
             print(f"📤 Uploading metadata to pump.fun IPFS...")
             
             # Use curl_cffi for Chrome TLS fingerprint (Phase 63: Anti-Cloudflare)
-            # NOTE: curl_cffi uses 'multipart' instead of 'files' for file uploads
+            # NOTE: curl_cffi uses 'multipart' dict format for file uploads
             cffi_session = self._get_cffi_session()
             
-            # Build multipart form data (curl_cffi format)
-            multipart_data = [
-                ('name', name),
-                ('symbol', symbol),
-                ('description', description),
-                ('twitter', twitter),
-                ('telegram', telegram),
-                ('website', website),
-                ('showName', 'true'),
-                ('file', ('logo.png', img_data, 'image/png'))
-            ]
+            # Build multipart form data (curl_cffi dict format)
+            multipart_data = {
+                'name': name,
+                'symbol': symbol,
+                'description': description,
+                'twitter': twitter,
+                'telegram': telegram,
+                'website': website,
+                'showName': 'true',
+                'file': ('logo.png', img_data, 'image/png')
+            }
             
             ipfs_response = cffi_session.post(
                 "https://pump.fun/api/ipfs",
