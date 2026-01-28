@@ -472,94 +472,80 @@ class AutoLauncher:
                             
                         await channel.send(embed=embed)
                         
-                        # Phase 56: Bundled Support Buys & Background Simulation
+                        # Phase 70: SWARM STRATEGY - Hold and Dump
+                        # All support wallets buy visible amounts, then wait for exit trigger
                         
-                        # 1. Bundled Support Buys (Holder Diversification)
                         if hasattr(self.dex_trader, 'wallet_manager'):
                             support_keys = self.dex_trader.wallet_manager.get_all_support_keys()
+                            
                             if support_keys:
-                                print(f"🛡️ BUNDLING: Triggering {min(len(support_keys), 2)} support buys...")
-                                for i in range(min(len(support_keys), 2)):
-                                    # Very small buys to create holder "bubbles"
-                                    support_buy_amount = round(random.uniform(0.005, 0.008), 4)
-                                    asyncio.create_task(asyncio.to_thread(
+                                # Get swarm config from env
+                                swarm_buy = float(os.getenv('SWARM_BUY_AMOUNT', '0.05'))
+                                
+                                await channel.send(f"🐝 **SWARM BUY**: {len(support_keys)} wallets × {swarm_buy} SOL...")
+                                
+                                # All support wallets buy at launch (visible above 0.05 filter)
+                                buy_tasks = []
+                                for i, key in enumerate(support_keys):
+                                    label = f"S{i+1}"
+                                    print(f"🐝 [{pack['ticker']}] {label} buying {swarm_buy} SOL...")
+                                    
+                                    task = asyncio.create_task(asyncio.to_thread(
                                         self.dex_trader.pump_buy, 
                                         mint_address, 
-                                        sol_amount=support_buy_amount,
-                                        payer_key=support_keys[i]
+                                        sol_amount=swarm_buy,
+                                        payer_key=key
                                     ))
-                        
-                        # 2. Parallel Volume Simulation
-                        if self.volume_sim_enabled and self.dex_trader:
-                            # Check concurrency guard
-                            if len(self.active_simulations) >= self.max_parallel_sims:
-                                await channel.send(f"⚠️ **Parallel Limit reached** ({self.max_parallel_sims}). Skipping volume sim for `{pack['name']}`.")
-                                self.logger.warning(f"Skipping volume sim for {mint_address} - already {len(self.active_simulations)} active.")
-                            else:
-                                # Get ALL wallets for parallel volume simulation
-                                # EXCEPT the creator wallet (they'd show as "dev")
-                                all_keys = []
-                                if hasattr(self.dex_trader, 'wallet_manager'):
-                                    all_keys = self.dex_trader.wallet_manager.get_all_keys() or []
+                                    buy_tasks.append((label, task))
                                 
-                                # Filter out the creator wallet - they're the "dev" on this token
-                                sim_wallets = [k for k in all_keys if k != creator_key]
+                                # Wait for all buys to complete
+                                buy_results = []
+                                for label, task in buy_tasks:
+                                    try:
+                                        result = await task
+                                        if result and not result.get('error'):
+                                            buy_results.append(('success', label))
+                                            print(f"✅ {label} buy success")
+                                        else:
+                                            buy_results.append(('failed', label))
+                                            print(f"⚠️ {label} buy failed: {result}")
+                                    except Exception as e:
+                                        buy_results.append(('error', label))
+                                        print(f"❌ {label} buy error: {e}")
                                 
-                                if not sim_wallets:
-                                    await channel.send(f"⚠️ **No non-creator wallets available** - skipping volume sim")
-                                else:
-                                    await channel.send(f"📊 **Volume Simulation** starting with {len(sim_wallets)} wallets on `{pack['name']}`...")
+                                success_count = sum(1 for r in buy_results if r[0] == 'success')
+                                await channel.send(f"🐝 **SWARM READY**: {success_count}/{len(support_keys)} wallets positioned!")
+                                
+                                # Start exit coordinator to monitor for dump
+                                if success_count > 0:
+                                    from exit_coordinator import get_exit_coordinator
                                     
-                                    # Start volume sim on EACH non-creator wallet in parallel
-                                    for wallet_idx, wallet_key in enumerate(sim_wallets):
-                                        wallet_label = f"W{wallet_idx+1}"
-                                        wallet_short = wallet_key[:8]
-                                        print(f"📊 [{pack['ticker']}] VolSim {wallet_label} starting: {wallet_short}...")
-                                        
-                                        # Create callback - ONLY W1 sends to Discord to avoid rate limiting
-                                        # Other wallets just log to console
-                                        def make_callback(label, send_to_discord):
-                                            if send_to_discord:
-                                                async def cb(msg):
-                                                    try:
-                                                        await channel.send(f"📊 [{label}] {msg}")
-                                                    except:
-                                                        pass
-                                                return cb
-                                            else:
-                                                return None  # Console only (no Discord spam)
-                                        
-                                        # Randomize moon_bias per wallet for organic look (88-96%)
-                                        wallet_moon_bias = round(random.uniform(0.88, 0.96), 2)
-                                        print(f"📊 [{pack['ticker']}] {wallet_label} moon_bias: {wallet_moon_bias*100:.0f}%")
-                                        
-                                        # Only first wallet (W1) sends Discord updates
-                                        send_discord = (wallet_idx == 0)
-                                        
-                                        sim_task = asyncio.create_task(self.dex_trader.simulate_volume(
+                                    exit_coord = get_exit_coordinator(self.dex_trader)
+                                    target_mc = float(os.getenv('SWARM_EXIT_MC', '25000'))
+                                    timeout = int(os.getenv('SWARM_EXIT_TIMEOUT', '600'))
+                                    
+                                    await channel.send(f"🎯 **EXIT MONITOR**: Watching for ${target_mc:,.0f} MC or {timeout//60}min timeout...")
+                                    
+                                    # Filter to only wallets that successfully bought
+                                    bought_keys = [support_keys[i] for i, (status, _) in enumerate(buy_results) if status == 'success']
+                                    
+                                    # Create exit callback for Discord updates
+                                    async def exit_callback(msg):
+                                        try:
+                                            await channel.send(f"🚨 [{pack['ticker']}] {msg}")
+                                        except:
+                                            pass
+                                    
+                                    # Start monitoring in background
+                                    asyncio.create_task(
+                                        exit_coord.start_exit_monitor(
                                             mint_address,
-                                            rounds=self.volume_sim_rounds,
-                                            sol_per_round=self.volume_sim_amount,
-                                            delay_seconds=self.volume_sim_delay,
-                                            callback=make_callback(wallet_label, send_discord),
-                                            moon_bias=wallet_moon_bias,  # Randomized per wallet!
-                                            ticker=f"{pack['ticker']}-{wallet_label}",
-                                            payer_key=wallet_key
-                                        ))
-                                        
-                                        # Track with unique key per wallet
-                                        sim_key = f"{mint_address}:{wallet_idx}"
-                                        self.active_simulations[sim_key] = sim_task
-                                        
-                                        # Cleanup when done
-                                        def make_cleanup(key, label, ticker):
-                                            def cleanup(t):
-                                                if key in self.active_simulations:
-                                                    del self.active_simulations[key]
-                                                    print(f"🧹 VolSim {label} finished for {ticker}. Active: {len(self.active_simulations)}")
-                                            return cleanup
-                                        
-                                        sim_task.add_done_callback(make_cleanup(sim_key, wallet_label, pack['ticker']))
+                                            bought_keys,
+                                            callback=exit_callback
+                                        )
+                                    )
+                            else:
+                                await channel.send("⚠️ No support wallets configured - skipping swarm")
                                 
                 except Exception as e:
                     self.logger.error(f"Discord notification error: {e}")
