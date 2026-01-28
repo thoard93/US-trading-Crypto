@@ -168,7 +168,20 @@ class DexTrader:
         """
         try:
             from curl_cffi.requests import Session
-            session = Session(impersonate="chrome121")
+            # Try chrome110 first (widely supported), fallback to chrome99
+            for browser in ["chrome110", "chrome99", "chrome"]:
+                try:
+                    session = Session(impersonate=browser)
+                    if self.proxy_url:
+                        session.proxies = {
+                            'http': self.proxy_url,
+                            'https': self.proxy_url
+                        }
+                    return session
+                except Exception:
+                    continue
+            # Final fallback - no impersonation
+            session = Session()
             if self.proxy_url:
                 session.proxies = {
                     'http': self.proxy_url,
