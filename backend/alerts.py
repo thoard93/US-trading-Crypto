@@ -3336,47 +3336,11 @@ class AlertSystem(commands.Cog):
 
     def _heavy_initialization_sync(self):
         """Perform all blocking DB and API key loading here."""
-        # 0. Initialize Primary Singletons
-        from collectors.crypto_collector import CryptoCollector
-        # from collectors.stock_collector import StockCollector  # Disabled: alpaca not used
+        # 0. Collectors and legacy traders removed in cleanup
+        # CryptoCollector, StockCollector, TradingExecutive no longer used
         
-        # Safe to initialize here in the thread
-        if not self.crypto:
-            self.crypto = CryptoCollector()
-        # StockCollector disabled - alpaca_trade_api not installed
-        # if not self.stocks:
-        #     self.stocks = StockCollector()
-        if not self.trader:
-            self.trader = TradingExecutive(user_id=1)
-            print("✅ Default TradingExecutive initialized in background.")
-
-        # 1. Load SmartCopyTrader Data
-        if self.copy_trader:
-            self.copy_trader.load_data()
-            
-            # --- STARTUP HEALTH PULSE (V3.1) ---
-            try:
-                total = len(self.copy_trader.qualified_wallets)
-                from datetime import datetime, timedelta
-                now = datetime.utcnow()
-                cutoff = now - timedelta(hours=self.whale_persistence_hours)
-                
-                aged_count = 0
-                for addr, data in self.copy_trader.qualified_wallets.items():
-                    disc_at = data.get('discovered_at')
-                    if disc_at:
-                        # Handle potential varied string formats
-                        try:
-                            dt = datetime.fromisoformat(disc_at.replace('Z', '+00:00'))
-                            if dt <= cutoff:
-                                aged_count += 1
-                        except: continue
-                
-                new_count = total - aged_count
-                logger.info(f"📊 WHALE DATABASE HEALTH: {total} total | ✅ {aged_count} Aged (Active) | ⏳ {new_count} New (Warming up)")
-            except Exception as pulse_err:
-                logger.error(f"⚠️ Health Pulse Error: {pulse_err}")
-            
+        # 1. SmartCopyTrader removed - whale tracking disabled
+        
         # 2. Load Solana Keys
         if DEX_TRADING_ENABLED:
             try:
