@@ -68,10 +68,12 @@ class MarketSniper:
         self.exit_coord = get_sniper_exit_coordinator(self.trader)
         
         # Strategy Config
-        self.min_mc = float(os.getenv('SNIPER_MIN_MC', '15000'))
-        self.max_mc = float(os.getenv('SNIPER_MAX_MC', '60000'))
-        self.min_momentum = float(os.getenv('SNIPER_MIN_MOMENTUM', '60'))
+        # GROK CONSERVATIVE SETTINGS (Jan 29 2026 Audit)
+        self.min_mc = float(os.getenv('SNIPER_MIN_MC', '10000'))  # Was 15k, now 10k
+        self.max_mc = float(os.getenv('SNIPER_MAX_MC', '100000'))  # Was 60k, now 100k
+        self.min_momentum = float(os.getenv('SNIPER_MIN_MOMENTUM', '50'))  # Was 60, now 50
         self.buy_amount = float(os.getenv('SNIPER_BUY_SOL', '0.1'))
+        self.require_socials = os.getenv('SNIPER_REQUIRE_SOCIALS', 'false').lower() == 'true'  # Now OPTIONAL
         
         # Smart Alerter
         self.alerter = DiscordAlerter(os.getenv('DISCORD_ALERTS_CHANNEL'))
@@ -132,7 +134,7 @@ class MarketSniper:
         # B. Advanced Safety Checks
         # 1. Holder Concentration Check
         top_holders_share = await self._get_holder_concentration(mint)
-        if top_holders_share > 0.25: # >25% in top 10 is risky (Grok Opt)
+        if top_holders_share > 0.30:  # Grok Conservative: was 25%, now 30%
             logger.warning(f"🛡️ [SKIP] {token_data.get('symbol')} - High concentration: {top_holders_share*100:.1f}%")
             return False
             
@@ -142,11 +144,15 @@ class MarketSniper:
             logger.warning(f"🛡️ [SKIP] {token_data.get('symbol')} - Possible Bundle/Insider launch")
             return False
             
-        # 3. Social Presence Check (Avoid "Ghost" tokens)
+        # 3. Social Presence Check - NOW OPTIONAL per Grok audit (70% of tokens launch without)
         has_socials = await self._check_socials(mint)
         if not has_socials:
-            logger.warning(f"🛡️ [SKIP] {token_data.get('symbol')} - No Socials (Twitter/Telegram)")
-            return False
+            if self.require_socials:
+                logger.warning(f"🛡️ [SKIP] {token_data.get('symbol')} - No Socials (Twitter/Telegram)")
+                return False
+            else:
+                logger.info(f"⚠️ [ALERT] {token_data.get('symbol')} - No socials (proceeding anyway)")
+                # NOT BLOCKING - just alert
             
         # 5. Dev History Check (Avoid Serial Ruggers)
         is_safe_dev = await self._check_dev_history(mint)
@@ -317,6 +323,18 @@ class MarketSniper:
         
         # Execute Buy
         try:
+            # Pre-buy balance check (Grok recommendation)
+            sol_balance = await asyncio.to_thread(self.trader.get_sol_balance)
+            if sol_balance < self.buy_amount + 0.01:  # Need buy amount + fees
+                logger.error(f"❌ INSUFFICIENT SOL: Have {sol_balance:.3f}, need {self.buy_amount + 0.01:.3f}")
+                await self.alerter.notify(
+                    f"❌ **INSUFFICIENT SOL**\\nHave: {sol_balance:.3f} SOL\\nNeed: {self.buy_amount + 0.01:.3f} SOL",
+                    title="⚠️ WALLET LOW",
+                    color=0xe74c3c,
+                    critical=True
+                )
+                return
+            
             # We use the primary wallet for sniping
             result = await asyncio.to_thread(
                 self.trader.pump_buy, 
