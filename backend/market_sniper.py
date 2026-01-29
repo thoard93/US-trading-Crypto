@@ -12,7 +12,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from dex_trader import DexTrader
-from trend_hunter import TrendHunter
+# from trend_hunter import TrendHunter  # DISABLED: Not needed for sniping, saves API $
 from movers_tracker import get_movers_tracker
 from sniper_exit_coordinator import get_sniper_exit_coordinator
 from wallet_manager import WalletManager
@@ -62,7 +62,7 @@ class MarketSniper:
     def __init__(self, dry_run=True):
         self.dry_run = dry_run
         self.trader = DexTrader()
-        self.hunter = TrendHunter()
+        # self.hunter = TrendHunter()  # DISABLED: Save Twitter API costs
         self.tracker = get_movers_tracker()
         self.wallets = WalletManager()
         self.exit_coord = get_sniper_exit_coordinator(self.trader)
@@ -88,8 +88,8 @@ class MarketSniper:
         logger.info(f"🚀 Sniper starting... Mode: {'DRY RUN' if self.dry_run else 'LIVE'}")
         self.running = True
         
-        # Ensure TrendHunter WebSocket is active
-        self.hunter.get_trending_keywords(limit=1) 
+        # TrendHunter DISABLED - not needed for sniping, saves Twitter API $
+        # self.hunter.get_trending_keywords(limit=1) 
         
         while self.running:
             try:
