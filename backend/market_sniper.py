@@ -72,12 +72,13 @@ class MarketSniper:
         self.exit_coord = get_sniper_exit_coordinator(self.trader)
         
         # Strategy Config
-        # GROK CONSERVATIVE SETTINGS (Jan 29 2026 Audit)
-        self.min_mc = float(os.getenv('SNIPER_MIN_MC', '10000'))  # Was 15k, now 10k
-        self.max_mc = float(os.getenv('SNIPER_MAX_MC', '100000'))  # Was 60k, now 100k
-        self.min_momentum = float(os.getenv('SNIPER_MIN_MOMENTUM', '50'))  # Was 60, now 50
-        self.buy_amount = float(os.getenv('SNIPER_BUY_SOL', '0.1'))
-        self.require_socials = os.getenv('SNIPER_REQUIRE_SOCIALS', 'false').lower() == 'true'  # Now OPTIONAL
+        # GROK TUNED SETTINGS (Jan 29 2026 - Open Funnel for Action)
+        self.min_mc = float(os.getenv('SNIPER_MIN_MC', '4000'))  # Lowered: 10k→4k to catch early growth
+        self.max_mc = float(os.getenv('SNIPER_MAX_MC', '100000'))  # Still 100k cap
+        self.min_momentum = float(os.getenv('SNIPER_MIN_MOMENTUM', '50'))  # Keep at 50
+        self.buy_amount = float(os.getenv('SNIPER_BUY_SOL', '0.1'))  # Fallback only (risk_mgr handles sizing)
+        self.require_socials = os.getenv('SNIPER_REQUIRE_SOCIALS', 'false').lower() == 'true'
+        self.check_liquidity = os.getenv('SNIPER_CHECK_LIQUIDITY', 'false').lower() == 'true'  # DISABLED per Grok
         
         # Smart Alerter
         self.alerter = DiscordAlerter(os.getenv('DISCORD_ALERTS_CHANNEL'))
@@ -149,7 +150,11 @@ class MarketSniper:
         score = token_data.get('score', 0)
         
         # A. Basic Filters
-        if mc < self.min_mc or mc > self.max_mc:
+        if mc < self.min_mc:
+            logger.info(f"⏭️ [SKIP] {token_data.get('symbol')} - Low MC: ${mc:,.0f} (need ${self.min_mc:,.0f}+)")
+            return False
+        if mc > self.max_mc:
+            logger.info(f"⏭️ [SKIP] {token_data.get('symbol')} - High MC: ${mc:,.0f} (max ${self.max_mc:,.0f})")
             return False
         if score < self.min_momentum:
             return False
