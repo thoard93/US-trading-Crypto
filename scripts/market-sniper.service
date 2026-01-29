@@ -6,9 +6,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/opt/US-trading-Crypto/backend
-EnvironmentFile=/opt/US-trading-Crypto/backend/.env
-Environment="PYTHONPATH=/opt/US-trading-Crypto/backend"
-ExecStart=/usr/bin/python3 /opt/US-trading-Crypto/backend/market_sniper.py
+ExecStart=/bin/bash /opt/US-trading-Crypto/scripts/run_sniper.sh
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -16,3 +14,4 @@ StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
+
