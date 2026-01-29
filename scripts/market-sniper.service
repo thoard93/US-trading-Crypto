@@ -5,11 +5,12 @@ After=network.target
 [Service]
 Type=simple
 User=root
-WorkingDirectory=/opt/US-trading-Crypto
+WorkingDirectory=/opt/US-trading-Crypto/backend
+EnvironmentFile=/opt/US-trading-Crypto/backend/.env
+Environment="PYTHONPATH=/opt/US-trading-Crypto/backend"
 ExecStart=/usr/bin/python3 /opt/US-trading-Crypto/backend/market_sniper.py
 Restart=always
 RestartSec=10
-Environment="PATH=/usr/bin:/usr/local/bin"
 StandardOutput=journal
 StandardError=journal
 
