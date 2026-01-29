@@ -1670,7 +1670,7 @@ class DexTrader:
     
     def pump_sell(self, mint_address, token_amount_pct=100, payer_key=None, use_jito=True, simulate=True, slippage=25):
         """
-        Sell a Pump.fun token with Jito Support and Simulation.
+        Sell a Pump.fun token with priority fee. Falls back to Jupiter for graduated tokens.
         token_amount_pct: Percentage of holdings to sell (default 100%)
         """
         # Resolve Keypair for this operation
@@ -1690,18 +1690,11 @@ class DexTrader:
             return {"error": "Wallet not initialized"}
         
         import json
-        import random
         from solders.pubkey import Pubkey
-        from solders.instruction import Instruction, AccountMeta
-        import struct
+        from solders.hash import Hash
 
-        # Use global JITO_TIP_ACCOUNTS (defined at top of file)
-        
         try:
             # Get current token balance
-            # IMPORTANT: get_token_balance uses self.wallet_address (main wallet) by default.
-            # We need to make sure we check the balance of the correct payer.
-            from solders.pubkey import Pubkey
             bal_info = self._get_wallet_token_balance(op_wallet, mint_address)
             token_balance = bal_info.get('ui_amount', 0)
             
@@ -1711,14 +1704,15 @@ class DexTrader:
             
             sell_amount = token_balance * (token_amount_pct / 100)
             
+            # Try PumpPortal first (bonding curve tokens)
             payload = {
                 'publicKey': op_wallet,
                 'action': 'sell',
                 'mint': mint_address,
                 'denominatedInSol': 'false',  # Amount in tokens
                 'amount': sell_amount,
-                'slippage': slippage,  # Use passed slippage
-                'priorityFee': 0.0001 if use_jito else 0.005, 
+                'slippage': slippage,
+                'priorityFee': 0.005,  # Priority fee instead of Jito tip
                 'pool': 'pump'
             }
             
@@ -1731,12 +1725,18 @@ class DexTrader:
                 timeout=30
             )
             
+            # Check for graduation/migration errors
             if response.status_code != 200:
+                error_text = response.text.lower()
+                # Token may have graduated to Raydium
+                if 'curve' in error_text or 'complete' in error_text or 'graduated' in error_text or response.status_code == 400:
+                    print(f"⚠️ Token may have graduated - trying Jupiter fallback...")
+                    return self._jupiter_sell_fallback(mint_address, sell_amount, op_keypair, op_wallet, slippage)
                 return {"error": f"PumpPortal API Error: {response.text}"}
             
             tx_data = response.content
             
-            # Parse and sign the transaction
+            # Parse and sign the transaction (simplified - just update blockhash)
             tx = VersionedTransaction.from_bytes(tx_data)
             old_message = tx.message
             
@@ -1751,63 +1751,16 @@ class DexTrader:
             if not fresh_blockhash_str:
                 return {"error": f"Failed to fetch blockhash"}
             
-            from solders.hash import Hash
             fresh_blockhash = Hash.from_string(fresh_blockhash_str)
             
-            # JITO TIP: Add tip instruction if requested
-            # NOTE: When use_jito=True, we need to rebuild with try_compile
-            # because we're adding a new Instruction (not CompiledInstruction)
-            
-            if use_jito:
-                # Build Jito tip instruction
-                tip_account = Pubkey.from_string(random.choice(JITO_TIP_ACCOUNTS))
-                tip_amount = self.get_jito_tip_amount_lamports(priority="high")
-                SYSTEM_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
-                transfer_data = struct.pack('<I', 2) + struct.pack('<Q', tip_amount)
-                tip_instruction = Instruction(
-                    program_id=SYSTEM_PROGRAM_ID,
-                    accounts=[
-                        AccountMeta(pubkey=Pubkey.from_string(op_wallet), is_signer=True, is_writable=True),
-                        AccountMeta(pubkey=tip_account, is_signer=False, is_writable=True),
-                    ],
-                    data=transfer_data
-                )
-                
-                # Use try_compile to rebuild with fresh blockhash + tip instruction
-                payer_pubkey = Pubkey.from_string(op_wallet)
-                
-                # Reconstruct all instructions from the original tx as Instruction objects
-                original_instructions = []
-                account_keys = list(old_message.account_keys)
-                for compiled_ix in old_message.instructions:
-                    program_id = account_keys[compiled_ix.program_id_index]
-                    accounts = []
-                    for idx in compiled_ix.accounts:
-                        is_signer = idx < old_message.header.num_required_signatures
-                        is_writable = (idx < old_message.header.num_required_signatures - old_message.header.num_readonly_signed_accounts) or \
-                                      (idx >= old_message.header.num_required_signatures and idx < len(account_keys) - old_message.header.num_readonly_unsigned_accounts)
-                        accounts.append(AccountMeta(pubkey=account_keys[idx], is_signer=is_signer, is_writable=is_writable))
-                    original_instructions.append(Instruction(program_id=program_id, accounts=accounts, data=bytes(compiled_ix.data)))
-                
-                # Add tip instruction at the end
-                all_instructions = original_instructions + [tip_instruction]
-                
-                # Use try_compile for proper instruction compilation
-                new_message = MessageV0.try_compile(
-                    payer=payer_pubkey,
-                    instructions=all_instructions,
-                    address_lookup_table_accounts=[],
-                    recent_blockhash=fresh_blockhash,
-                )
-            else:
-                # No Jito - just update blockhash on original message
-                new_message = MessageV0(
-                    header=old_message.header,
-                    account_keys=list(old_message.account_keys),
-                    recent_blockhash=fresh_blockhash,
-                    instructions=list(old_message.instructions),
-                    address_table_lookups=old_message.address_table_lookups
-                )
+            # Simple blockhash update (no Jito tip building - uses PumpPortal priority fee)
+            new_message = MessageV0(
+                header=old_message.header,
+                account_keys=list(old_message.account_keys),
+                recent_blockhash=fresh_blockhash,
+                instructions=list(old_message.instructions),
+                address_table_lookups=old_message.address_table_lookups
+            )
             
             # Sign
             msg_bytes = to_bytes_versioned(new_message)
@@ -1825,24 +1778,12 @@ class DexTrader:
             if simulate:
                 sim = self._simulate_transaction(tx_base64)
                 if not sim.get('success'):
-                    return {"error": f"Sell Simulation Failed: {sim.get('error')}"}
+                    # Simulation failed - maybe graduated, try Jupiter
+                    print(f"⚠️ Pump sell simulation failed - trying Jupiter fallback...")
+                    return self._jupiter_sell_fallback(mint_address, sell_amount, op_keypair, op_wallet, slippage)
                 print("✅ Sell Simulation Success")
 
-            if use_jito:
-                # We also send to standard RPC as broadcast just in case
-                requests.post(self.rpc_url, json={
-                    "jsonrpc": "2.0", "id": 1,
-                    "method": "sendTransaction",
-                    "params": [tx_base64, {"skipPreflight": True, "encoding": "base64"}]
-                }, timeout=5)
-
-                jito_res = self._send_jito_bundle(tx_base64)
-                if jito_res.get('success'):
-                    print(f"🚀 Jito Sell Bundle Sent: {jito_res['bundle_id']}")
-                    return {"success": True, "signature": jito_res['bundle_id'], "jito": True}
-                else:
-                    print(f"⚠️ Jito failed, falling back to pure RPC: {jito_res.get('error')}")
-
+            # Submit to RPC with priority fee
             send_resp = requests.post(self.rpc_url, json={
                 "jsonrpc": "2.0", "id": 1,
                 "method": "sendTransaction",
@@ -1854,12 +1795,149 @@ class DexTrader:
                 print(f"✅ RPC SELL TX: {sig}")
                 return {"success": True, "signature": sig}
             else:
-                return {"error": f"TX failed: {send_resp}"}
+                # TX failed - try Jupiter fallback
+                print(f"⚠️ Pump sell failed - trying Jupiter fallback...")
+                return self._jupiter_sell_fallback(mint_address, sell_amount, op_keypair, op_wallet, slippage)
                 
         except Exception as e:
             import traceback
             traceback.print_exc()
-            return {"error": str(e)}
+            # Last resort - try Jupiter
+            try:
+                return self._jupiter_sell_fallback(mint_address, sell_amount, op_keypair, op_wallet, slippage)
+            except:
+                return {"error": str(e)}
+
+    def _jupiter_sell_fallback(self, mint_address, token_amount, op_keypair, op_wallet, slippage_pct=25):
+        """
+        Jupiter/Raydium fallback for selling graduated tokens.
+        Used when PumpPortal sell fails (token migrated off bonding curve).
+        """
+        import json
+        from solders.hash import Hash
+        
+        print(f"🪐 Jupiter SELL: {token_amount:.2f} tokens of {mint_address[:12]}...")
+        
+        try:
+            # Get token decimals
+            decimals = 6  # Pump.fun tokens are typically 6 decimals
+            raw_amount = int(token_amount * (10 ** decimals))
+            
+            # SOL mint for output
+            SOL_MINT = "So11111111111111111111111111111111111111112"
+            
+            # Get Jupiter quote
+            quote_params = {
+                "inputMint": mint_address,
+                "outputMint": SOL_MINT,
+                "amount": raw_amount,
+                "slippageBps": int(slippage_pct * 100)  # Convert % to bps
+            }
+            
+            quote_resp = requests.get(
+                "https://quote-api.jup.ag/v6/quote",
+                params=quote_params,
+                timeout=15
+            )
+            
+            if quote_resp.status_code != 200:
+                return {"error": f"Jupiter quote failed: {quote_resp.text}"}
+            
+            quote = quote_resp.json()
+            
+            if not quote or 'routePlan' not in quote:
+                return {"error": "No Jupiter route found - token may have no liquidity"}
+            
+            out_amount = int(quote.get('outAmount', 0)) / 1e9
+            print(f"📊 Jupiter quote: {token_amount:.2f} tokens → {out_amount:.6f} SOL")
+            
+            # Get swap transaction
+            swap_payload = {
+                "quoteResponse": quote,
+                "userPublicKey": op_wallet,
+                "wrapAndUnwrapSol": True,
+                "prioritizationFeeLamports": "auto"
+            }
+            
+            swap_resp = requests.post(
+                "https://quote-api.jup.ag/v6/swap",
+                json=swap_payload,
+                timeout=15
+            )
+            
+            if swap_resp.status_code != 200:
+                return {"error": f"Jupiter swap failed: {swap_resp.text}"}
+            
+            swap_data = swap_resp.json()
+            serialized_tx = swap_data.get('swapTransaction')
+            
+            if not serialized_tx:
+                return {"error": "No swap transaction returned"}
+            
+            # Decode, sign, and send
+            tx_bytes = base64.b64decode(serialized_tx)
+            tx = VersionedTransaction.from_bytes(tx_bytes)
+            old_message = tx.message
+            
+            # Fresh blockhash
+            blockhash_resp = requests.post(self.rpc_url, json={
+                "jsonrpc": "2.0", "id": 1,
+                "method": "getLatestBlockhash",
+                "params": [{"commitment": "finalized"}]
+            }, timeout=10).json()
+            
+            fresh_blockhash_str = blockhash_resp.get('result', {}).get('value', {}).get('blockhash')
+            if not fresh_blockhash_str:
+                return {"error": "Failed to fetch blockhash for Jupiter"}
+            
+            fresh_blockhash = Hash.from_string(fresh_blockhash_str)
+            
+            # Update blockhash
+            new_message = MessageV0(
+                header=old_message.header,
+                account_keys=list(old_message.account_keys),
+                recent_blockhash=fresh_blockhash,
+                instructions=list(old_message.instructions),
+                address_table_lookups=old_message.address_table_lookups
+            )
+            
+            # Sign
+            msg_bytes = to_bytes_versioned(new_message)
+            signers = new_message.account_keys[:new_message.header.num_required_signatures]
+            signatures = []
+            for key in signers:
+                if str(key) == op_wallet:
+                    signatures.append(op_keypair.sign_message(msg_bytes))
+                else:
+                    signatures.append(Signature.default())
+            
+            signed_tx = VersionedTransaction.populate(new_message, signatures)
+            tx_base64 = base64.b64encode(bytes(signed_tx)).decode('utf-8')
+            
+            # Simulate
+            sim = self._simulate_transaction(tx_base64)
+            if not sim.get('success'):
+                return {"error": f"Jupiter simulation failed: {sim.get('error')}"}
+            print("✅ Jupiter Simulation Success")
+            
+            # Send
+            send_resp = requests.post(self.rpc_url, json={
+                "jsonrpc": "2.0", "id": 1,
+                "method": "sendTransaction",
+                "params": [tx_base64, {"skipPreflight": True, "encoding": "base64"}]
+            }, timeout=30).json()
+            
+            if 'result' in send_resp:
+                sig = send_resp['result']
+                print(f"🎉 JUPITER SELL TX: {sig}")
+                return {"success": True, "signature": sig, "jupiter": True}
+            else:
+                return {"error": f"Jupiter TX failed: {send_resp}"}
+                
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return {"error": f"Jupiter fallback error: {e}"}
 
     async def simulate_volume(self, mint_address, rounds=10, sol_per_round=0.01, delay_seconds=30, callback=None, moon_bias=0.95, ticker=None, payer_key=None):
         """
