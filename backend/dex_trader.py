@@ -1564,7 +1564,8 @@ class DexTrader:
         import json
         import random
         from solders.pubkey import Pubkey
-        from solders.instruction import transfer, TransferParams
+        from solders.instruction import Instruction, AccountMeta
+        import struct
 
         # Jito tip accounts (example, replace with actual ones if needed)
         JITO_TIP_ACCOUNTS = [
@@ -1623,11 +1624,17 @@ class DexTrader:
             if use_jito:
                 tip_account = Pubkey.from_string(random.choice(JITO_TIP_ACCOUNTS))
                 tip_amount = self.get_jito_tip_amount_lamports(priority="standard")
-                tip_instruction = transfer(TransferParams(
-                    from_pubkey=Pubkey.from_string(op_wallet),
-                    to_pubkey=tip_account,
-                    lamports=tip_amount
-                ))
+                # Build transfer instruction manually for solders version compatibility
+                SYSTEM_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
+                transfer_data = struct.pack('<I', 2) + struct.pack('<Q', tip_amount)
+                tip_instruction = Instruction(
+                    program_id=SYSTEM_PROGRAM_ID,
+                    accounts=[
+                        AccountMeta(pubkey=Pubkey.from_string(op_wallet), is_signer=True, is_writable=True),
+                        AccountMeta(pubkey=tip_account, is_signer=False, is_writable=True),
+                    ],
+                    data=transfer_data
+                )
                 instructions.append(tip_instruction)
                 if tip_account not in account_keys:
                     account_keys.append(tip_account)
@@ -1721,7 +1728,8 @@ class DexTrader:
         import json
         import random
         from solders.pubkey import Pubkey
-        from solders.instruction import transfer, TransferParams
+        from solders.instruction import Instruction, AccountMeta
+        import struct
 
         # Jito tip accounts (example, replace with actual ones if needed)
         JITO_TIP_ACCOUNTS = [
@@ -1794,11 +1802,17 @@ class DexTrader:
                 tip_account = Pubkey.from_string(random.choice(JITO_TIP_ACCOUNTS))
                 # Use high priority for sells to ensure we beat the crowd on the way out
                 tip_amount = self.get_jito_tip_amount_lamports(priority="high")
-                tip_instruction = transfer(TransferParams(
-                    from_pubkey=Pubkey.from_string(op_wallet),
-                    to_pubkey=tip_account,
-                    lamports=tip_amount
-                ))
+                # Build transfer instruction manually for solders version compatibility
+                SYSTEM_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
+                transfer_data = struct.pack('<I', 2) + struct.pack('<Q', tip_amount)
+                tip_instruction = Instruction(
+                    program_id=SYSTEM_PROGRAM_ID,
+                    accounts=[
+                        AccountMeta(pubkey=Pubkey.from_string(op_wallet), is_signer=True, is_writable=True),
+                        AccountMeta(pubkey=tip_account, is_signer=False, is_writable=True),
+                    ],
+                    data=transfer_data
+                )
                 instructions.append(tip_instruction)
                 if tip_account not in account_keys:
                     account_keys.append(tip_account)
