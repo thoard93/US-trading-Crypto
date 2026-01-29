@@ -1614,13 +1614,13 @@ class DexTrader:
             fresh_blockhash = Hash.from_string(fresh_blockhash_str)
             
             # JITO TIP: Add tip instruction if requested
-            instructions = list(old_message.instructions)
-            account_keys = list(old_message.account_keys)
+            # NOTE: When use_jito=True, we need to rebuild with try_compile
+            # because we're adding a new Instruction (not CompiledInstruction)
             
             if use_jito:
+                # Build Jito tip instruction
                 tip_account = Pubkey.from_string(random.choice(JITO_TIP_ACCOUNTS))
                 tip_amount = self.get_jito_tip_amount_lamports(priority="standard")
-                # Build transfer instruction manually for solders version compatibility
                 SYSTEM_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
                 transfer_data = struct.pack('<I', 2) + struct.pack('<Q', tip_amount)
                 tip_instruction = Instruction(
@@ -1631,18 +1631,44 @@ class DexTrader:
                     ],
                     data=transfer_data
                 )
-                instructions.append(tip_instruction)
-                if tip_account not in account_keys:
-                    account_keys.append(tip_account)
-
-            # Rebuild message with fresh blockhash
-            new_message = MessageV0(
-                header=old_message.header,
-                account_keys=account_keys,
-                recent_blockhash=fresh_blockhash,
-                instructions=instructions,
-                address_table_lookups=old_message.address_table_lookups
-            )
+                
+                # Use try_compile to rebuild with fresh blockhash + tip instruction
+                # This properly handles mixing existing tx with new instruction
+                payer_pubkey = Pubkey.from_string(op_wallet)
+                
+                # Reconstruct all instructions from the original tx as Instruction objects
+                original_instructions = []
+                account_keys = list(old_message.account_keys)
+                for compiled_ix in old_message.instructions:
+                    program_id = account_keys[compiled_ix.program_id_index]
+                    accounts = []
+                    for idx in compiled_ix.accounts:
+                        # Determine is_signer and is_writable from message header
+                        is_signer = idx < old_message.header.num_required_signatures
+                        is_writable = (idx < old_message.header.num_required_signatures - old_message.header.num_readonly_signed_accounts) or \
+                                      (idx >= old_message.header.num_required_signatures and idx < len(account_keys) - old_message.header.num_readonly_unsigned_accounts)
+                        accounts.append(AccountMeta(pubkey=account_keys[idx], is_signer=is_signer, is_writable=is_writable))
+                    original_instructions.append(Instruction(program_id=program_id, accounts=accounts, data=bytes(compiled_ix.data)))
+                
+                # Add tip instruction at the end
+                all_instructions = original_instructions + [tip_instruction]
+                
+                # Use try_compile for proper instruction compilation
+                new_message = MessageV0.try_compile(
+                    payer=payer_pubkey,
+                    instructions=all_instructions,
+                    address_lookup_table_accounts=[],
+                    recent_blockhash=fresh_blockhash,
+                )
+            else:
+                # No Jito - just update blockhash on original message
+                new_message = MessageV0(
+                    header=old_message.header,
+                    account_keys=list(old_message.account_keys),
+                    recent_blockhash=fresh_blockhash,
+                    instructions=list(old_message.instructions),  # Keep original CompiledInstructions
+                    address_table_lookups=old_message.address_table_lookups
+                )
             
             # Sign
             msg_bytes = to_bytes_versioned(new_message)
@@ -1786,15 +1812,14 @@ class DexTrader:
             from solders.hash import Hash
             fresh_blockhash = Hash.from_string(fresh_blockhash_str)
             
-            # Build message with Jito Tip
-            instructions = list(old_message.instructions)
-            account_keys = list(old_message.account_keys)
+            # JITO TIP: Add tip instruction if requested
+            # NOTE: When use_jito=True, we need to rebuild with try_compile
+            # because we're adding a new Instruction (not CompiledInstruction)
             
             if use_jito:
+                # Build Jito tip instruction
                 tip_account = Pubkey.from_string(random.choice(JITO_TIP_ACCOUNTS))
-                # Use high priority for sells to ensure we beat the crowd on the way out
                 tip_amount = self.get_jito_tip_amount_lamports(priority="high")
-                # Build transfer instruction manually for solders version compatibility
                 SYSTEM_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
                 transfer_data = struct.pack('<I', 2) + struct.pack('<Q', tip_amount)
                 tip_instruction = Instruction(
@@ -1805,17 +1830,42 @@ class DexTrader:
                     ],
                     data=transfer_data
                 )
-                instructions.append(tip_instruction)
-                if tip_account not in account_keys:
-                    account_keys.append(tip_account)
-
-            new_message = MessageV0(
-                header=old_message.header,
-                account_keys=account_keys,
-                recent_blockhash=fresh_blockhash,
-                instructions=instructions,
-                address_table_lookups=old_message.address_table_lookups
-            )
+                
+                # Use try_compile to rebuild with fresh blockhash + tip instruction
+                payer_pubkey = Pubkey.from_string(op_wallet)
+                
+                # Reconstruct all instructions from the original tx as Instruction objects
+                original_instructions = []
+                account_keys = list(old_message.account_keys)
+                for compiled_ix in old_message.instructions:
+                    program_id = account_keys[compiled_ix.program_id_index]
+                    accounts = []
+                    for idx in compiled_ix.accounts:
+                        is_signer = idx < old_message.header.num_required_signatures
+                        is_writable = (idx < old_message.header.num_required_signatures - old_message.header.num_readonly_signed_accounts) or \
+                                      (idx >= old_message.header.num_required_signatures and idx < len(account_keys) - old_message.header.num_readonly_unsigned_accounts)
+                        accounts.append(AccountMeta(pubkey=account_keys[idx], is_signer=is_signer, is_writable=is_writable))
+                    original_instructions.append(Instruction(program_id=program_id, accounts=accounts, data=bytes(compiled_ix.data)))
+                
+                # Add tip instruction at the end
+                all_instructions = original_instructions + [tip_instruction]
+                
+                # Use try_compile for proper instruction compilation
+                new_message = MessageV0.try_compile(
+                    payer=payer_pubkey,
+                    instructions=all_instructions,
+                    address_lookup_table_accounts=[],
+                    recent_blockhash=fresh_blockhash,
+                )
+            else:
+                # No Jito - just update blockhash on original message
+                new_message = MessageV0(
+                    header=old_message.header,
+                    account_keys=list(old_message.account_keys),
+                    recent_blockhash=fresh_blockhash,
+                    instructions=list(old_message.instructions),
+                    address_table_lookups=old_message.address_table_lookups
+                )
             
             # Sign
             msg_bytes = to_bytes_versioned(new_message)
