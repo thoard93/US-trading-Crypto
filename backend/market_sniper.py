@@ -360,5 +360,5 @@ class MarketSniper:
         logger.info("🛑 Sniper stopping...")
 
 if __name__ == "__main__":
-    sniper = MarketSniper(dry_run=True)
+    sniper = MarketSniper(dry_run=False)  # LIVE MODE ENABLED
     asyncio.run(sniper.start())

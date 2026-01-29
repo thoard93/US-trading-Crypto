@@ -138,19 +138,28 @@ class SniperExitCoordinator:
                 logger.debug(f"Balance pre-check failed for {mint[:8]}: {e}")
                 # Continue with sell attempt anyway - pump_sell will handle it
             
-            logger.info(f"💥 SELLING {percentage}% of {mint[:8]} (Slippage: {slippage}%)...")
-            # Use thread to avoid blocking loop
-            result = await asyncio.to_thread(
-                self.dex_trader.pump_sell,
-                mint,
-                token_amount_pct=percentage,
-                payer_key=wallet_key,
-                slippage=slippage
-            )
-            if result and result.get('success'):
-                logger.info(f"✅ SELL SUCCESS: {percentage}% of {mint[:8]}")
-            else:
-                logger.warning(f"⚠️ SELL FAILED: {result.get('error')}")
+            # Retry logic: Try up to 2 times for failed sells
+            max_attempts = 2
+            for attempt in range(max_attempts):
+                logger.info(f"💥 SELLING {percentage}% of {mint[:8]} (Slippage: {slippage}%){'...' if attempt == 0 else f' [Retry {attempt}]'}")
+                # Use thread to avoid blocking loop
+                result = await asyncio.to_thread(
+                    self.dex_trader.pump_sell,
+                    mint,
+                    token_amount_pct=percentage,
+                    payer_key=wallet_key,
+                    slippage=slippage
+                )
+                if result and result.get('success'):
+                    logger.info(f"✅ SELL SUCCESS: {percentage}% of {mint[:8]}")
+                    return
+                else:
+                    error = result.get('error') if result else 'No result'
+                    logger.warning(f"⚠️ SELL ATTEMPT {attempt+1} FAILED: {error}")
+                    if attempt < max_attempts - 1:
+                        await asyncio.sleep(2)  # Wait before retry
+            
+            logger.error(f"❌ SELL FAILED after {max_attempts} attempts: {mint[:8]}")
 
 def get_sniper_exit_coordinator(dex_trader=None):
     global _sniper_coord_instance

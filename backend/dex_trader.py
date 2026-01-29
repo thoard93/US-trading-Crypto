@@ -1567,11 +1567,7 @@ class DexTrader:
         from solders.instruction import Instruction, AccountMeta
         import struct
 
-        # Jito tip accounts (example, replace with actual ones if needed)
-        JITO_TIP_ACCOUNTS = [
-            "964v6J5F6g2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y", # Example Jito tip account
-            "Darius2C2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y", # Another example
-        ]
+        # Use global JITO_TIP_ACCOUNTS (defined at top of file)
         
         try:
             payload = {
@@ -1731,11 +1727,7 @@ class DexTrader:
         from solders.instruction import Instruction, AccountMeta
         import struct
 
-        # Jito tip accounts (example, replace with actual ones if needed)
-        JITO_TIP_ACCOUNTS = [
-            "964v6J5F6g2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y", # Example Jito tip account
-            "Darius2C2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y2y", # Another example
-        ]
+        # Use global JITO_TIP_ACCOUNTS (defined at top of file)
         
         try:
             # Get current token balance
