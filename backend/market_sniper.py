@@ -15,6 +15,7 @@ from dex_trader import DexTrader
 # from trend_hunter import TrendHunter  # DISABLED: Not needed for sniping, saves API $
 from movers_tracker import get_movers_tracker
 from pump_portal_client import get_pump_portal_client  # NEW: Real-time token detection
+from risk_manager import get_risk_manager  # NEW: Dynamic position sizing
 from sniper_exit_coordinator import get_sniper_exit_coordinator
 from wallet_manager import WalletManager
 
@@ -66,6 +67,7 @@ class MarketSniper:
         # self.hunter = TrendHunter()  # DISABLED: Save Twitter API costs
         self.tracker = get_movers_tracker()
         self.pump_portal = get_pump_portal_client()  # NEW: Real-time WebSocket
+        self.risk_mgr = get_risk_manager(self.trader)  # NEW: Dynamic sizing
         self.wallets = WalletManager()
         self.exit_coord = get_sniper_exit_coordinator(self.trader)
         
@@ -334,22 +336,36 @@ class MarketSniper:
             return
 
 
-        logger.info(f"💸 SNIPING: Buying {self.buy_amount} SOL of {symbol}...")
+        logger.info(f"💸 SNIPING: Buying {symbol}...")
         
         await self.alerter.notify(
-            f"🚀 **SNIPE TARGET**: {symbol} (${mc:,.0f} MC)\nBuying with {self.buy_amount} SOL",
+            f"🚀 **SNIPE TARGET**: {symbol} (${mc:,.0f} MC)",
             title="🎯 SNIPER INCOMING",
             color=0x3498db
         )
         
-        # Execute Buy
+        # Execute Buy with Dynamic Position Sizing
         try:
-            # Pre-buy balance check (Grok recommendation)
+            # Calculate optimal buy amount from risk manager
+            buy_amount = await self.risk_mgr.calculate_buy_amount()
+            
+            if buy_amount is None:
+                logger.info(f"⏸️ Skipping snipe - risk limits reached")
+                return
+            
+            # Check if we already have this position
+            if self.risk_mgr.is_position_open(mint):
+                logger.info(f"⚠️ Already holding {symbol}, skipping")
+                return
+                
+            logger.info(f"📊 Risk Manager approved: {buy_amount:.4f} SOL")
+            
+            # Pre-buy balance check
             sol_balance = await asyncio.to_thread(self.trader.get_sol_balance)
-            if sol_balance < self.buy_amount + 0.01:  # Need buy amount + fees
-                logger.error(f"❌ INSUFFICIENT SOL: Have {sol_balance:.3f}, need {self.buy_amount + 0.01:.3f}")
+            if sol_balance < buy_amount + 0.01:  # Need buy amount + fees
+                logger.error(f"❌ INSUFFICIENT SOL: Have {sol_balance:.3f}, need {buy_amount + 0.01:.3f}")
                 await self.alerter.notify(
-                    f"❌ **INSUFFICIENT SOL**\\nHave: {sol_balance:.3f} SOL\\nNeed: {self.buy_amount + 0.01:.3f} SOL",
+                    f"❌ **INSUFFICIENT SOL**\\nHave: {sol_balance:.3f} SOL\\nNeed: {buy_amount + 0.01:.3f} SOL",
                     title="⚠️ WALLET LOW",
                     color=0xe74c3c,
                     critical=True
@@ -360,17 +376,20 @@ class MarketSniper:
             result = await asyncio.to_thread(
                 self.trader.pump_buy, 
                 mint, 
-                sol_amount=self.buy_amount
+                sol_amount=buy_amount
             )
             
             if result and result.get('success'):
                 logger.info(f"✅ SNIPE SUCCESS: {symbol}")
                 await self.alerter.notify(
-                    f"✅ **BOUGHT**: {symbol}\nTX: {result.get('signature')}",
+                    f"✅ **BOUGHT**: {symbol} ({buy_amount:.4f} SOL)\nTX: {result.get('signature')}",
                     title="💰 SNIPE EXECUTED",
                     color=0x2ecc71,
                     critical=True
                 )
+                
+                # Record position in risk manager
+                self.risk_mgr.record_position_open(mint, buy_amount)
                 
                 # Start Exit Monitor
                 await self.exit_coord.start_monitoring(
