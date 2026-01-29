@@ -79,6 +79,7 @@ class MarketSniper:
         self.buy_amount = float(os.getenv('SNIPER_BUY_SOL', '0.1'))  # Fallback only (risk_mgr handles sizing)
         self.require_socials = os.getenv('SNIPER_REQUIRE_SOCIALS', 'false').lower() == 'true'
         self.check_liquidity = os.getenv('SNIPER_CHECK_LIQUIDITY', 'false').lower() == 'true'  # DISABLED per Grok
+        self.holder_threshold = float(os.getenv('SNIPER_HOLDER_THRESHOLD', '0.60'))  # 60% - relaxed for t=0 tokens
         
         # Smart Alerter
         self.alerter = DiscordAlerter(os.getenv('DISCORD_ALERTS_CHANNEL'))
@@ -86,6 +87,7 @@ class MarketSniper:
         # Internal State
         self.active_positions = {} # mint -> position_data
         self.seen_tokens = set()
+        self.recheck_queue = {}  # mint -> (token_data, scheduled_time) for concentration rechecks
         self.running = False
 
     async def start(self):
@@ -111,11 +113,50 @@ class MarketSniper:
                 # Old approach fetched /top-runners which returned mature tokens
                 # Now we just wait for WebSocket events
                 
+                # Process recheck queue for concentration-failed tokens
+                await self._process_recheck_queue()
+                
                 await asyncio.sleep(5)
                 
             except Exception as e:
                 logger.error(f"❌ Sniper loop error: {e}")
                 await asyncio.sleep(5)
+    
+    async def _process_recheck_queue(self):
+        """Re-evaluate tokens that failed concentration check (may have diluted)."""
+        if not self.recheck_queue:
+            return
+            
+        now = time.time()
+        to_remove = []
+        
+        for mint, (token_data, scheduled_time) in list(self.recheck_queue.items()):
+            if now >= scheduled_time:
+                to_remove.append(mint)
+                
+                # Re-check concentration
+                top_holders_share = await self._get_holder_concentration(mint)
+                symbol = token_data.get('symbol', 'Unknown')
+                
+                if top_holders_share <= self.holder_threshold:
+                    logger.info(f"✅ [RECHECK PASSED] {symbol} - Concentration dropped to {top_holders_share*100:.1f}%")
+                    # Clear from seen so it can be re-evaluated
+                    self.seen_tokens.discard(mint)
+                    # Run full vetting and potential snipe
+                    if await self._should_snipe(token_data):
+                        await self._execute_snipe(token_data)
+                else:
+                    logger.info(f"❌ [RECHECK FAILED] {symbol} - Still {top_holders_share*100:.1f}% concentration")
+        
+        # Clean up processed items
+        for mint in to_remove:
+            del self.recheck_queue[mint]
+        
+        # Limit queue size (keep only most recent 50)
+        if len(self.recheck_queue) > 50:
+            oldest = sorted(self.recheck_queue.keys(), key=lambda m: self.recheck_queue[m][1])[:len(self.recheck_queue)-50]
+            for mint in oldest:
+                del self.recheck_queue[mint]
     
     async def _run_pump_portal(self):
         """Run PumpPortal WebSocket in background."""
@@ -160,10 +201,15 @@ class MarketSniper:
             return False
             
         # B. Advanced Safety Checks
-        # 1. Holder Concentration Check
+        # 1. Holder Concentration Check (Relaxed for t=0 tokens per Grok)
         top_holders_share = await self._get_holder_concentration(mint)
-        if top_holders_share > 0.30:  # Grok Conservative: was 25%, now 30%
-            logger.warning(f"🛡️ [SKIP] {token_data.get('symbol')} - High concentration: {top_holders_share*100:.1f}%")
+        if top_holders_share > self.holder_threshold:
+            # Queue for recheck if near threshold (could dilute with organic buys)
+            if top_holders_share >= 0.95 and mint not in self.recheck_queue:
+                self.recheck_queue[mint] = (token_data, time.time() + 45)  # Recheck in 45s
+                logger.info(f"🔄 [QUEUED] {token_data.get('symbol')} - 100% concentration, will recheck in 45s")
+            else:
+                logger.warning(f"🛡️ [SKIP] {token_data.get('symbol')} - High concentration: {top_holders_share*100:.1f}%")
             return False
             
         # 2. Bundle Detection
