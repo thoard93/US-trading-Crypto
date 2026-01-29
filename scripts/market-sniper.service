@@ -1,6 +1,7 @@
 [Unit]
 Description=Market Sniper Trading Bot
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
@@ -9,9 +10,15 @@ WorkingDirectory=/opt/US-trading-Crypto/backend
 ExecStart=/bin/bash /opt/US-trading-Crypto/scripts/run_sniper.sh
 Restart=always
 RestartSec=10
+
+# Logging - all output goes to journald
 StandardOutput=journal
 StandardError=journal
+SyslogIdentifier=market-sniper
+
+# Keep process alive
+KillMode=process
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target
-
