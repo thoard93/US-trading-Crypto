@@ -14,6 +14,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from dex_trader import DexTrader
 # from trend_hunter import TrendHunter  # DISABLED: Not needed for sniping, saves API $
 from movers_tracker import get_movers_tracker
+from pump_portal_client import get_pump_portal_client  # NEW: Real-time token detection
 from sniper_exit_coordinator import get_sniper_exit_coordinator
 from wallet_manager import WalletManager
 
@@ -64,6 +65,7 @@ class MarketSniper:
         self.trader = DexTrader()
         # self.hunter = TrendHunter()  # DISABLED: Save Twitter API costs
         self.tracker = get_movers_tracker()
+        self.pump_portal = get_pump_portal_client()  # NEW: Real-time WebSocket
         self.wallets = WalletManager()
         self.exit_coord = get_sniper_exit_coordinator(self.trader)
         
@@ -91,33 +93,52 @@ class MarketSniper:
         # TrendHunter DISABLED - not needed for sniping, saves Twitter API $
         # self.hunter.get_trending_keywords(limit=1) 
         
+        # Register callback for PumpPortal new token events
+        self.pump_portal.register_callback(self._on_new_token)
+        
+        # Start PumpPortal WebSocket in background (non-blocking)
+        asyncio.create_task(self._run_pump_portal())
+        
         while self.running:
             try:
-                # 0. Orphan Audit: Ensure any tokens held are being monitored
-                await self._audit_held_positions()
+                # ORPHAN AUDIT DISABLED: Was causing noise from old tokens
+                # await self._audit_held_positions()
 
-                # 1. Discovery Phase (Free/Low-cost)
-                tokens = await self.tracker.fetch_movers(limit=20)
-                
-                for token in tokens:
-                    mint = token.get('mint')
-                    if not mint or mint in self.seen_tokens:
-                        continue
-                        
-                    # 2. Vetting Phase
-                    if await self._should_snipe(token):
-                        await self._execute_snipe(token)
-                    
-                    self.seen_tokens.add(mint)
-                    # Memory Guard: Keep seen_tokens at a reasonable size
-                    if len(self.seen_tokens) > 5000:
-                        self.seen_tokens.clear() # Refresh every 5000 tokens
+                # POLLING DISABLED: PumpPortal WebSocket handles discovery now
+                # Old approach fetched /top-runners which returned mature tokens
+                # Now we just wait for WebSocket events
                 
                 await asyncio.sleep(5)
                 
             except Exception as e:
                 logger.error(f"❌ Sniper loop error: {e}")
                 await asyncio.sleep(5)
+    
+    async def _run_pump_portal(self):
+        """Run PumpPortal WebSocket in background."""
+        try:
+            await self.pump_portal.start()
+        except Exception as e:
+            logger.error(f"PumpPortal error: {e}")
+    
+    async def _on_new_token(self, token_data: dict):
+        """Callback when PumpPortal detects a new token."""
+        mint = token_data.get('mint')
+        if not mint or mint in self.seen_tokens:
+            return
+        
+        self.seen_tokens.add(mint)
+        
+        # Memory Guard: Keep seen_tokens at a reasonable size
+        if len(self.seen_tokens) > 5000:
+            self.seen_tokens.clear()
+        
+        # Vet and snipe if passes
+        try:
+            if await self._should_snipe(token_data):
+                await self._execute_snipe(token_data)
+        except Exception as e:
+            logger.error(f"Snipe evaluation error for {mint[:12]}: {e}")
 
     async def _should_snipe(self, token_data: dict) -> bool:
         """Mandatory Safety Vetting."""

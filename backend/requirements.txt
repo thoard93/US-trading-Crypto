@@ -22,3 +22,4 @@ jito-py-rpc
 anthropic
 websocket-client
 curl_cffi
+websockets
