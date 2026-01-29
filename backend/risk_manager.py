@@ -19,12 +19,13 @@ logger = logging.getLogger(__name__)
 
 # ============ RISK CONFIG ============
 # Override via env vars for flexibility
+# TEMPORARILY RELAXED FOR TESTING (per Grok Jan 29 2026)
 
 BUY_PERCENT_MIN = float(os.getenv('RISK_BUY_PCT_MIN', '0.02'))     # 2% min
 BUY_PERCENT_MAX = float(os.getenv('RISK_BUY_PCT_MAX', '0.03'))     # 3% max
-MAX_OPEN_POSITIONS = int(os.getenv('RISK_MAX_POSITIONS', '5'))     # Max 5 concurrent
-MAX_EXPOSURE_PERCENT = float(os.getenv('RISK_MAX_EXPOSURE', '0.20'))  # 20% max
-DAILY_LOSS_LIMIT = float(os.getenv('RISK_DAILY_LOSS', '-0.15'))    # -15% pause
+MAX_OPEN_POSITIONS = int(os.getenv('RISK_MAX_POSITIONS', '7'))     # Relaxed: 5→7 for testing
+MAX_EXPOSURE_PERCENT = float(os.getenv('RISK_MAX_EXPOSURE', '0.30'))  # Relaxed: 20%→30% for testing
+DAILY_LOSS_LIMIT = float(os.getenv('RISK_DAILY_LOSS', '-0.25'))    # Relaxed: -15%→-25% for testing
 MIN_BUY_SOL = float(os.getenv('RISK_MIN_BUY', '0.05'))             # Min 0.05 SOL
 MIN_BALANCE_RESERVE = float(os.getenv('RISK_RESERVE', '0.1'))      # Keep 0.1 SOL for fees
 
@@ -45,7 +46,8 @@ class RiskManager:
         """Get current SOL balance from wallet."""
         if self.trader:
             try:
-                balance = await self.trader.get_sol_balance()
+                # DexTrader.get_sol_balance is SYNC, not async!
+                balance = self.trader.get_sol_balance()
                 return balance
             except Exception as e:
                 logger.error(f"Failed to get wallet balance: {e}")
