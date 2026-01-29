@@ -124,6 +124,20 @@ class SniperExitCoordinator:
 
     async def _execute_sell(self, mint: str, wallet_key: str, percentage: int, slippage: int = 25):
         if self.dex_trader:
+            # Pre-check: Don't waste API calls if we have no tokens
+            try:
+                from solders.keypair import Keypair
+                kp = Keypair.from_base58_string(wallet_key)
+                wallet_addr = str(kp.pubkey())
+                bal_info = self.dex_trader._get_wallet_token_balance(wallet_addr, mint)
+                token_balance = bal_info.get('ui_amount', 0)
+                if token_balance <= 0:
+                    logger.info(f"📌 SKIP SELL: No tokens to sell for {mint[:8]} (balance: 0)")
+                    return
+            except Exception as e:
+                logger.debug(f"Balance pre-check failed for {mint[:8]}: {e}")
+                # Continue with sell attempt anyway - pump_sell will handle it
+            
             logger.info(f"💥 SELLING {percentage}% of {mint[:8]} (Slippage: {slippage}%)...")
             # Use thread to avoid blocking loop
             result = await asyncio.to_thread(
