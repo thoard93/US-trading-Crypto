@@ -124,15 +124,16 @@ class SniperExitCoordinator:
 
     async def _execute_sell(self, mint: str, wallet_key: str, percentage: int, slippage: int = 25):
         if self.dex_trader:
-            # Pre-check: Don't waste API calls if we have no tokens
+            # Pre-check: Don't waste API calls if we have no tokens or dust
             try:
                 from solders.keypair import Keypair
                 kp = Keypair.from_base58_string(wallet_key)
                 wallet_addr = str(kp.pubkey())
                 bal_info = self.dex_trader._get_wallet_token_balance(wallet_addr, mint)
-                token_balance = bal_info.get('ui_amount', 0)
-                if token_balance <= 0:
-                    logger.info(f"📌 SKIP SELL: No tokens to sell for {mint[:8]} (balance: 0)")
+                token_balance = bal_info.get('ui_amount', 0) or 0
+                # Skip if balance is zero or dust (< 0.001 tokens)
+                if token_balance < 0.001:
+                    logger.info(f"📌 SKIP SELL: No tokens to sell for {mint[:8]} (balance: {token_balance:.6f})")
                     return
             except Exception as e:
                 logger.debug(f"Balance pre-check failed for {mint[:8]}: {e}")
