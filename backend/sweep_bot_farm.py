@@ -5,10 +5,12 @@ import base58
 import time
 from typing import List, Dict
 from solders.keypair import Keypair
-from solders.system_program import transfer, TransferParams
+from solders.instruction import Instruction, AccountMeta
+from solders.pubkey import Pubkey
 from solana.rpc.async_api import AsyncClient
 from solders.transaction import Transaction
 from solders.message import Message
+import struct
 from dotenv import load_dotenv
 
 # Ensure .env is loaded
@@ -145,12 +147,17 @@ async def clean_slate_sweep():
             
             recent_blockhash = (await client.get_latest_blockhash()).value.blockhash
             
-            # Use solders-style transaction building for better compatibility
-            instruction = transfer(TransferParams(
-                from_pubkey=src_pubkey,
-                to_pubkey=dest_pubkey,
-                lamports=sweep_amount
-            ))
+            # Build transfer instruction manually for solders version compatibility
+            SYSTEM_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
+            transfer_data = struct.pack('<I', 2) + struct.pack('<Q', sweep_amount)  # 2 = transfer
+            instruction = Instruction(
+                program_id=SYSTEM_PROGRAM_ID,
+                accounts=[
+                    AccountMeta(pubkey=src_pubkey, is_signer=True, is_writable=True),
+                    AccountMeta(pubkey=dest_pubkey, is_signer=False, is_writable=True),
+                ],
+                data=transfer_data
+            )
             
             message = Message([instruction], src_pubkey)
             txn = Transaction([kp], message, recent_blockhash)

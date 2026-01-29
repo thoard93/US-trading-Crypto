@@ -299,7 +299,13 @@ class MarketSniper:
         
         if self.dry_run:
             logger.info(f"🧪 [DRY RUN] Would buy {self.buy_amount} SOL of {symbol} ({mint})")
+            await self.alerter.notify(
+                f"🧪 **[DRY RUN] TARGET**: {symbol} (${mc:,.0f} MC)\nWould buy {self.buy_amount} SOL\nMint: `{mint[:12]}...`",
+                title="🎯 SNIPER DRY RUN",
+                color=0x95a5a6  # Grey for dry run
+            )
             return
+
 
         logger.info(f"💸 SNIPING: Buying {self.buy_amount} SOL of {symbol}...")
         

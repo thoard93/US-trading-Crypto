@@ -1227,13 +1227,21 @@ class DexTrader:
                 instructions.append(parse_instr(instr_data.get('cleanupInstruction')))
             
             # 5. Add Jito Tip instruction (SOL transfer)
-            # Use solders.system_program.transfer (already imported as transfer)
-            tip_ix = transfer(TransferParams(
-                from_pubkey=self.keypair.pubkey(),
-                to_pubkey=tip_account,
-                lamports=tip_lamports
-            ))
+            # Build transfer instruction manually for solders version compatibility
+            # System Program Transfer: Instruction Index 2 (in little endian u32) + lamports (u64 LE)
+            import struct
+            SYSTEM_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
+            transfer_data = struct.pack('<I', 2) + struct.pack('<Q', tip_lamports)  # 2 = transfer instruction
+            tip_ix = Instruction(
+                program_id=SYSTEM_PROGRAM_ID,
+                accounts=[
+                    AccountMeta(pubkey=self.keypair.pubkey(), is_signer=True, is_writable=True),
+                    AccountMeta(pubkey=tip_account, is_signer=False, is_writable=True),
+                ],
+                data=transfer_data
+            )
             instructions.append(tip_ix)
+
             
             # 6. Fetch Address Lookup Table accounts
             alt_addresses = instr_data.get('addressLookupTableAddresses', [])
