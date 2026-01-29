@@ -12,7 +12,7 @@ from solders.signature import Signature
 from solders.message import to_bytes_versioned, MessageV0
 from solders.pubkey import Pubkey
 from solders.instruction import Instruction, AccountMeta
-from solders.system_program import transfer, TransferParams
+# Note: transfer/TransferParams removed - not used and caused version issues on some systems
 from solders.address_lookup_table_account import AddressLookupTableAccount
 from nacl.signing import SigningKey
 import random
