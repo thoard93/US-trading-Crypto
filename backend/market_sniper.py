@@ -27,35 +27,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("MarketSniper")
 
-class DiscordAlerter:
-    """Smart notification handler with anti-spam and importance filtering."""
-    def __init__(self, channel_id: str):
-        self.channel_id = channel_id
-        self.last_alerts = {} # mint -> timestamp
-        self.flood_cooldown = 300 # 5 minutes for non-critical alerts
-        
-    async def notify(self, message: str, title: str = "🎯 SNIPER ALERT", color: int = 0x9b59b6, critical: bool = False):
-        if not self.channel_id: return
-        
-        # Anti-Spam: Critical alerts always go through
-        now = time.time()
-        if not critical:
-            last_sent = self.last_alerts.get(message, 0)
-            if now - last_sent < self.flood_cooldown: return
-                
-        try:
-            from bot import get_discord_client
-            import discord
-            client = get_discord_client()
-            if client:
-                channel = client.get_channel(int(self.channel_id))
-                if channel:
-                    embed = discord.Embed(title=title, description=message, color=color)
-                    embed.set_timestamp()
-                    await channel.send(embed=embed)
-                    self.last_alerts[message] = now
-        except Exception as e:
-            logger.debug(f"Discord notify error: {e}")
+# Old DiscordAlerter class removed - now using webhook-based alerter from discord_alerter.py
 
 class MarketSniper:
     """
@@ -465,21 +437,12 @@ class MarketSniper:
         
         if self.dry_run:
             logger.info(f"🧪 [DRY RUN] Would buy {self.buy_amount} SOL of {symbol} ({mint})")
-            await self.alerter.notify(
-                f"🧪 **[DRY RUN] TARGET**: {symbol} (${mc:,.0f} MC)\nWould buy {self.buy_amount} SOL\nMint: `{mint[:12]}...`",
-                title="🎯 SNIPER DRY RUN",
-                color=0x95a5a6  # Grey for dry run
-            )
             return
 
 
         logger.info(f"💸 SNIPING: Buying {symbol}...")
         
-        await self.alerter.notify(
-            f"🚀 **SNIPE TARGET**: {symbol} (${mc:,.0f} MC)",
-            title="🎯 SNIPER INCOMING",
-            color=0x3498db
-        )
+        # Webhook alert handled after successful buy
         
         # Execute Buy with Dynamic Position Sizing
         try:
@@ -520,12 +483,7 @@ class MarketSniper:
             sol_balance = await asyncio.to_thread(self.trader.get_sol_balance)
             if sol_balance < buy_amount + 0.01:  # Need buy amount + fees
                 logger.error(f"❌ INSUFFICIENT SOL: Have {sol_balance:.3f}, need {buy_amount + 0.01:.3f}")
-                await self.alerter.notify(
-                    f"❌ **INSUFFICIENT SOL**\\nHave: {sol_balance:.3f} SOL\\nNeed: {buy_amount + 0.01:.3f} SOL",
-                    title="⚠️ WALLET LOW",
-                    color=0xe74c3c,
-                    critical=True
-                )
+                # Low balance - just log it
                 return
             
             # PRE-BUY DUMP CHECK: Validate MC hasn't crashed since vetting
@@ -553,12 +511,6 @@ class MarketSniper:
             
             if result and result.get('success'):
                 logger.info(f"✅ SNIPE SUCCESS: {symbol}")
-                await self.alerter.notify(
-                    f"✅ **BOUGHT**: {symbol} ({buy_amount:.4f} SOL)\nTX: {result.get('signature')}",
-                    title="💰 SNIPE EXECUTED",
-                    color=0x2ecc71,
-                    critical=True
-                )
                 
                 # Record position in risk manager with full metadata
                 self.risk_mgr.record_position_open(
@@ -595,8 +547,8 @@ class MarketSniper:
             logger.error(f"❌ Execution error: {e}")
 
     async def _notify_discord(self, message: str, critical: bool = False):
-        """LEGACY: Redirecting to smart alerter."""
-        await self.alerter.notify(message, critical=critical)
+        """LEGACY: No longer used - webhook alerter handles notifications."""
+        pass  # Deprecated - use self.alerter.alert_* methods
 
     def stop(self):
         self.running = False
