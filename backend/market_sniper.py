@@ -124,30 +124,70 @@ class MarketSniper:
                 await asyncio.sleep(5)
     
     async def _process_recheck_queue(self):
-        """Re-evaluate tokens that failed concentration check (may have diluted)."""
+        """Re-evaluate tokens with multi-interval rechecks (20/40/60s) and rising trend validation."""
         if not self.recheck_queue:
             return
             
         now = time.time()
         to_remove = []
         
-        for mint, (token_data, scheduled_time) in list(self.recheck_queue.items()):
-            if now >= scheduled_time:
+        for mint, check_data in list(self.recheck_queue.items()):
+            # Handle old tuple format for backwards compatibility
+            if isinstance(check_data, tuple):
+                token_data, scheduled_time = check_data
+                if now >= scheduled_time:
+                    to_remove.append(mint)
+                    top_holders_share = await self._get_holder_concentration(mint)
+                    symbol = token_data.get('symbol', 'Unknown')
+                    if top_holders_share <= self.holder_threshold:
+                        logger.info(f"✅ [RECHECK PASSED] {symbol} - Concentration dropped to {top_holders_share*100:.1f}%")
+                        self.seen_tokens.discard(mint)
+                        if await self._should_snipe(token_data):
+                            await self._execute_snipe(token_data)
+                    else:
+                        logger.info(f"❌ [RECHECK FAILED] {symbol} - Still {top_holders_share*100:.1f}% concentration")
+                continue
+            
+            # New multi-interval format
+            token_data = check_data.get('token_data', {})
+            check_times = check_data.get('check_times', [])
+            current_check = check_data.get('current_check', 0)
+            prev_mc = check_data.get('prev_mc', 0)
+            symbol = token_data.get('symbol', 'Unknown')
+            
+            if current_check >= len(check_times):
                 to_remove.append(mint)
+                continue
                 
-                # Re-check concentration
+            if now >= check_times[current_check]:
+                # Fetch current MC to check trend
+                current_mc = await self.exit_coord._get_mc(mint) or 0
+                
+                if prev_mc > 0 and current_mc < prev_mc * 0.95:  # Dropped >5% during recheck
+                    logger.warning(f"🚫 [RECHECK ABORT] {symbol} - MC dropped {((current_mc/prev_mc)-1)*100:.0f}% during wait")
+                    to_remove.append(mint)
+                    continue
+                
+                # Check concentration
                 top_holders_share = await self._get_holder_concentration(mint)
-                symbol = token_data.get('symbol', 'Unknown')
                 
                 if top_holders_share <= self.holder_threshold:
-                    logger.info(f"✅ [RECHECK PASSED] {symbol} - Concentration dropped to {top_holders_share*100:.1f}%")
-                    # Clear from seen so it can be re-evaluated
+                    logger.info(f"✅ [RECHECK {current_check+1}/3 PASSED] {symbol} - Concentration: {top_holders_share*100:.1f}%, MC rising")
                     self.seen_tokens.discard(mint)
-                    # Run full vetting and potential snipe
+                    to_remove.append(mint)
+                    # Update token_data with fresh MC
+                    token_data['usd_market_cap'] = current_mc
                     if await self._should_snipe(token_data):
                         await self._execute_snipe(token_data)
                 else:
-                    logger.info(f"❌ [RECHECK FAILED] {symbol} - Still {top_holders_share*100:.1f}% concentration")
+                    # Move to next recheck interval
+                    check_data['current_check'] = current_check + 1
+                    check_data['prev_mc'] = current_mc
+                    logger.info(f"⏳ [RECHECK {current_check+1}/3] {symbol} - Still {top_holders_share*100:.1f}%, next check in 20s")
+                    
+                    if current_check + 1 >= len(check_times):
+                        logger.info(f"❌ [RECHECK EXHAUSTED] {symbol} - Still concentrated after 3 checks")
+                        to_remove.append(mint)
         
         # Clean up processed items
         for mint in to_remove:
@@ -155,8 +195,9 @@ class MarketSniper:
         
         # Limit queue size (keep only most recent 50)
         if len(self.recheck_queue) > 50:
-            oldest = sorted(self.recheck_queue.keys(), key=lambda m: self.recheck_queue[m][1])[:len(self.recheck_queue)-50]
-            for mint in oldest:
+            sorted_keys = sorted(self.recheck_queue.keys(), 
+                key=lambda m: self.recheck_queue[m].get('check_times', [time.time()])[0] if isinstance(self.recheck_queue[m], dict) else self.recheck_queue[m][1])
+            for mint in sorted_keys[:len(self.recheck_queue)-50]:
                 del self.recheck_queue[mint]
     
     async def _run_pump_portal(self):
@@ -200,15 +241,37 @@ class MarketSniper:
             return False
         if score < self.min_momentum:
             return False
+        
+        # B. MOMENTUM CHECKS (Filter stagnant/dumping tokens)
+        # 1. Volume/Buyer Spike Check - Ensure positive flow
+        try:
+            vol_data = await self._get_token_momentum(mint)
+            recent_vol = vol_data.get('volume_sol', 0)
+            buyer_count = vol_data.get('buyer_count', 0)
             
-        # B. Advanced Safety Checks
+            MIN_RECENT_VOL = 1.0  # At least 1 SOL volume indicates activity
+            MIN_BUYERS = 3  # At least 3 unique buyers
+            
+            if recent_vol < MIN_RECENT_VOL and buyer_count < MIN_BUYERS:
+                logger.info(f"⏭️ [SKIP] {token_data.get('symbol')} - Low momentum (Vol: {recent_vol:.2f} SOL, Buyers: {buyer_count})")
+                return False
+        except Exception as e:
+            logger.debug(f"Momentum check failed for {mint[:8]}: {e}")
+            
+        # C. Advanced Safety Checks
         # 1. Holder Concentration Check (Relaxed for t=0 tokens per Grok)
         top_holders_share = await self._get_holder_concentration(mint)
         if top_holders_share > self.holder_threshold:
-            # Queue for recheck if near threshold (could dilute with organic buys)
+            # Queue for multi-stage recheck if near threshold (could dilute with organic buys)
             if top_holders_share >= 0.95 and mint not in self.recheck_queue:
-                self.recheck_queue[mint] = (token_data, time.time() + 45)  # Recheck in 45s
-                logger.info(f"🔄 [QUEUED] {token_data.get('symbol')} - 100% concentration, will recheck in 45s")
+                # Multi-interval recheck: first check at 20s
+                self.recheck_queue[mint] = {
+                    'token_data': token_data,
+                    'check_times': [time.time() + 20, time.time() + 40, time.time() + 60],
+                    'current_check': 0,
+                    'prev_mc': mc
+                }
+                logger.info(f"🔄 [QUEUED] {token_data.get('symbol')} - 100% concentration, will recheck at 20/40/60s")
             else:
                 logger.warning(f"🛡️ [SKIP] {token_data.get('symbol')} - High concentration: {top_holders_share*100:.1f}%")
             return False
@@ -237,6 +300,24 @@ class MarketSniper:
 
         logger.info(f"🎯 Target Verified: {token_data.get('symbol')} | MC: ${mc:,.0f} | Score: {score}")
         return True
+
+    async def _get_token_momentum(self, mint: str) -> dict:
+        """Fetch volume and buyer activity to validate positive momentum."""
+        try:
+            url = f"https://frontend-api-v3.pump.fun/coins/{mint}"
+            resp = requests.get(url, timeout=5, headers={'User-Agent': 'Mozilla/5.0'}).json()
+            
+            # Extract momentum indicators
+            volume_sol = resp.get('virtual_sol_reserves', 0) / 1e9  # Approximate trading volume
+            holder_count = resp.get('holder_count', 0)
+            
+            return {
+                'volume_sol': volume_sol,
+                'buyer_count': holder_count
+            }
+        except Exception as e:
+            logger.debug(f"Momentum fetch failed for {mint[:8]}: {e}")
+            return {'volume_sol': 0, 'buyer_count': 0}
 
     async def _get_holder_concentration(self, mint: str) -> float:
         """Fetch top 10 holders and return their combined % of supply."""
