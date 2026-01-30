@@ -74,7 +74,7 @@ class MarketSniper:
         
         # Strategy Config
         # GROK TUNED SETTINGS (Jan 29 2026 - Open Funnel for Action)
-        self.min_mc = float(os.getenv('SNIPER_MIN_MC', '7000'))  # Raised: 4k→7k for better quality entries
+        self.min_mc = float(os.getenv('SNIPER_MIN_MC', '6000'))  # Lowered: 7k→6k to catch sweet spot (6.3-6.8k traction zone)
         self.max_mc = float(os.getenv('SNIPER_MAX_MC', '100000'))  # Still 100k cap
         self.min_momentum = float(os.getenv('SNIPER_MIN_MOMENTUM', '50'))  # Keep at 50
         self.buy_amount = float(os.getenv('SNIPER_BUY_SOL', '0.1'))  # Fallback only (risk_mgr handles sizing)
