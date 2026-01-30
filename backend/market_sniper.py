@@ -18,6 +18,7 @@ from pump_portal_client import get_pump_portal_client  # NEW: Real-time token de
 from risk_manager import get_risk_manager  # NEW: Dynamic position sizing
 from sniper_exit_coordinator import get_sniper_exit_coordinator
 from wallet_manager import WalletManager
+from discord_alerter import get_discord_alerter  # NEW: Webhook-based alerts
 
 # Configure logging
 logging.basicConfig(
@@ -81,8 +82,8 @@ class MarketSniper:
         self.check_liquidity = os.getenv('SNIPER_CHECK_LIQUIDITY', 'false').lower() == 'true'  # DISABLED per Grok
         self.holder_threshold = float(os.getenv('SNIPER_HOLDER_THRESHOLD', '0.60'))  # 60% - relaxed for t=0 tokens
         
-        # Smart Alerter
-        self.alerter = DiscordAlerter(os.getenv('DISCORD_ALERTS_CHANNEL'))
+        # Smart Alerter (New webhook-based)
+        self.alerter = get_discord_alerter()
         
         # Internal State
         self.active_positions = {} # mint -> position_data
@@ -439,24 +440,37 @@ class MarketSniper:
                     critical=True
                 )
                 
-                # Record position in risk manager
-                self.risk_mgr.record_position_open(mint, buy_amount)
-                
-                # Start Exit Monitor
-                await self.exit_coord.start_monitoring(
-                    mint, 
+                # Record position in risk manager with full metadata
+                self.risk_mgr.record_position_open(
+                    mint, buy_amount, 
                     entry_mc=mc, 
-                    wallet_key=self.wallets.get_main_key()
+                    wallet_key=self.wallets.get_main_key(),
+                    symbol=symbol
+                )
+                
+                # Discord webhook alert on successful buy
+                if self.alerter:
+                    self.alerter.alert_buy_success(
+                        symbol=symbol,
+                        mint=mint,
+                        amount_sol=buy_amount,
+                        entry_mc=mc,
+                        tx_sig=result.get('signature')
+                    )
+                
+                # Start Exit Monitor with symbol for better logging
+                await self.exit_coord.start_monitoring(
+                    mint=mint, 
+                    entry_mc=mc, 
+                    wallet_key=self.wallets.get_main_key(),
+                    symbol=symbol
                 )
             else:
                 error = result.get('error', 'Unknown Error') if result else "No Result"
                 logger.warning(f"❌ SNIPE FAILED: {symbol} - {error}")
-                await self.alerter.notify(
-                    f"❌ **FAILED**: {symbol}\nReason: {error}",
-                    title="⚠️ SNIPE ERROR",
-                    color=0xe74c3c,
-                    critical=True
-                )
+                # Discord webhook alert on failed buy
+                if self.alerter:
+                    self.alerter.alert_buy_failed(symbol, mint, error)
         except Exception as e:
             logger.error(f"❌ Execution error: {e}")
 

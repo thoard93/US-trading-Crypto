@@ -158,14 +158,22 @@ class RiskManager:
         
         return amount
     
-    def record_position_open(self, mint: str, entry_sol: float, tokens: float = 0):
-        """Record a new open position."""
+    def record_position_open(self, mint: str, entry_sol: float, tokens: float = 0, 
+                               entry_mc: float = 0, wallet_key: str = None, symbol: str = None):
+        """Record a new open position with full metadata for retroactive checks."""
         _open_positions[mint] = {
             'entry_sol': entry_sol,
             'tokens': tokens,
-            'entry_time': time.time()
+            'entry_time': time.time(),
+            'entry_mc': entry_mc,
+            'wallet_key': wallet_key,
+            'symbol': symbol or mint[:8]
         }
-        logger.info(f"📝 Recorded position: {mint[:12]}... | {entry_sol:.4f} SOL | {len(_open_positions)} open")
+        logger.info(f"📝 Recorded position: {symbol or mint[:12]}... | {entry_sol:.4f} SOL | {len(_open_positions)} open")
+    
+    def get_open_positions(self) -> dict:
+        """Get all open positions with full metadata for retroactive checks."""
+        return _open_positions.copy()
     
     def record_position_close(self, mint: str, exit_sol: float = 0):
         """Record position close and calculate PnL."""
