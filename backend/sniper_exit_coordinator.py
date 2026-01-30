@@ -68,8 +68,8 @@ class SniperExitCoordinator:
         self.timeout = 5400  # 90 minute stagnation timeout
         self.timeout_growth_threshold = 1.25  # Must have 25% growth to avoid timeout
         
-        # Start retroactive timeout check
-        asyncio.create_task(self._check_retroactive_timeouts())
+        # Flag for retroactive check (run once on first monitor start)
+        self._retroactive_checked = False
 
     async def _check_retroactive_timeouts(self):
         """On startup, check for any old stagnant positions that should be sold."""
@@ -125,6 +125,11 @@ class SniperExitCoordinator:
 
     async def start_monitoring(self, mint: str, entry_mc: float, wallet_key: str, symbol: str = None):
         """Start tracking a sniped position."""
+        # Run retroactive check once on first call (event loop is now running)
+        if not self._retroactive_checked:
+            self._retroactive_checked = True
+            asyncio.create_task(self._check_retroactive_timeouts())
+        
         if mint in self.active_monitors:
             return
         
