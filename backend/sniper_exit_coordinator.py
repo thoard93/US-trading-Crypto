@@ -63,7 +63,7 @@ class SniperExitCoordinator:
             (15.0, 1.0)    # Sell all at 15x
         ]
         
-        self.stop_loss_pct = 0.25  # Initial hard stop-loss (25% drop from entry)
+        self.stop_loss_pct = 0.35  # Softened: 25% → 35% for more rebound room
         self.trailing_stop_pct = 0.15  # 15% drop from peak (active after growth)
         self.timeout = 5400  # 90 minute stagnation timeout
         self.timeout_growth_threshold = 1.25  # Must have 25% growth to avoid timeout
@@ -193,12 +193,21 @@ class SniperExitCoordinator:
                 elapsed = time.time() - start_time
                 multiplier = mc / entry_mc
                 
-                # Dynamic Tier Adjustment (check once after 2min)
+                # Dynamic Tier Adjustment based on volume (check once after 2min)
                 if not momentum_checked and elapsed > 120:
                     momentum_checked = True
-                    if await self._check_momentum(mint):
-                        logger.info(f"🚀 HIGH MOMENTUM detected for {symbol}! Extending profit tiers.")
-                        current_tiers = self.momentum_tiers.copy()
+                    try:
+                        url = f"https://frontend-api-v3.pump.fun/coins/{mint}"
+                        resp = requests.get(url, timeout=5, headers={'User-Agent': 'Mozilla/5.0'}).json()
+                        volume_sol = resp.get('virtual_sol_reserves', 0) / 1e9
+                        
+                        if volume_sol > 5:  # High volume = let runners run
+                            logger.info(f"🚀 HIGH VOLUME ({volume_sol:.1f} SOL) on {symbol}! Using extended tiers (3x/7x/15x)")
+                            current_tiers = self.momentum_tiers.copy()
+                        else:
+                            logger.info(f"📉 Normal volume ({volume_sol:.1f} SOL) on {symbol} - keeping default tiers (2x/5x/10x)")
+                    except Exception as e:
+                        logger.debug(f"Volume check failed: {e}")
 
                 # 1. Check Tiers (Profit Taking)
                 if current_tier_idx < len(current_tiers):

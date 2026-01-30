@@ -486,21 +486,38 @@ class MarketSniper:
                 # Low balance - just log it
                 return
             
-            # PRE-BUY DUMP CHECK: Validate MC hasn't crashed since vetting
+            # MULTI-POINT TREND VALIDATION: 3 MC fetches 1s apart to catch dumps
             # Prevents buying into dump tails (common on fast Pump.fun swings)
             try:
-                fresh_mc = await self.exit_coord._get_mc(mint)
-                if fresh_mc and mc > 0:
-                    mc_change = (fresh_mc - mc) / mc
-                    if mc_change < -0.10:  # Dropped >10% since vetting
-                        logger.warning(f"🚫 DUMP DETECTED: {symbol} dropped {mc_change*100:.0f}% (${mc:,.0f} → ${fresh_mc:,.0f}) - SKIPPING")
+                mc_values = []
+                for probe in range(3):
+                    probe_mc = await self.exit_coord._get_mc(mint)
+                    if probe_mc:
+                        mc_values.append(probe_mc)
+                    if probe < 2:  # Don't sleep after last probe
+                        await asyncio.sleep(1)
+                
+                if len(mc_values) >= 2:
+                    # Check overall trend
+                    overall_change = (mc_values[-1] - mc_values[0]) / mc_values[0] if mc_values[0] > 0 else 0
+                    
+                    if overall_change < -0.05:  # Dropped >5% during probe
+                        logger.warning(f"🚫 DUMP TREND: {symbol} dropped {overall_change*100:.0f}% during 3s probe (${mc_values[0]:,.0f} → ${mc_values[-1]:,.0f}) - SKIPPING")
                         return
-                    elif mc_change < -0.05:  # Dropped 5-10% - warn but proceed
-                        logger.info(f"⚠️ Slight dip on {symbol}: {mc_change*100:.1f}% - proceeding cautiously")
-                    # Update MC to fresh value for accurate entry tracking
-                    mc = fresh_mc
+                    elif overall_change < 0.02:  # Flat or slight drop (<2% growth)
+                        # Only skip if MC is also declining
+                        if mc_values[-1] < mc_values[0]:
+                            logger.info(f"⚠️ FLAT/DIP TREND: {symbol} not rising ({overall_change*100:.1f}%) - SKIPPING")
+                            return
+                        else:
+                            logger.info(f"⚠️ Slow growth on {symbol}: {overall_change*100:.1f}% - proceeding cautiously")
+                    else:
+                        logger.info(f"✅ UPTREND CONFIRMED: {symbol} +{overall_change*100:.1f}% in 3s probe")
+                    
+                    # Update MC to latest for accurate entry
+                    mc = mc_values[-1]
             except Exception as e:
-                logger.debug(f"Pre-buy MC check failed: {e} - proceeding anyway")
+                logger.debug(f"Multi-point trend check failed: {e} - proceeding anyway")
             
             # Execute the buy
             result = await asyncio.to_thread(
