@@ -99,6 +99,36 @@ class RiskManager:
         """Check if we already have a position in this token."""
         return mint in _open_positions
     
+    def clear_all_positions(self):
+        """Clear all tracked positions (use when out of sync with wallet)."""
+        count = len(_open_positions)
+        _open_positions.clear()
+        logger.info(f"🧹 Cleared {count} tracked positions")
+        return count
+    
+    async def sync_with_wallet(self):
+        """Sync internal tracking with actual wallet holdings.
+        Clears positions that no longer exist in wallet."""
+        if not self.trader:
+            return
+        try:
+            import asyncio
+            actual_holdings = await asyncio.to_thread(self.trader.get_all_tokens)
+            actual_mints = set(actual_holdings.keys()) if isinstance(actual_holdings, dict) else set(actual_holdings)
+            
+            stale = []
+            for mint in list(_open_positions.keys()):
+                if mint not in actual_mints:
+                    stale.append(mint)
+                    del _open_positions[mint]
+            
+            if stale:
+                logger.info(f"🔄 Synced positions: Removed {len(stale)} stale entries not in wallet")
+            else:
+                logger.info(f"✅ Position sync: {len(_open_positions)} tracked = wallet holdings")
+        except Exception as e:
+            logger.error(f"Failed to sync positions: {e}")
+    
     async def calculate_buy_amount(self) -> Optional[float]:
         """
         Calculate optimal buy amount based on:

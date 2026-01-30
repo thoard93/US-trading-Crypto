@@ -102,6 +102,10 @@ class MarketSniper:
         # Register callback for PumpPortal new token events
         self.pump_portal.register_callback(self._on_new_token)
         
+        # SYNC POSITIONS: Reconcile internal tracking with actual wallet
+        # Fixes stale exposure when positions were sold manually
+        await self.risk_mgr.sync_with_wallet()
+        
         # Start PumpPortal WebSocket in background (non-blocking)
         asyncio.create_task(self._run_pump_portal())
         
