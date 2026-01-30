@@ -424,7 +424,23 @@ class MarketSniper:
                 )
                 return
             
-            # We use the primary wallet for sniping
+            # PRE-BUY DUMP CHECK: Validate MC hasn't crashed since vetting
+            # Prevents buying into dump tails (common on fast Pump.fun swings)
+            try:
+                fresh_mc = await self.exit_coord._get_mc(mint)
+                if fresh_mc and mc > 0:
+                    mc_change = (fresh_mc - mc) / mc
+                    if mc_change < -0.10:  # Dropped >10% since vetting
+                        logger.warning(f"🚫 DUMP DETECTED: {symbol} dropped {mc_change*100:.0f}% (${mc:,.0f} → ${fresh_mc:,.0f}) - SKIPPING")
+                        return
+                    elif mc_change < -0.05:  # Dropped 5-10% - warn but proceed
+                        logger.info(f"⚠️ Slight dip on {symbol}: {mc_change*100:.1f}% - proceeding cautiously")
+                    # Update MC to fresh value for accurate entry tracking
+                    mc = fresh_mc
+            except Exception as e:
+                logger.debug(f"Pre-buy MC check failed: {e} - proceeding anyway")
+            
+            # Execute the buy
             result = await asyncio.to_thread(
                 self.trader.pump_buy, 
                 mint, 
