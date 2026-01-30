@@ -493,6 +493,25 @@ class MarketSniper:
                 
             logger.info(f"📊 Risk Manager approved: {buy_amount:.4f} SOL")
             
+            # SCORE-BASED PRIORITIZATION: When near cap, require higher score
+            # Ensures remaining exposure goes to high-quality opportunities only
+            try:
+                balance = await asyncio.to_thread(self.trader.get_sol_balance)
+                exposure = self.risk_mgr.get_total_exposure()
+                max_exposure = balance * 0.35  # Match RISK_MAX_EXPOSURE
+                exposure_pct = exposure / max_exposure if max_exposure > 0 else 0
+                
+                score = token_data.get('score', 0) or token_data.get('momentum_score', 0) or 0
+                
+                if exposure_pct > 0.80:  # Over 80% of cap used
+                    if score < 85:  # Require score >= 85 when near cap
+                        logger.info(f"⏭️ Near cap ({exposure_pct*100:.0f}%) - Skipping {symbol} (score {score} < 85 min)")
+                        return
+                    else:
+                        logger.info(f"✅ Near cap but {symbol} has high score ({score}) - proceeding")
+            except Exception as e:
+                logger.debug(f"Score priority check failed: {e}")
+            
             # Pre-buy balance check
             sol_balance = await asyncio.to_thread(self.trader.get_sol_balance)
             if sol_balance < buy_amount + 0.01:  # Need buy amount + fees
