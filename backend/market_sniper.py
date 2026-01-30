@@ -486,33 +486,38 @@ class MarketSniper:
                 # Low balance - just log it
                 return
             
-            # MULTI-POINT TREND VALIDATION: 3 MC fetches 1s apart to catch dumps
-            # Prevents buying into dump tails (common on fast Pump.fun swings)
+            # ENHANCED MULTI-POINT TREND VALIDATION: 5 MC fetches to catch dumps
+            # Requires clear uptrend (+5%) and detects any mid-check dips
             try:
                 mc_values = []
-                for probe in range(3):
+                for probe in range(5):  # 5 fetches over ~5s
                     probe_mc = await self.exit_coord._get_mc(mint)
                     if probe_mc:
                         mc_values.append(probe_mc)
-                    if probe < 2:  # Don't sleep after last probe
+                    if probe < 4:  # Don't sleep after last probe
                         await asyncio.sleep(1)
                 
-                if len(mc_values) >= 2:
-                    # Check overall trend
+                if len(mc_values) >= 3:
+                    # Check for any mid-check dips (>3% drop between consecutive fetches)
+                    for i in range(1, len(mc_values)):
+                        if mc_values[i] < mc_values[i-1] * 0.97:
+                            logger.warning(f"🚫 DIP DETECTED: {symbol} dropped mid-check (${mc_values[i-1]:,.0f} → ${mc_values[i]:,.0f}) - SKIPPING")
+                            return
+                    
+                    # Check overall trend - require >5% growth
                     overall_change = (mc_values[-1] - mc_values[0]) / mc_values[0] if mc_values[0] > 0 else 0
                     
-                    if overall_change < -0.05:  # Dropped >5% during probe
-                        logger.warning(f"🚫 DUMP TREND: {symbol} dropped {overall_change*100:.0f}% during 3s probe (${mc_values[0]:,.0f} → ${mc_values[-1]:,.0f}) - SKIPPING")
+                    if overall_change < -0.03:  # Dropped >3% overall
+                        logger.warning(f"🚫 DUMP TREND: {symbol} dropped {overall_change*100:.0f}% during 5s probe - SKIPPING")
                         return
-                    elif overall_change < 0.02:  # Flat or slight drop (<2% growth)
-                        # Only skip if MC is also declining
-                        if mc_values[-1] < mc_values[0]:
+                    elif overall_change < 0.05:  # Not rising enough (<5% growth)
+                        if mc_values[-1] <= mc_values[0]:
                             logger.info(f"⚠️ FLAT/DIP TREND: {symbol} not rising ({overall_change*100:.1f}%) - SKIPPING")
                             return
                         else:
-                            logger.info(f"⚠️ Slow growth on {symbol}: {overall_change*100:.1f}% - proceeding cautiously")
+                            logger.info(f"⚠️ Weak uptrend on {symbol}: {overall_change*100:.1f}% - proceeding cautiously")
                     else:
-                        logger.info(f"✅ UPTREND CONFIRMED: {symbol} +{overall_change*100:.1f}% in 3s probe")
+                        logger.info(f"✅ STRONG UPTREND: {symbol} +{overall_change*100:.1f}% in 5s probe")
                     
                     # Update MC to latest for accurate entry
                     mc = mc_values[-1]
@@ -528,6 +533,28 @@ class MarketSniper:
             
             if result and result.get('success'):
                 logger.info(f"✅ SNIPE SUCCESS: {symbol}")
+                
+                # POST-BUY DUMP GUARD: Check if MC crashed immediately after buy
+                try:
+                    await asyncio.sleep(2)  # Brief delay for chain confirmation
+                    post_buy_mc = await self.exit_coord._get_mc(mint)
+                    if post_buy_mc and mc > 0 and post_buy_mc < mc * 0.85:  # Dropped >15%
+                        logger.warning(f"🚨 IMMEDIATE DUMP: {symbol} crashed {((post_buy_mc/mc)-1)*100:.0f}% post-buy (${mc:,.0f} → ${post_buy_mc:,.0f}) - EMERGENCY SELL")
+                        # Trigger immediate full sell
+                        sell_result = await asyncio.to_thread(
+                            self.trader.pump_sell,
+                            mint,
+                            token_amount_pct=100,
+                            payer_key=self.wallets.get_main_key(),
+                            slippage=50
+                        )
+                        if sell_result and sell_result.get('success'):
+                            logger.info(f"✅ Emergency sell completed for {symbol}")
+                            if self.alerter:
+                                self.alerter.alert_stop_loss(symbol, mint, 15, post_buy_mc)
+                            return  # Exit early - position already closed
+                except Exception as e:
+                    logger.debug(f"Post-buy dump check failed: {e}")
                 
                 # Record position in risk manager with full metadata
                 self.risk_mgr.record_position_open(
