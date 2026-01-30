@@ -40,7 +40,8 @@ class SniperExitCoordinator:
         ]
         self.stop_loss_pct = 0.25 # Initial hard stop-loss (25% drop from entry)
         self.trailing_stop_pct = 0.15 # 15% drop from peak (active after growth)
-        self.timeout = 600 # 10 minute timeout
+        self.timeout = 5400 # 90 minute stagnation timeout
+        self.timeout_growth_threshold = 1.25 # Must have 25% growth to avoid timeout
 
     async def start_monitoring(self, mint: str, entry_mc: float, wallet_key: str):
         """Start tracking a sniped position."""
@@ -115,9 +116,10 @@ class SniperExitCoordinator:
                         await self._execute_sell(mint, wallet_key, 100, slippage=30)
                         return
 
-                # 4. Check Timeout
-                if elapsed > self.timeout:
-                    logger.info(f"⏰ SNIPE TIMEOUT: Exiting {mint[:8]} after 10min")
+                # 4. Smart Timeout Check (stagnant positions)
+                # If position is >90 min old AND hasn't grown 25%+, sell to recycle capital
+                if elapsed > self.timeout and multiplier < self.timeout_growth_threshold:
+                    logger.info(f"⏰ STAGNATION TIMEOUT: Exiting {mint[:8]} after {elapsed/60:.0f}min (only {multiplier:.2f}x growth)")
                     await self._execute_sell(mint, wallet_key, 100)
                     return
 
