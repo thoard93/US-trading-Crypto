@@ -277,7 +277,7 @@ class SniperExitCoordinator:
                         return
 
                 # 4. SMART TIMEOUT: Partial at 90min, Full at 120min
-                # Partial timeout: sell 50% if low volume/growth, keep moonshot tail
+                # Partial timeout: sell 60% if low volume/growth, keep moonshot tail
                 if elapsed > self.timeout_partial and mint not in self.partial_timeout_sold:
                     if multiplier < self.timeout_growth_threshold:
                         # Check volume to decide partial vs wait
@@ -287,12 +287,12 @@ class SniperExitCoordinator:
                             volume_sol = resp.get('virtual_sol_reserves', 0) / 1e9
                             
                             if volume_sol < 3:  # Low volume = partial sell, keep tail
-                                logger.info(f"⏰ PARTIAL TIMEOUT: {symbol} after {elapsed/60:.0f}min (Vol: {volume_sol:.1f} SOL, Growth: {multiplier:.2f}x) - Selling 50%")
+                                logger.info(f"⏰ PARTIAL TIMEOUT: {symbol} after {elapsed/60:.0f}min (Vol: {volume_sol:.1f} SOL, Growth: {multiplier:.2f}x) - Selling 60%")
                                 
                                 if self.alerter:
                                     self.alerter.alert_timeout_sell(symbol, mint, elapsed / 60, multiplier, partial=True)
                                 
-                                await self._execute_sell(mint, wallet_key, 50)
+                                await self._execute_sell(mint, wallet_key, 60)
                                 self.partial_timeout_sold.add(mint)
                                 # Continue monitoring for moonshot
                             else:
@@ -300,7 +300,7 @@ class SniperExitCoordinator:
                         except Exception as e:
                             logger.debug(f"Timeout volume check failed: {e}")
                             # Default to partial sell on error
-                            await self._execute_sell(mint, wallet_key, 50)
+                            await self._execute_sell(mint, wallet_key, 60)
                             self.partial_timeout_sold.add(mint)
                 
                 # Full timeout: exit completely after 120min if still stagnant
