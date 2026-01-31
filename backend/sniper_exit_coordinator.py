@@ -63,10 +63,16 @@ class SniperExitCoordinator:
             (15.0, 1.0)    # Sell all at 15x
         ]
         
-        self.stop_loss_pct = 0.35  # Softened: 25% → 35% for more rebound room
-        self.trailing_stop_pct = 0.15  # 15% drop from peak (active after growth)
-        self.timeout = 5400  # 90 minute stagnation timeout
+        # DYNAMIC STOP LOSS: Softer early, tighter later
+        self.stop_loss_early = 0.40   # -40% for first 5 min (breathing room)
+        self.stop_loss_normal = 0.35  # -35% after 5 min
+        self.trailing_stop_pct = 0.15 # 15% drop from peak (active after growth)
+        
+        # SMART TIMEOUT: Partial sell at 90min, full at 120min
+        self.timeout_partial = 5400   # 90 min - partial sell if low vol/growth
+        self.timeout_full = 7200      # 120 min - full exit
         self.timeout_growth_threshold = 1.25  # Must have 25% growth to avoid timeout
+        self.partial_timeout_sold = set()  # Track which positions had partial timeout
         
         # Flag for retroactive check (run once on first monitor start)
         self._retroactive_checked = False
@@ -238,13 +244,16 @@ class SniperExitCoordinator:
                 
                 self._last_mc = mc
 
-                # 2. Check Initial Stop-Loss
-                if multiplier < (1 - self.stop_loss_pct):
-                    logger.warning(f"🚨 STOP-LOSS HIT: -{self.stop_loss_pct*100}% on {symbol} (MC: ${mc:,.0f})")
+                # 2. Check Initial Stop-Loss (DYNAMIC based on age)
+                age_minutes = elapsed / 60
+                effective_stop = self.stop_loss_early if age_minutes < 5 else self.stop_loss_normal
+                
+                if multiplier < (1 - effective_stop):
+                    logger.warning(f"🚨 STOP-LOSS HIT: -{effective_stop*100}% on {symbol} (MC: ${mc:,.0f}, Age: {age_minutes:.1f}min)")
                     
                     # Alert
                     if self.alerter:
-                        self.alerter.alert_stop_loss(symbol, mint, self.stop_loss_pct * 100, mc)
+                        self.alerter.alert_stop_loss(symbol, mint, effective_stop * 100, mc)
                     
                     await self._execute_sell(mint, wallet_key, 100, slippage=50)
                     return
@@ -267,13 +276,39 @@ class SniperExitCoordinator:
                         await self._execute_sell(mint, wallet_key, 100, slippage=30)
                         return
 
-                # 4. Smart Timeout Check (stagnant positions)
-                if elapsed > self.timeout and multiplier < self.timeout_growth_threshold:
-                    logger.info(f"⏰ STAGNATION TIMEOUT: Exiting {symbol} after {elapsed/60:.0f}min (only {multiplier:.2f}x growth)")
+                # 4. SMART TIMEOUT: Partial at 90min, Full at 120min
+                # Partial timeout: sell 50% if low volume/growth, keep moonshot tail
+                if elapsed > self.timeout_partial and mint not in self.partial_timeout_sold:
+                    if multiplier < self.timeout_growth_threshold:
+                        # Check volume to decide partial vs wait
+                        try:
+                            url = f"https://frontend-api-v3.pump.fun/coins/{mint}"
+                            resp = requests.get(url, timeout=5, headers={'User-Agent': 'Mozilla/5.0'}).json()
+                            volume_sol = resp.get('virtual_sol_reserves', 0) / 1e9
+                            
+                            if volume_sol < 3:  # Low volume = partial sell, keep tail
+                                logger.info(f"⏰ PARTIAL TIMEOUT: {symbol} after {elapsed/60:.0f}min (Vol: {volume_sol:.1f} SOL, Growth: {multiplier:.2f}x) - Selling 50%")
+                                
+                                if self.alerter:
+                                    self.alerter.alert_timeout_sell(symbol, mint, elapsed / 60, multiplier, partial=True)
+                                
+                                await self._execute_sell(mint, wallet_key, 50)
+                                self.partial_timeout_sold.add(mint)
+                                # Continue monitoring for moonshot
+                            else:
+                                logger.info(f"⚡ TIMEOUT EXTENDED: {symbol} has volume ({volume_sol:.1f} SOL) - waiting for action")
+                        except Exception as e:
+                            logger.debug(f"Timeout volume check failed: {e}")
+                            # Default to partial sell on error
+                            await self._execute_sell(mint, wallet_key, 50)
+                            self.partial_timeout_sold.add(mint)
+                
+                # Full timeout: exit completely after 120min if still stagnant
+                if elapsed > self.timeout_full and multiplier < self.timeout_growth_threshold:
+                    logger.info(f"⏰ FULL TIMEOUT: Exiting {symbol} after {elapsed/60:.0f}min (only {multiplier:.2f}x growth)")
                     
-                    # Alert
                     if self.alerter:
-                        self.alerter.alert_timeout_sell(symbol, mint, elapsed / 60, multiplier)
+                        self.alerter.alert_timeout_sell(symbol, mint, elapsed / 60, multiplier, partial=False)
                     
                     await self._execute_sell(mint, wallet_key, 100)
                     return

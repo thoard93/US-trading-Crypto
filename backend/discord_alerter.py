@@ -112,18 +112,23 @@ class DiscordAlerter:
             ]
         )
     
-    def alert_timeout_sell(self, symbol: str, mint: str, age_minutes: float, growth: float):
-        """Alert on stagnation timeout sell."""
+    def alert_timeout_sell(self, symbol: str, mint: str, age_minutes: float, growth: float, partial: bool = False):
+        """Alert on stagnation timeout sell (partial or full)."""
+        title = f"⏰ {'PARTIAL ' if partial else ''}TIMEOUT: {symbol}"
+        desc = f"{'Selling 50% of' if partial else 'Recycling'} stagnant position after {age_minutes:.0f} minutes"
+        
         self._send_embed(
-            title=f"⏰ TIMEOUT SELL: {symbol}",
-            description=f"Recycling stagnant position after {age_minutes:.0f} minutes",
+            title=title,
+            description=desc,
             color=0xffaa00,  # Amber
             fields=[
                 {"name": "Hold Time", "value": f"{age_minutes:.0f} min", "inline": True},
                 {"name": "Growth", "value": f"{growth:.2f}x", "inline": True},
+                {"name": "Type", "value": "Partial (50%)" if partial else "Full Exit", "inline": True},
                 {"name": "Mint", "value": f"`{mint[:12]}...`", "inline": False}
             ]
         )
+
     
     def alert_graduation(self, symbol: str, mint: str, final_mc: float):
         """Alert when token graduates to Raydium."""

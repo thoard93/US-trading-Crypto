@@ -19,6 +19,7 @@ from risk_manager import get_risk_manager  # NEW: Dynamic position sizing
 from sniper_exit_coordinator import get_sniper_exit_coordinator
 from wallet_manager import WalletManager
 from discord_alerter import get_discord_alerter  # NEW: Webhook-based alerts
+from copy_trader import get_copy_trader  # NEW: Whale wallet copy trading
 
 # Configure logging
 logging.basicConfig(
@@ -62,6 +63,11 @@ class MarketSniper:
         self.seen_tokens = set()
         self.recheck_queue = {}  # mint -> (token_data, scheduled_time) for concentration rechecks
         self.running = False
+        
+        # Copy trader for whale following (optional enhancement)
+        self.copy_trader = None
+        if os.getenv('ENABLE_COPY_TRADING', 'true').lower() == 'true':
+            self.copy_trader = get_copy_trader(self)
 
     async def start(self):
         """Main loop for the sniper."""
@@ -80,6 +86,11 @@ class MarketSniper:
         
         # Start PumpPortal WebSocket in background (non-blocking)
         asyncio.create_task(self._run_pump_portal())
+        
+        # Start Copy Trader in background (monitors whale wallets)
+        if self.copy_trader:
+            asyncio.create_task(self.copy_trader.start_monitoring())
+            logger.info("🐋 Copy trader started - monitoring whale wallets")
         
         while self.running:
             try:
