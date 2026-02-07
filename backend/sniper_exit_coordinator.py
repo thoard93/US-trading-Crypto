@@ -48,29 +48,29 @@ class SniperExitCoordinator:
         # Discord alerter
         self.alerter = get_discord_alerter() if DISCORD_AVAILABLE else None
         
-        # Default sniping strategy tiers
+        # Default sniping strategy tiers - STABILITY MODE
         # (multiplier, percentage_of_REMAINING_to_sell)
         self.default_tiers = [
-            (2.0, 0.50),   # Sell 50% at 2x (Initial money back)
-            (5.0, 0.50),   # Sell 50% of remainder at 5x
-            (10.0, 1.0)    # Sell all at 10x OR let trailing stop handle it
+            (1.4, 0.35),   # Sell 35% at 1.4x - lock in quick gains
+            (2.0, 0.40),   # Sell 40% of remainder at 2x
+            (5.0, 1.0)     # Sell rest at 5x or trailing stop
         ]
         
         # Extended tiers for high-momentum tokens
         self.momentum_tiers = [
-            (3.0, 0.30),   # Sell 30% at 3x (less aggressive)
-            (7.0, 0.40),   # Sell 40% of remainder at 7x
-            (15.0, 1.0)    # Sell all at 15x
+            (1.8, 0.25),   # Sell 25% at 1.8x (less aggressive)
+            (3.0, 0.40),   # Sell 40% of remainder at 3x
+            (7.0, 1.0)     # Sell all at 7x
         ]
         
-        # DYNAMIC STOP LOSS: Softer early, tighter later
-        self.stop_loss_early = 0.40   # -40% for first 5 min (breathing room)
-        self.stop_loss_normal = 0.35  # -35% after 5 min
+        # TIGHTER STOP LOSS: -25% flat for stability
+        self.stop_loss_early = 0.25   # -25% (was -40%)
+        self.stop_loss_normal = 0.25  # -25% (was -35%)
         self.trailing_stop_pct = 0.15 # 15% drop from peak (active after growth)
         
-        # SMART TIMEOUT: Partial sell at 90min, full at 120min
-        self.timeout_partial = 5400   # 90 min - partial sell if low vol/growth
-        self.timeout_full = 7200      # 120 min - full exit
+        # FASTER TIMEOUT: Recycle capital quicker
+        self.timeout_partial = 2700   # 45 min (was 90) - partial sell if low vol/growth
+        self.timeout_full = 4500      # 75 min (was 120) - full exit
         self.timeout_growth_threshold = 1.25  # Must have 25% growth to avoid timeout
         self.partial_timeout_sold = set()  # Track which positions had partial timeout
         
@@ -101,7 +101,7 @@ class SniperExitCoordinator:
                 age_minutes = age_seconds / 60
                 
                 # Skip if not old enough
-                if age_seconds < self.timeout:
+                if age_seconds < self.timeout_partial:  # BUG FIX: was using stale self.timeout
                     continue
                 
                 # Check current MC
@@ -220,7 +220,7 @@ class SniperExitCoordinator:
                     target_mult, sell_pct = current_tiers[current_tier_idx]
                     if multiplier >= target_mult:
                         # Momentum check - if vertical growth, wait 5s
-                        if hasattr(self, '_last_mc') and (mc > self._last_mc * 1.1):
+                        if 'last_mc' in locals() and (mc > last_mc * 1.1):
                             logger.info(f"🚀 ROCKET DETECTED! Delaying sell to capture overshoot... (+10% in 5s)")
                             await asyncio.sleep(5)
                             continue
@@ -242,7 +242,7 @@ class SniperExitCoordinator:
                             if current_tier_idx >= len(current_tiers):
                                 return  # Fully exited
                 
-                self._last_mc = mc
+                last_mc = mc
 
                 # 2. Check Initial Stop-Loss (DYNAMIC based on age)
                 age_minutes = elapsed / 60
@@ -258,8 +258,8 @@ class SniperExitCoordinator:
                     await self._execute_sell(mint, wallet_key, 100, slippage=50)
                     return
 
-                # 3. Check Trailing Stop Loss (only after 30% growth)
-                if multiplier > 1.3:
+                # 3. Check Trailing Stop Loss (only after 15% growth - STABILITY: was 30%)
+                if multiplier > 1.15:
                     # Dynamic trailing - tighter during low volume
                     effective_trailing = self.trailing_stop_pct
                     if await self._check_momentum(mint):
@@ -323,9 +323,13 @@ class SniperExitCoordinator:
 
     async def _get_mc(self, mint: str) -> Optional[float]:
         try:
-            url = f"https://frontend-api-v3.pump.fun/coins/{mint}"
-            resp = requests.get(url, timeout=5, headers={'User-Agent': 'Mozilla/5.0'}).json()
-            return resp.get('usd_market_cap', 0)
+            resp = await asyncio.to_thread(
+                requests.get,
+                f"https://frontend-api-v3.pump.fun/coins/{mint}",
+                timeout=5,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            return resp.json().get('usd_market_cap', 0)
         except:
             return None
 

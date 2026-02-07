@@ -47,7 +47,7 @@ class MarketSniper:
         
         # Strategy Config
         # GROK TUNED SETTINGS (Jan 29 2026 - Open Funnel for Action)
-        self.min_mc = float(os.getenv('SNIPER_MIN_MC', '7500'))  # Quality filter: 7.5k floor avoids dump tails
+        self.min_mc = float(os.getenv('SNIPER_MIN_MC', '6000'))  # Stability: 6k floor - more trades while above rug zone
         self.max_mc = float(os.getenv('SNIPER_MAX_MC', '100000'))  # Still 100k cap
         self.min_momentum = float(os.getenv('SNIPER_MIN_MOMENTUM', '50'))  # Keep at 50
         self.buy_amount = float(os.getenv('SNIPER_BUY_SOL', '0.1'))  # Fallback only (risk_mgr handles sizing)
@@ -497,39 +497,38 @@ class MarketSniper:
                 # Low balance - just log it
                 return
             
-            # STRICT MULTI-POINT TREND VALIDATION: 6 MC fetches to catch dumps
-            # Requires strong uptrend (+8%) and detects any mid-check dips (>4%)
+            # STABILITY TREND VALIDATION: 5 MC fetches to catch dumps
+            # Requires uptrend (+5%) and detects any mid-check dips (>3%)
             try:
                 mc_values = []
-                for probe in range(6):  # 6 fetches over ~6s
+                for probe in range(5):  # 5 fetches over ~5s
                     probe_mc = await self.exit_coord._get_mc(mint)
                     if probe_mc:
                         mc_values.append(probe_mc)
-                    if probe < 5:  # Don't sleep after last probe
+                    if probe < 4:  # Don't sleep after last probe
                         await asyncio.sleep(1)
                 
-                if len(mc_values) >= 4:
-                    # Check for any mid-check dips (>4% drop between consecutive fetches)
+                if len(mc_values) >= 3:
+                    # Check for any mid-check dips (>3% drop between consecutive fetches)
                     for i in range(1, len(mc_values)):
-                        if mc_values[i] < mc_values[i-1] * 0.96:
+                        if mc_values[i] < mc_values[i-1] * 0.97:
                             logger.warning(f"🚫 DIP DETECTED: {symbol} dropped mid-check (${mc_values[i-1]:,.0f} → ${mc_values[i]:,.0f}) - SKIPPING")
                             return
                     
-                    # Check overall trend - require >8% growth
+                    # Check overall trend - require >5% growth
                     overall_change = (mc_values[-1] - mc_values[0]) / mc_values[0] if mc_values[0] > 0 else 0
                     
                     if overall_change < -0.03:  # Dropped >3% overall
-                        logger.warning(f"🚫 DUMP TREND: {symbol} dropped {overall_change*100:.0f}% during 6s probe - SKIPPING")
+                        logger.warning(f"🚫 DUMP TREND: {symbol} dropped {overall_change*100:.0f}% during 5s probe - SKIPPING")
                         return
-                    elif overall_change < 0.08:  # Not rising enough (<8% growth)
+                    elif overall_change < 0.05:  # Not rising enough (<5% growth)
                         if mc_values[-1] <= mc_values[0]:
                             logger.info(f"⚠️ FLAT/DIP TREND: {symbol} not rising ({overall_change*100:.1f}%) - SKIPPING")
                             return
                         else:
-                            logger.info(f"⚠️ Insufficient uptrend on {symbol}: {overall_change*100:.1f}% (need 8%+) - SKIPPING")
-                            return
+                            logger.info(f"⚠️ Weak uptrend on {symbol}: {overall_change*100:.1f}% - proceeding cautiously")
                     else:
-                        logger.info(f"✅ STRONG UPTREND: {symbol} +{overall_change*100:.1f}% in 6s probe")
+                        logger.info(f"✅ STRONG UPTREND: {symbol} +{overall_change*100:.1f}% in 5s probe")
                     
                     # Update MC to latest for accurate entry
                     mc = mc_values[-1]
@@ -568,29 +567,8 @@ class MarketSniper:
                 except Exception as e:
                     logger.debug(f"Post-buy dump check failed: {e}")
                 
-                # EARLY DUMP SELL: Check again at 2 minutes - if >20% down, full sell
-                async def early_dump_check():
-                    try:
-                        await asyncio.sleep(118)  # ~2 min total (already waited 2s above)
-                        current_mc = await self.exit_coord._get_mc(mint)
-                        if current_mc and mc > 0 and current_mc < mc * 0.80:  # Dropped >20%
-                            logger.warning(f"🚨 EARLY DUMP: {symbol} down {((current_mc/mc)-1)*100:.0f}% after 2min - FULL SELL")
-                            sell_result = await asyncio.to_thread(
-                                self.trader.pump_sell,
-                                mint,
-                                token_amount_pct=100,
-                                payer_key=self.wallets.get_main_key(),
-                                slippage=50
-                            )
-                            if sell_result and sell_result.get('success'):
-                                logger.info(f"✅ Early dump sell completed for {symbol}")
-                                if self.alerter:
-                                    self.alerter.alert_stop_loss(symbol, mint, 20, current_mc)
-                    except Exception as e:
-                        logger.debug(f"Early dump check failed: {e}")
-                
-                # Run early dump check in background (doesn't block monitoring)
-                asyncio.create_task(early_dump_check())
+                # NOTE: Early dump check removed — exit coordinator's -25% stop handles this
+                # without racing/double-sell issues
                 
                 # Record position in risk manager with full metadata
                 self.risk_mgr.record_position_open(
